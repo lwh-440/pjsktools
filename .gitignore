@@ -1,0 +1,26 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+apps/api/data/reference-cache/
+apps/api/data/master-cache/
+apps/api/data/music-meta/
+apps/api/data/music-score/
+apps/api/data/reference-master/
+apps/api/data/runtime-cache.json
+apps/api/data/*.tmp
+.gradle/
+build/
+android/local.properties
+artifacts/
+.agents/
+.claude/
+.codex/
+*.tmp
+*.bak
+spawn EPERM解决.md
+_fixed_baguwen.md

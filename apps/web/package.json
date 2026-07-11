@@ -1,0 +1,27 @@
+{
+  "name": "@pjsktools/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@pixi/core": "^7.4.3",
+    "@pixi/display": "^7.4.3",
+    "@sekai-world/pixi-live2d-display-mulmotion": "^0.5.1",
+    "@types/howler": "^2.2.12",
+    "@vitejs/plugin-react": "^4.3.4",
+    "howler": "^2.2.4",
+    "lucide-react": "^0.468.0",
+    "pixi.js": "^7.4.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.18.1",
+    "tesseract.js": "^6.0.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}

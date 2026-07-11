@@ -1,0 +1,28 @@
+{
+  "name": "pjsktools",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "test": "npm run test -w apps/api",
+    "parity:moesekai": "npm run build -w apps/api && node scripts/parity-moesekai.mjs",
+    "verify:real-uid": "npm run build -w apps/api && node scripts/verify-real-uid.mjs --region cn --uid 7485929717040896807",
+    "verify:local": "npm run build -w apps/api && npx tsc -b apps/web/tsconfig.json && npm run check:encoding && node scripts/smoke-local.mjs",
+    "verify:regions": "npm run build -w apps/api && node scripts/verify-regions.mjs",
+    "verify:story-live2d": "npm run build -w apps/api && node scripts/verify-story-live2d.mjs",
+    "verify:card-import": "npm run build -w apps/api && node scripts/verify-card-import.mjs",
+    "check:encoding": "node scripts/check-encoding.mjs",
+    "config:haruki": "node scripts/set-haruki-base-url.mjs"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3"
+  }
+}
