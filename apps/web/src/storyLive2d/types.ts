@@ -59,6 +59,7 @@ export type StoryPlaybackContext = {
   preloadStatus?: { mediaAssets?: Array<{ kind?: string; identifier?: string; status?: string }>; live2dModels?: Array<{ costumeType?: string; modelId?: string; status?: string }> };
   runtimeRequirements?: string[];
   playbackDiagnostics?: Record<string, unknown>;
+  renderAcceptance?: { status?: string; serverValidation?: string; matchedPolicy?: string };
   warnings?: string[];
   unavailableReason?: string;
 };

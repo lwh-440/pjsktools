@@ -162,7 +162,7 @@ Content UX status:
 
 - Web content pages now present stable-source data as player-assistant workflows instead of generic JSON cards.
 - Announcements use a timeline with category, availability time, banner, source, and detail links when the upstream provides them.
-- Exchanges are grouped by metadata source file so material exchanges, summaries, exchange items, and exchange entries can be inspected separately.
+- Exchanges flatten `materialExchangeSummaries[].materialExchanges`, resolve rewards through material-exchange resource boxes, and resolve costs through the current region's material masters. JP/EN embed resource-box details; TW/KR/CN use the same-region `resourceBoxDetails` collection.
 - Missions use source-backed tabs for normal, beginner, character, and honor mission groups with task/reward summaries.
 - Virtual Live uses separate groups for live records, schedules, setlists, and rewards.
 - Stories now load `/stories/context` automatically, show story groups/lists, and open `/stories/:storyType/:storyId/full` from list selections. Story full responses expose chapters, relation hints, resourceCandidates, sourceHealth, warnings, and unavailableReason. This is still a resource workflow, not a full story or live演出播放器.
@@ -344,7 +344,8 @@ Encoding and copy safety:
 Stable-source content pages:
 
 - Information page consumes /api/master/:region/information.
-- Exchanges page consumes /api/master/:region/exchanges/context.
+- Exchanges page consumes `/api/master/:region/exchanges/context`, with search, status/shop filters, pagination, reward/cost thumbnails, and `/api/master/:region/exchanges/:exchangeId` details. Removed legacy requests for nonexistent `materialExchanges`, `exchangeItems`, and `exchanges` files.
+- Exchange rewards follow Moesekai resource rules: currencies use `thumbnail/common_material`, practice tickets use their dedicated PNG directories, and optional name masters are loaded only for reward types present in the current region. Types for which Moesekai defines no image use a semantic UI icon and `assetStatus: reference-no-image`; guessed asset paths and cross-region fallback are forbidden.
 - Missions page consumes /api/master/:region/missions/context.
 - Virtual Live page consumes /api/master/:region/virtual-lives/context.
 - Virtual Live page can open /api/master/:region/virtual-lives/:virtualLiveId/playback and now uses a two-column workflow: searchable/sortable live list, banner/logo detail, schedules, rewards, setlist cards, MC spawn/unspawn/talk timeline, per-talk voice audio, music audio, source diagnostics, and a basic continuous playback queue that skips missing resources with warnings.
@@ -510,6 +511,17 @@ Smoke creates smoke-* accounts and deletes them at the end through the store lay
 `npm run parity:moesekai` covers formula reference parity beyond smoke. Current hard cases include Moesekai event point static outputs and DeckCalculator-style synthetic invariants; missing Moesekai ignored fixtures are reported as missing data, not success.
 
 ## Persistent Target
+
+### Content System Milestones
+
+- Content capability is tracked independently for `jp/en/tw/kr/cn` through `GET /api/master/:region/content-status`. Valid states are `ready`, `partial`, `not-released`, `missing-resource`, and `source-unavailable`; one missing collection must not blank an otherwise usable page.
+- MySekai catalogs use `mysekaiFixtures`, main/sub genres, tags, blueprints, blueprint material costs, materials, and character-talk masters. The visual fixture/material/blueprint catalog is the primary content workflow; the calculator is a separate secondary workflow.
+- Virtual Live list and detail consume schedules, setlists, and rewards nested in `virtualLives.json`. Standalone schedule/setlist/reward requests return 404 and must not be restored. MC and music playback resources load only after the user opens playback.
+- Information details use a restricted in-app iframe when the same-region record exposes an HTTP(S) path. Custom app schemes remain external-only. EN/TW/KR stay `not-released` until a verified same-region source exists.
+- The Live2D model index is a `global-shared-model-asset`; it does not prove regional story availability. A scenario is playable only when its same-region scenario and referenced model resources load.
+- Story server parsing is not browser parity. Playback responses remain `pending-browser-validation` until canvas pixels, model rendering, action changes, media playback, and cleanup are checked in a real browser. Missing regional assets remain `missing-resource`.
+- `npm run verify:content` dynamically validates five-region information, Virtual Live, MySekai catalogs, four story groups, asset isolation, Live2D scope, and model-preload limits. Synthetic fixtures cannot establish real playback parity.
+- Long-term order: content data reliability and catalogs; Story/Live2D real-browser sample coverage; Virtual Live reward/MC enrichment; then optional MySekai OBJ/room preview. Virtual Live remains a data/audio workflow and does not promise Unity 3D stage reproduction.
 
 Long-term target: align this project with the actual player-assistant capabilities implemented by Sekai Viewer and Moesekai. The key standard is not just "an endpoint exists"; the implementation should match reference-project depth for formulas, data flow, UI workflows, source diagnostics, and player-asset reuse wherever those projects provide working functionality.
 

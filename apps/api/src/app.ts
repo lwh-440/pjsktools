@@ -54,6 +54,18 @@ import { calculateNormalEventPlan, calculateScoreControl, forecastRanking, recom
 import { buildAssetReadiness, sharedFormulaVersion } from "./normalEventFormula.js";
 import { buildProfileAnalysis } from "./profileAnalysis.js";
 import { compareDecks } from "./deckComparator.js";
+import {
+  getContentStatus,
+  getExchangeCatalog,
+  getExchangeDetail,
+  getInformationCollection,
+  getInformationDetail,
+  getMysekaiCatalog,
+  getMysekaiDetail,
+  getVirtualLiveCatalog,
+  getVirtualLiveDetail,
+  type CatalogKind
+} from "./contentData.js";
 
 const authSchema = z.object({
   email: z.string().email(),
@@ -140,6 +152,8 @@ const catalogQuerySchema = z.object({
   rarity: z.string().optional(),
   gender: z.string().optional(),
   characterId: z.coerce.number().int().positive().optional()
+  ,category: z.string().max(100).optional()
+  ,tag: z.string().max(100).optional()
 });
 
 function catalogResponse(reply: any, request: any, payload: unknown) {
@@ -148,6 +162,31 @@ function catalogResponse(reply: any, request: any, payload: unknown) {
   reply.header("cache-control", "public, max-age=60, stale-while-revalidate=600");
   if (request.headers["if-none-match"] === etag) return reply.code(304).send();
   return payload;
+}
+
+const informationDocumentStyles = `html{color:#232833;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif}body{margin:0;padding:20px;line-height:1.75}img{display:block;max-width:100%;height:auto;margin:0 auto 18px}a{color:#26708f;overflow-wrap:anywhere}.information-pre,.information-body-element{font-size:15px}.information-body-heading{margin:28px 0 14px;padding:10px 14px;border-radius:6px;background:#eef2f5;font-size:20px}.information-body-element-heading{font-size:17px}.btn{display:inline-block;padding:10px 16px;border:1px solid #26708f;border-radius:6px;text-decoration:none}@media(max-width:480px){body{padding:14px}.information-body-heading{font-size:18px}}`;
+
+function escapeHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function informationFallbackDocument(message: string, detailUrl?: string) {
+  const link = detailUrl && /^https?:\/\//i.test(detailUrl)
+    ? `<p><a href="${escapeHtml(detailUrl)}" target="_blank" rel="noreferrer">在新窗口打开原公告</a></p>`
+    : "";
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${informationDocumentStyles}</style></head><body><p>${escapeHtml(message)}</p>${link}</body></html>`;
+}
+
+function sanitizeInformationDocument(source: string, sourceUrl: string, language: string) {
+  const safeBase = escapeHtml(sourceUrl);
+  const head = `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="${safeBase}"><style>${informationDocumentStyles}</style>`;
+  let content = source
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/\s(?:on\w+|srcdoc)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/\b(href|src)\s*=\s*("|')\s*(?:javascript|vbscript):[^"']*\2/gi, "$1=$2#$2")
+    .replace(/<a\b(?![^>]*\btarget=)/gi, '<a target="_blank" rel="noreferrer"');
+  if (/<head\b[^>]*>/i.test(content)) return content.replace(/<head\b[^>]*>/i, (match) => `${match}${head}`);
+  return `<!doctype html><html lang="${language}"><head>${head}</head><body>${content}</body></html>`;
 }
 
 const assetProxyFailures = new Map<string, number>();
@@ -826,7 +865,97 @@ export async function buildApp() {
   app.get("/api/master/:region/information", async (request, reply) => {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    return informationCollection(region);
+    return getInformationCollection(region);
+  });
+
+  app.get("/api/master/:region/information-view/*", async (request, reply) => {
+    const { region, "*": resourcePath } = request.params as { region: string; "*": string };
+    if (!isRegion(region) || (region !== "jp" && region !== "cn")) return reply.notFound("Information is not released for this region");
+    const upstreamBase = region === "jp"
+      ? "https://production-web.sekai.colorfulpalette.org"
+      : "https://lf3-mkcncdn-tos.dailygn.com";
+    const requestUrl = new URL(request.raw.url ?? "", "http://localhost");
+    const upstreamUrl = new URL(`/${resourcePath}${requestUrl.search}`, upstreamBase);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const upstream = await fetch(upstreamUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+          Referer: `${upstreamBase}/`,
+          Accept: String(request.headers.accept ?? "*/*")
+        }
+      });
+      if (!upstream.ok) return reply.code(upstream.status).send(`Information resource unavailable: ${upstream.status}`);
+      const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
+      reply.header("content-type", contentType);
+      reply.header("cache-control", contentType.includes("text/html") ? "public, max-age=60" : "public, max-age=86400");
+      if (!/text|javascript|json|css|xml/i.test(contentType)) {
+        if (!upstream.body) return reply.send();
+        return reply.send(Readable.fromWeb(upstream.body as any));
+      }
+      const prefix = `/api/master/${region}/information-view`;
+      const body = (await upstream.text())
+        .replace(/(["'(=:\s])\/(?!\/|api\/master\/)/g, `$1${prefix}/`)
+        .replace(new RegExp(`${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`, "g"), `${prefix}/`);
+      return reply.send(body);
+    } catch (error) {
+      return reply.serviceUnavailable(`Information proxy failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+
+  app.get("/api/master/:region/information-content/:informationId", async (request, reply) => {
+    const { region, informationId } = request.params as { region: string; informationId: string };
+    if (!isRegion(region) || (region !== "jp" && region !== "cn")) return reply.notFound("Information is not released for this region");
+    const detail = await getInformationDetail(region, informationId);
+    reply.type("text/html; charset=utf-8");
+    reply.header("content-security-policy", "default-src 'none'; img-src https: data:; media-src https:; style-src 'unsafe-inline' https:; font-src https: data:; frame-src https:; form-action 'none'; base-uri https:");
+    const contentSourceUrl = detail && "contentSourceUrl" in detail ? detail.contentSourceUrl : undefined;
+    if (!detail || detail.embedStatus !== "ready" || !contentSourceUrl) {
+      reply.header("cache-control", "no-store");
+      return reply.send(informationFallbackDocument("该公告没有可内嵌的正文，请使用外部打开入口。", detail?.detailUrl));
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const contentUrl = new URL(contentSourceUrl);
+      const upstream = await fetch(contentUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+          Referer: `${contentUrl.origin}/`,
+          Accept: "text/html,application/xhtml+xml"
+        }
+      });
+      if (!upstream.ok) {
+        reply.header("cache-control", "no-store");
+        return reply.send(informationFallbackDocument(`公告正文暂不可用（上游状态 ${upstream.status}）。`, detail.detailUrl));
+      }
+      const content = sanitizeInformationDocument(await upstream.text(), contentUrl.toString(), region === "cn" ? "zh-CN" : "ja");
+      reply.header("cache-control", "public, max-age=300, stale-while-revalidate=3600");
+      return reply.send(content);
+    } catch {
+      reply.header("cache-control", "no-store");
+      return reply.send(informationFallbackDocument("公告正文请求失败，请稍后重试或使用外部打开入口。", detail.detailUrl));
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+
+  app.get("/api/master/:region/content-status", async (request, reply) => {
+    const { region } = request.params as { region: string };
+    if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    return catalogResponse(reply, request, await getContentStatus(region));
+  });
+
+  app.get("/api/master/:region/information/:informationId", async (request, reply) => {
+    const { region, informationId } = request.params as { region: string; informationId: string };
+    if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    const detail = await getInformationDetail(region, informationId);
+    return detail ?? reply.notFound("Information item not found");
   });
 
   app.get("/api/master/:region/live2d/models", async (request, reply) => {
@@ -858,7 +987,14 @@ export async function buildApp() {
   app.get("/api/master/:region/exchanges/context", async (request, reply) => {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    return getExternalContext(region, "exchanges");
+    return catalogResponse(reply, request, await getExchangeCatalog(region));
+  });
+
+  app.get("/api/master/:region/exchanges/:exchangeId", async (request, reply) => {
+    const { region, exchangeId } = request.params as { region: string; exchangeId: string };
+    if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    const detail = await getExchangeDetail(region, exchangeId);
+    return detail ?? reply.notFound("Exchange item not found");
   });
 
   app.get("/api/master/:region/missions/context", async (request, reply) => {
@@ -870,7 +1006,14 @@ export async function buildApp() {
   app.get("/api/master/:region/virtual-lives/context", async (request, reply) => {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    return getExternalContext(region, "virtualLives");
+    return getVirtualLiveCatalog(region);
+  });
+
+  app.get("/api/master/:region/virtual-lives/:virtualLiveId/full", async (request, reply) => {
+    const { region, virtualLiveId } = request.params as { region: string; virtualLiveId: string };
+    if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    const detail = await getVirtualLiveDetail(region, virtualLiveId);
+    return detail ?? reply.notFound("Virtual Live not found");
   });
 
   app.get("/api/master/:region/virtual-lives/:virtualLiveId/playback", async (request, reply) => {
@@ -889,6 +1032,23 @@ export async function buildApp() {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     return getMysekaiFullContext(region);
+  });
+
+  app.get("/api/master/:region/mysekai/catalog/:catalogKind", async (request, reply) => {
+    const { region, catalogKind } = request.params as { region: string; catalogKind: CatalogKind };
+    if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    if (!["fixtures", "materials", "blueprints"].includes(catalogKind)) return reply.notFound("MySekai catalog not found");
+    const parsed = catalogQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.badRequest(parsed.error.message);
+    return catalogResponse(reply, request, await getMysekaiCatalog(region, catalogKind, parsed.data));
+  });
+
+  app.get("/api/master/:region/mysekai/catalog/:catalogKind/:itemId", async (request, reply) => {
+    const { region, catalogKind, itemId } = request.params as { region: string; catalogKind: CatalogKind; itemId: string };
+    if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    if (!["fixtures", "materials", "blueprints"].includes(catalogKind)) return reply.notFound("MySekai catalog not found");
+    const detail = await getMysekaiDetail(region, catalogKind, itemId);
+    return detail ?? reply.notFound("MySekai item not found");
   });
 
   app.get("/api/master/:region/stories/:storyType/:storyId/full", async (request, reply) => {

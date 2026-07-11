@@ -8,7 +8,9 @@
   CalendarClock,
   Check,
   Clapperboard,
+  Coins,
   Gift,
+  Gem,
   Images,
   Info,
   LogIn,
@@ -22,14 +24,16 @@
   Shirt,
   Sparkles,
   Star,
+  Ticket,
   Trash2,
   Trophy,
   UserRound,
-  Wand2
+  Wand2,
+  Zap
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { apiGet, apiPost } from "./api";
+import { apiGet, apiPost, apiResourceUrl } from "./api";
 import { loadCachedCatalog } from "./catalogCache";
 import { useAuth } from "./AuthContext";
 import type { DeckConfig, PlayerBinding } from "./accountTypes";
@@ -286,6 +290,24 @@ function asArray(value: any): any[] {
   return Array.isArray(value) ? value : [];
 }
 
+function ExchangeResourceIcon({ resource }: { resource: any }) {
+  const iconByType: Record<string, typeof Gift> = {
+    coin: Coins,
+    jewel: Gem,
+    virtual_coin: Coins,
+    practice_ticket: Ticket,
+    skill_practice_ticket: Ticket,
+    gacha_ticket: Ticket,
+    boost_item: Zap,
+    avatar_coordinate: UserRound,
+    mysekai_item: Package,
+    mysekai_tool: Wand2
+  };
+  const Icon = iconByType[String(resource?.resourceType ?? "")] ?? Gift;
+  const fallback = <span className="exchange-resource-fallback" title={resource?.name || "奖励素材"}><Icon size={18} aria-hidden="true" /></span>;
+  return <ArtImage src={resource?.imageUrl} srcCandidates={asArray(resource?.imageCandidates)} label={resource?.name || "奖励素材"} fallback={fallback} />;
+}
+
 function rawRecord(value: any): Record<string, any> {
   return value && typeof value === "object" ? value : {};
 }
@@ -374,6 +396,24 @@ export function App() {
   const [catalogs, setCatalogs] = useState<Record<string, CatalogResponse<any>>>({});
   const catalogAborts = useRef(new Map<string, AbortController>());
   const [contentData, setContentData] = useState<Record<string, any>>({});
+  const [selectedInformation, setSelectedInformation] = useState<any>(null);
+  const informationDetailRequest = useRef(0);
+  const [informationPage, setInformationPage] = useState(1);
+  const [informationPageSize, setInformationPageSize] = useState(12);
+  const [exchangeSearch, setExchangeSearch] = useState("");
+  const [exchangeStatus, setExchangeStatus] = useState("");
+  const [exchangeSummaryId, setExchangeSummaryId] = useState("");
+  const [exchangePage, setExchangePage] = useState(1);
+  const [exchangePageSize, setExchangePageSize] = useState(24);
+  const [exchangeDetail, setExchangeDetail] = useState<any>(null);
+  const exchangeDetailRequest = useRef(0);
+  const [virtualLiveDetail, setVirtualLiveDetail] = useState<any>(null);
+  const [mysekaiCatalogKind, setMysekaiCatalogKind] = useState<"fixtures" | "materials" | "blueprints">("fixtures");
+  const [mysekaiCatalog, setMysekaiCatalog] = useState<any>(null);
+  const [mysekaiCatalogQuery, setMysekaiCatalogQuery] = useState("");
+  const [mysekaiCatalogCategory, setMysekaiCatalogCategory] = useState("");
+  const [mysekaiCatalogPage, setMysekaiCatalogPage] = useState(1);
+  const [mysekaiDetail, setMysekaiDetail] = useState<any>(null);
   const [profileId, setProfileId] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [historyEventId, setHistoryEventId] = useState("");
@@ -474,6 +514,7 @@ export function App() {
   const [virtualLivePlayback, setVirtualLivePlayback] = useState<any>(null);
   const [virtualLiveSearch, setVirtualLiveSearch] = useState("");
   const [virtualLiveSort, setVirtualLiveSort] = useState<"desc" | "asc">("desc");
+  const [virtualLiveDisplayCount, setVirtualLiveDisplayCount] = useState(60);
   const [virtualLiveQueue, setVirtualLiveQueue] = useState<{ index: number; title: string; url: string }[]>([]);
   const [virtualLiveQueueIndex, setVirtualLiveQueueIndex] = useState(-1);
   const [virtualLiveQueueWarnings, setVirtualLiveQueueWarnings] = useState<string[]>([]);
@@ -495,6 +536,15 @@ export function App() {
 
   useEffect(() => {
     loadBase(region).catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
+    informationDetailRequest.current += 1;
+    exchangeDetailRequest.current += 1;
+    setSelectedInformation(null);
+    setExchangeDetail(null);
+    setExchangePage(1);
+    setInformationPage(1);
+    setVirtualLiveDetail(null);
+    setVirtualLivePlayback(null);
+    setMysekaiDetail(null);
   }, [region]);
 
   useEffect(() => {
@@ -529,6 +579,12 @@ export function App() {
   }, [activeSection, region, page, pageSize, filter, costumeFilters.partType, costumeFilters.source, costumeFilters.rarity, costumeFilters.gender, costumeFilters.characterId]);
 
   useEffect(() => {
+    if (activeSection === "mysekai") {
+      loadMysekaiCatalog(mysekaiCatalogKind, mysekaiCatalogPage, mysekaiCatalogQuery).catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
+    }
+  }, [activeSection, region, mysekaiCatalogKind, mysekaiCatalogPage, mysekaiCatalogCategory]);
+
+  useEffect(() => {
     if (activeSection === "forecast" && event?.id && event.id !== "none") {
       loadRankingExtras(event.id).catch(() => undefined);
     }
@@ -539,6 +595,8 @@ export function App() {
       window.localStorage.setItem(deckCompareHistoryKey, JSON.stringify(deckCompareHistory.slice(0, 20)));
     }
   }, [deckCompareHistory]);
+
+  useEffect(() => { setVirtualLiveDisplayCount(60); }, [region, virtualLiveSearch, virtualLiveSort]);
 
   async function loadBase(nextRegion: string) {
     setSongs([]);
@@ -645,6 +703,51 @@ export function App() {
     };
     const data = await apiGet<any>(paths[section]);
     setContentData((current) => ({ ...current, [section]: data }));
+  }
+
+  async function openInformation(id: string, title: string) {
+    const requestId = ++informationDetailRequest.current;
+    setSelectedInformation({ id, title, embedStatus: "loading" });
+    try {
+      const detail = await apiGet(`/api/master/${region}/information/${encodeURIComponent(id)}`);
+      if (requestId === informationDetailRequest.current) setSelectedInformation(detail);
+    } catch {
+      if (requestId === informationDetailRequest.current) {
+        setSelectedInformation({ id, title, embedStatus: "error", detailError: "公告详情加载失败，请稍后重试。" });
+      }
+    }
+  }
+
+  function closeInformation() {
+    informationDetailRequest.current += 1;
+    setSelectedInformation(null);
+  }
+
+  async function openExchange(id: string, name: string) {
+    const requestId = ++exchangeDetailRequest.current;
+    setExchangeDetail({ item: { id, name }, loading: true });
+    try {
+      const detail = await apiGet(`/api/master/${region}/exchanges/${encodeURIComponent(id)}`);
+      if (requestId === exchangeDetailRequest.current) setExchangeDetail(detail);
+    } catch {
+      if (requestId === exchangeDetailRequest.current) setExchangeDetail({ item: { id, name }, error: "兑换项详情加载失败，请稍后重试。" });
+    }
+  }
+
+  function closeExchange() {
+    exchangeDetailRequest.current += 1;
+    setExchangeDetail(null);
+  }
+
+  async function loadMysekaiCatalog(kind = mysekaiCatalogKind, nextPage = mysekaiCatalogPage, query = mysekaiCatalogQuery) {
+    const params = new URLSearchParams({ page: String(nextPage), pageSize: "24", sort: "id-desc" });
+    if (query.trim()) params.set("q", query.trim());
+    if (mysekaiCatalogCategory) params.set("category", mysekaiCatalogCategory);
+    setMysekaiCatalog(await apiGet(`/api/master/${region}/mysekai/catalog/${kind}?${params}`));
+  }
+
+  async function openMysekaiItem(kind: "fixtures" | "materials" | "blueprints", id: string) {
+    setMysekaiDetail(await apiGet(`/api/master/${region}/mysekai/catalog/${kind}/${encodeURIComponent(id)}`));
   }
 
   function goSection(section: SectionId) {
@@ -959,6 +1062,12 @@ export function App() {
   async function loadVirtualLivePlayback(virtualLiveId: string) {
     stopVirtualLiveQueue();
     setVirtualLivePlayback(await apiGet(`/api/master/${region}/virtual-lives/${encodeURIComponent(virtualLiveId)}/playback`));
+  }
+
+  async function openVirtualLive(virtualLiveId: string) {
+    stopVirtualLiveQueue();
+    setVirtualLivePlayback(null);
+    setVirtualLiveDetail(await apiGet(`/api/master/${region}/virtual-lives/${encodeURIComponent(virtualLiveId)}/full`));
   }
 
   function buildVirtualLiveQueue(playback = virtualLivePlayback) {
@@ -1591,7 +1700,7 @@ export function App() {
     const binding = defaultBinding();
     const groups = data?.groups ?? {};
     const groupCards = [
-      ["mysekaiFixtureInfos", "家具", "可摆放物与基础信息"],
+      ["mysekaiFixtures", "家具", "可摆放物与基础信息"],
       ["mysekaiBlueprints", "蓝图", "制作与解锁数据"],
       ["mysekaiMaterials", "素材", "MySekai 素材 master"],
       ["mysekaiGates", "大门", "单位/角色加成入口"],
@@ -1616,9 +1725,47 @@ export function App() {
           </div>
           {data?.sourceMetadata?.unavailableReason && <p className="warning-text">{data.sourceMetadata.unavailableReason}</p>}
         </article>
+        <article className="panel wide mysekai-catalog-panel">
+          <div className="panel-heading">
+            <div><h3>MySekai 图鉴</h3><p>浏览家具、素材与制作蓝图；计算工具保留在下方。</p></div>
+            <span>{formatNumber(mysekaiCatalog?.total ?? 0)} 条</span>
+          </div>
+          <div className="mission-tabs mysekai-catalog-tabs">
+            {(["fixtures", "materials", "blueprints"] as const).map((kind) => (
+              <button type="button" className={kind === mysekaiCatalogKind ? "active" : ""} key={kind} onClick={() => { setMysekaiCatalogKind(kind); setMysekaiCatalogPage(1); setMysekaiCatalogCategory(""); }}>
+                {kind === "fixtures" ? "家具" : kind === "materials" ? "素材" : "蓝图"}
+              </button>
+            ))}
+          </div>
+          <form className="mysekai-catalog-toolbar" onSubmit={(event) => { event.preventDefault(); setMysekaiCatalogPage(1); void loadMysekaiCatalog(mysekaiCatalogKind, 1, mysekaiCatalogQuery); }}>
+            <label><Search size={16} /><input value={mysekaiCatalogQuery} onChange={(event) => setMysekaiCatalogQuery(event.target.value)} placeholder="搜索名称或 ID" /></label>
+            <select value={mysekaiCatalogCategory} onChange={(event) => { setMysekaiCatalogCategory(event.target.value); setMysekaiCatalogPage(1); }}>
+              <option value="">全部分类</option>
+              {asArray(mysekaiCatalog?.facets?.categories).map((category: string) => <option value={category} key={category}>{category}</option>)}
+            </select>
+            <button type="submit">搜索</button>
+          </form>
+          <div className="mysekai-catalog-grid">
+            {asArray(mysekaiCatalog?.items).map((item: any) => (
+              <button type="button" className="mysekai-catalog-card" key={`${item.kind}:${item.id}`} onClick={() => openMysekaiItem(item.kind, item.id)}>
+                <ArtImage src={item.imageUrl} srcCandidates={asArray(item.imageCandidates)} label={item.name} />
+                <span>{item.category ?? item.rarity ?? item.kind}</span>
+                <strong>{item.name}</strong>
+                <small>ID {item.id}</small>
+              </button>
+            ))}
+          </div>
+          {!asArray(mysekaiCatalog?.items).length && <p className="empty-state">当前筛选没有可展示内容；缺失集合会按区服单独报告。</p>}
+          <div className="catalog-pagination">
+            <button type="button" className="secondary" disabled={(mysekaiCatalog?.page ?? 1) <= 1} onClick={() => setMysekaiCatalogPage((current) => Math.max(1, current - 1))}>上一页</button>
+            <span>{mysekaiCatalog?.page ?? 1} / {mysekaiCatalog?.totalPages ?? 1}</span>
+            <button type="button" className="secondary" disabled={(mysekaiCatalog?.page ?? 1) >= (mysekaiCatalog?.totalPages ?? 1)} onClick={() => setMysekaiCatalogPage((current) => current + 1)}>下一页</button>
+          </div>
+        </article>
         <section className="mysekai-summary-grid wide">
           {groupCards.map(([key, label, desc]) => {
-            const count = Array.isArray(groups[key]) ? groups[key].length : 0;
+            const rows = Array.isArray(groups[key]) ? groups[key] : key === "mysekaiFixtures" && Array.isArray(groups.mysekaiFixtureInfos) ? groups.mysekaiFixtureInfos : [];
+            const count = rows.length;
             return <article className="panel" key={key}><span>{label}</span><strong>{formatNumber(count)}</strong><small>{desc}</small></article>;
           })}
         </section>
@@ -1626,7 +1773,8 @@ export function App() {
           <h3>分组预览</h3>
           <div className="mysekai-group-list">
             {groupCards.map(([key, label]) => {
-              const rows = Array.isArray(groups[key]) ? groups[key].slice(0, 4) : [];
+              const sourceRows = Array.isArray(groups[key]) ? groups[key] : key === "mysekaiFixtures" && Array.isArray(groups.mysekaiFixtureInfos) ? groups.mysekaiFixtureInfos : [];
+              const rows = sourceRows.slice(0, 4);
               return <section key={key}><h4>{label}</h4>{rows.length ? rows.map((row: any, index: number) => <code key={`${key}:${index}`}>{String(row.name ?? row.assetbundleName ?? row.id ?? `Item ${index + 1}`)}</code>) : <p className="empty-state">暂无可展示样本</p>}</section>;
             })}
           </div>
@@ -1739,10 +1887,19 @@ export function App() {
             </div>
           ) : <p className="empty-state">输入卡牌和 MySekai 资产后生成分项贡献。</p>}
         </article>
-        <article className="panel wide">
-          <h3>资源候选</h3>
-          <pre className="json-preview">{JSON.stringify(data?.assets ?? {}, null, 2)}</pre>
-        </article>
+        {mysekaiDetail && (
+          <div className="modal-backdrop content-detail-backdrop" role="presentation" onMouseDown={() => setMysekaiDetail(null)}>
+            <article className="content-detail-modal mysekai-detail-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+              <div className="panel-heading"><div><h2>{mysekaiDetail.item?.name}</h2><p>{mysekaiDetail.item?.category ?? mysekaiDetail.item?.kind}</p></div><button type="button" className="icon-button" aria-label="关闭详情" onClick={() => setMysekaiDetail(null)}>×</button></div>
+              <div className="mysekai-detail-layout">
+                <ArtImage src={mysekaiDetail.item?.imageUrl} srcCandidates={asArray(mysekaiDetail.item?.imageCandidates)} label={mysekaiDetail.item?.name ?? "MySekai"} />
+                <div><p>{mysekaiDetail.item?.description ?? "暂无说明"}</p><small>ID {mysekaiDetail.item?.id}</small></div>
+              </div>
+              {asArray(mysekaiDetail.materialCosts).length > 0 && <section><h3>制作素材</h3><div className="mysekai-cost-grid">{asArray(mysekaiDetail.materialCosts).map((cost: any, index: number) => <div key={`${cost.id ?? index}`}><ArtImage src={cost.material?.imageUrl} srcCandidates={asArray(cost.material?.imageCandidates)} label={cost.material?.name ?? "素材"} /><strong>{cost.material?.name ?? cost.mysekaiMaterialId}</strong><span>× {cost.quantity}</span></div>)}</div></section>}
+              <details><summary>结构化资料</summary><pre className="json-preview">{JSON.stringify(mysekaiDetail.item?.raw, null, 2)}</pre></details>
+            </article>
+          </div>
+        )}
       </section>
     );
   }
@@ -1761,60 +1918,136 @@ export function App() {
   }
 
   function InformationPage({ data }: { data: any }) {
-    const items = asArray(data?.items);
+    const items = [...asArray(data?.items)].sort((left, right) => {
+      const leftRaw = rawRecord(left.raw ?? left);
+      const rightRaw = rawRecord(right.raw ?? right);
+      const leftTime = Number(leftRaw.startAt ?? 0) || Date.parse(String(left.startAt ?? "")) || 0;
+      const rightTime = Number(rightRaw.startAt ?? 0) || Date.parse(String(right.startAt ?? "")) || 0;
+      return rightTime - leftTime || Number(rightRaw.id ?? 0) - Number(leftRaw.id ?? 0);
+    });
+    const informationPages = Math.max(1, Math.ceil(items.length / informationPageSize));
+    const safeInformationPage = Math.min(informationPage, informationPages);
+    const visibleItems = items.slice((safeInformationPage - 1) * informationPageSize, safeInformationPage * informationPageSize);
     return (
       <section className="content-workspace">
         <article className="panel wide">
           <div className="panel-heading"><div><h2>公告资讯</h2><p>按时间线浏览游戏公告。</p></div><button type="button" onClick={() => loadContent("information")}><RefreshCw size={16} />刷新</button></div>
           <SourcePanel data={data} />
           <div className="timeline-list">
-            {items.map((item: any, index: number) => {
+            {visibleItems.map((item: any, index: number) => {
               const raw = rawRecord(item.raw ?? item);
               const title = contentName(item, `公告 #${index + 1}`);
+              const bannerUrl = String(item.bannerUrl ?? raw.bannerUrl ?? "");
+              const bannerCandidates = asArray(item.bannerImageCandidates ?? raw.bannerImageCandidates);
               return (
-                <article className="timeline-card" key={`${contentId(item, String(index))}:${index}`}>
-                  {item.bannerUrl && <ArtImage src={item.bannerUrl} srcCandidates={[item.bannerUrl]} label={title} />}
+                <button type="button" className="timeline-card timeline-card-button" key={`${contentId(item, String(index))}:${index}`} onClick={() => openInformation(contentId(item, String(index)), title)}>
+                  {bannerUrl && <ArtImage src={bannerUrl} srcCandidates={bannerCandidates.length ? bannerCandidates : [bannerUrl]} label={title} />}
                   <div>
                     <strong>{title}</strong>
                     <span>{String(raw.informationType ?? raw.informationTag ?? raw.browseType ?? "information")}</span>
                     <small>{contentDate(raw.startAt ?? item.startAt)} - {contentDate(raw.endAt ?? item.endAt)}</small>
-                    {item.detailUrl && <a href={item.detailUrl} target="_blank" rel="noreferrer">查看详情</a>}
+                    <span className="text-link">查看详情</span>
                   </div>
-                </article>
+                </button>
               );
             })}
           </div>
+          {items.length > 0 && <Pagination page={safeInformationPage} totalPages={informationPages} pageSize={informationPageSize} onPageChange={setInformationPage} onPageSizeChange={(size) => { setInformationPageSize(size); setInformationPage(1); }} />}
           {items.length === 0 && <p className="empty-state">当前区服没有可展示公告，或 Information API 暂不可用。</p>}
         </article>
+        {selectedInformation && (
+          <div className="modal-backdrop content-detail-backdrop" role="presentation" onMouseDown={closeInformation}>
+            <article className="content-detail-modal announcement-detail-modal" role="dialog" aria-modal="true" aria-label={selectedInformation.title} onMouseDown={(event) => event.stopPropagation()}>
+              <div className="panel-heading">
+                <div><h2>{selectedInformation.title}</h2><p>{contentDate(selectedInformation.startAt)}</p></div>
+                <button type="button" className="icon-button" aria-label="关闭公告详情" onClick={closeInformation}>×</button>
+              </div>
+              {selectedInformation.embedStatus === "ready" ? (
+                <iframe
+                  className="announcement-frame"
+                  src={apiResourceUrl(selectedInformation.embeddedDetailUrl ?? selectedInformation.detailUrl)}
+                  title={selectedInformation.title}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  sandbox="allow-same-origin allow-popups"
+                />
+              ) : selectedInformation.embedStatus === "loading" ? (
+                <p className="empty-state">正在加载公告详情...</p>
+              ) : selectedInformation.embedStatus === "error" ? (
+                <p className="warning-text">{selectedInformation.detailError}</p>
+              ) : selectedInformation.embedStatus === "missing-resource" ? (
+                <p className="empty-state">该公告正文暂不可用，请尝试外部打开。</p>
+              ) : <p className="empty-state">该公告需要使用外部应用或新窗口打开。</p>}
+              {selectedInformation.detailUrl && <a className="text-link" href={selectedInformation.detailUrl} target="_blank" rel="noreferrer">在新窗口打开</a>}
+            </article>
+          </div>
+        )}
       </section>
     );
   }
 
   function ExchangePage({ data }: { data: any }) {
-    const groups = contentGroups(data);
+    const normalizedSearch = exchangeSearch.trim().toLowerCase();
+    const filteredItems = asArray(data?.items).filter((item: any) => {
+      if (exchangeStatus && item.status !== exchangeStatus) return false;
+      if (exchangeSummaryId && String(item.summaryId) !== exchangeSummaryId) return false;
+      if (!normalizedSearch) return true;
+      return [item.id, item.name, item.summaryName, item.category, ...asArray(item.rewards).map((reward: any) => reward.name), ...asArray(item.costs).map((cost: any) => cost.name)]
+        .some((value) => String(value ?? "").toLowerCase().includes(normalizedSearch));
+    });
+    const totalPages = Math.max(1, Math.ceil(filteredItems.length / exchangePageSize));
+    const safePage = Math.min(exchangePage, totalPages);
+    const visibleItems = filteredItems.slice((safePage - 1) * exchangePageSize, safePage * exchangePageSize);
+    const statusLabels: Record<string, string> = { active: "进行中", permanent: "常驻", upcoming: "即将开放", ended: "已结束" };
     return (
       <section className="content-workspace">
         <article className="panel wide">
           <div className="panel-heading"><div><h2>兑换所</h2><p>按分类查看商品、素材和兑换要求。</p></div><button type="button" onClick={() => loadContent("exchanges")}><RefreshCw size={16} />刷新</button></div>
-          <SourcePanel data={data} />
-          <div className="content-group-grid">
-            {groups.map((group) => (
-              <article className="content-group-card" key={group.key}>
-                <div className="card-head"><strong>{group.label ?? group.key}</strong><span>{formatNumber(group.count ?? 0)} 条</span></div>
-                <div className="content-detail-list">
-                  {asArray(group.previewItems).slice(0, 8).map((item: any, index: number) => (
-                    <div key={`${group.key}:${item.id}:${index}`}>
-                      <strong>{item.name}</strong>
-                      <span>{item.category ?? group.key}</span>
-                      <small>ID {item.id}</small>
-                    </div>
-                  ))}
+          <div className="exchange-summary-row">
+            <div><span>兑换所</span><strong>{formatNumber(asArray(data?.summaries).length)}</strong></div>
+            <div><span>兑换项</span><strong>{formatNumber(data?.total ?? 0)}</strong></div>
+            <div><span>当前结果</span><strong>{formatNumber(filteredItems.length)}</strong></div>
+          </div>
+          <div className="exchange-toolbar">
+            <label><Search size={16} /><input value={exchangeSearch} onChange={(event) => { setExchangeSearch(event.target.value); setExchangePage(1); }} placeholder="搜索商品、素材或 ID" /></label>
+            <select value={exchangeStatus} onChange={(event) => { setExchangeStatus(event.target.value); setExchangePage(1); }}>
+              <option value="">全部状态</option>
+              {asArray(data?.facets?.statuses).map((status: string) => <option value={status} key={status}>{statusLabels[status] ?? status}</option>)}
+            </select>
+            <select value={exchangeSummaryId} onChange={(event) => { setExchangeSummaryId(event.target.value); setExchangePage(1); }}>
+              <option value="">全部兑换所</option>
+              {asArray(data?.summaries).map((summary: any) => <option value={String(summary.id)} key={summary.id}>{summary.name}（{summary.count}）</option>)}
+            </select>
+          </div>
+          <div className="exchange-grid">
+            {visibleItems.map((item: any) => (
+              <button type="button" className="exchange-card" key={`${region}:exchange:${item.id}`} onClick={() => openExchange(String(item.id), item.name)}>
+                <div className="exchange-card-head">
+                  <ExchangeResourceIcon resource={asArray(item.rewards)[0] ?? item} />
+                  <div><span>{statusLabels[item.status] ?? item.status}</span><strong>{item.name}</strong><small>{item.summaryName} · ID {item.id}</small></div>
                 </div>
-              </article>
+                <div className="exchange-resource-line"><span>获得</span>{asArray(item.rewards).slice(0, 3).map((reward: any) => <div key={`${reward.resourceType}:${reward.resourceId ?? reward.seq}`}><ExchangeResourceIcon resource={reward} /><small>{reward.name} ×{reward.quantity}</small></div>)}</div>
+                <div className="exchange-resource-line"><span>需要</span>{asArray(item.costs).slice(0, 3).map((cost: any) => <div key={`${cost.costGroupId}:${cost.resourceType}:${cost.resourceId}`}><ExchangeResourceIcon resource={cost} /><small>{cost.name} ×{cost.quantity}</small></div>)}</div>
+              </button>
             ))}
           </div>
-          {groups.length === 0 && <p className="empty-state">兑换所数据暂不可用。</p>}
+          {filteredItems.length > 0 && <Pagination page={safePage} totalPages={totalPages} pageSize={exchangePageSize} onPageChange={setExchangePage} onPageSizeChange={(size) => { setExchangePageSize(size); setExchangePage(1); }} />}
+          {!filteredItems.length && <p className="empty-state">当前筛选没有可展示的兑换项。</p>}
         </article>
+        {exchangeDetail && (
+          <div className="modal-backdrop content-detail-backdrop" role="presentation" onMouseDown={closeExchange}>
+            <article className="content-detail-modal exchange-detail-modal" role="dialog" aria-modal="true" aria-label={exchangeDetail.item?.name ?? "兑换项详情"} onMouseDown={(event) => event.stopPropagation()}>
+              <div className="panel-heading"><div><h2>{exchangeDetail.item?.name}</h2><p>{exchangeDetail.item?.summaryName ?? `ID ${exchangeDetail.item?.id}`}</p></div><button type="button" className="icon-button" aria-label="关闭兑换项详情" onClick={closeExchange}>×</button></div>
+              {exchangeDetail.loading ? <p className="empty-state">正在加载兑换项详情...</p> : exchangeDetail.error ? <p className="warning-text">{exchangeDetail.error}</p> : (
+                <>
+                  <div className="exchange-detail-meta"><span>{statusLabels[exchangeDetail.item?.status] ?? exchangeDetail.item?.status}</span><span>{exchangeDetail.item?.refreshCycle === "monthly" ? "每月刷新" : "不定期刷新"}</span>{exchangeDetail.item?.exchangeLimit != null && <span>限购 {exchangeDetail.item.exchangeLimit} 次</span>}</div>
+                  <section><h3>兑换奖励</h3><div className="exchange-detail-resources">{asArray(exchangeDetail.item?.rewards).map((reward: any) => <div key={`${reward.seq}:${reward.resourceType}`}><ExchangeResourceIcon resource={reward} /><div><strong>{reward.name}</strong><span>× {reward.quantity}</span></div></div>)}</div></section>
+                  <section><h3>兑换成本</h3><div className="exchange-detail-resources">{asArray(exchangeDetail.item?.costs).map((cost: any) => <div key={`${cost.costGroupId}:${cost.seq}:${cost.resourceType}`}><ExchangeResourceIcon resource={cost} /><div><strong>{cost.name}</strong><span>× {cost.quantity}</span></div></div>)}</div></section>
+                </>
+              )}
+            </article>
+          </div>
+        )}
       </section>
     );
   }
@@ -1854,9 +2087,9 @@ export function App() {
   }
 
   function VirtualLivePage({ data }: { data: any }) {
-    const lives = groupItems(data, "virtualLives").map(rawRecord);
+    const lives = asArray(data?.items).map(rawRecord);
     const normalizedSearch = virtualLiveSearch.trim().toLowerCase();
-    const selectedLiveId = virtualLivePlayback?.virtualLiveId ? String(virtualLivePlayback.virtualLiveId) : "";
+    const selectedLiveId = String(virtualLiveDetail?.live?.id ?? virtualLivePlayback?.virtualLiveId ?? "");
     const filteredLives = lives
       .filter((live, index) => {
         if (!normalizedSearch) return true;
@@ -1873,6 +2106,7 @@ export function App() {
         const bTime = Date.parse(String(b.startAt ?? b.startTime ?? b.startDate ?? 0)) || Number(b.startAt ?? b.startTime ?? 0) || 0;
         return virtualLiveSort === "desc" ? bTime - aTime : aTime - bTime;
       });
+    const displayedLives = filteredLives.slice(0, virtualLiveDisplayCount);
     const activeQueueItem = virtualLiveQueueIndex >= 0 ? virtualLiveQueue[virtualLiveQueueIndex] : null;
     const playbackWarnings = [
       ...asArray(virtualLivePlayback?.warnings),
@@ -1940,10 +2174,10 @@ export function App() {
             </button>
           </div>
           <div className="virtual-live-list">
-            {filteredLives.map((live, index) => {
+            {displayedLives.map((live, index) => {
               const id = contentId(live, String(index));
               return (
-                <button type="button" className={id === selectedLiveId ? "active" : ""} key={`${id}:${index}`} onClick={() => loadVirtualLivePlayback(id)}>
+                <button type="button" className={id === selectedLiveId ? "active" : ""} key={`${id}:${index}`} onClick={() => openVirtualLive(id)}>
                   <strong>{contentName(live, `Virtual Live #${index + 1}`)}</strong>
                   <span>{contentDate(live.startAt ?? live.startTime ?? live.startDate)} - {contentDate(live.endAt ?? live.endTime ?? live.endDate)}</span>
                   <small>ID {id} · {String(live.virtualLiveType ?? live.assetbundleName ?? "virtual live")}</small>
@@ -1952,8 +2186,28 @@ export function App() {
             })}
           </div>
           {!filteredLives.length && <p className="empty-state">没有匹配的虚拟 Live。</p>}
+          {displayedLives.length < filteredLives.length && <button type="button" className="secondary" onClick={() => setVirtualLiveDisplayCount((current) => current + 60)}>加载更多（{displayedLives.length} / {filteredLives.length}）</button>}
         </article>
         <article className="panel virtual-playback-panel">
+          {virtualLiveDetail && !virtualLivePlayback && (
+            <>
+              <div className="virtual-live-hero">
+                {asArray(virtualLiveDetail.live?.imageCandidates).length > 0 && <ArtImage src={virtualLiveDetail.live.imageUrl} srcCandidates={virtualLiveDetail.live.imageCandidates} label={virtualLiveDetail.live.name} />}
+                <div><span>{virtualLiveDetail.live?.virtualLiveType ?? "virtual live"}</span><h3>{virtualLiveDetail.live?.name}</h3><p>{contentDate(virtualLiveDetail.live?.startAt)} - {contentDate(virtualLiveDetail.live?.endAt)}</p></div>
+              </div>
+              <div className="story-summary-row">
+                <div><span>日程</span><strong>{formatNumber(asArray(virtualLiveDetail.schedules).length)}</strong></div>
+                <div><span>Setlist</span><strong>{formatNumber(asArray(virtualLiveDetail.setlists).length)}</strong></div>
+                <div><span>奖励</span><strong>{formatNumber(asArray(virtualLiveDetail.rewards).length)}</strong></div>
+              </div>
+              <div className="virtual-live-meta-grid">
+                <section><h4>日程</h4>{asArray(virtualLiveDetail.schedules).slice(0, 12).map((item: any, index: number) => <p key={index}>{contentDate(item.startAt ?? item.startTime)} - {contentDate(item.endAt ?? item.endTime)}</p>)}</section>
+                <section><h4>奖励</h4>{asArray(virtualLiveDetail.rewards).slice(0, 12).map((item: any, index: number) => <p key={index}>{String(item.resourceBoxId ?? item.rewardId ?? `奖励 ${index + 1}`)}</p>)}</section>
+              </div>
+              <div className="button-row"><button type="button" onClick={() => loadVirtualLivePlayback(String(virtualLiveDetail.live.id))}><Play size={16} />加载音频与 MC 回放</button></div>
+              <p className="empty-state">增强播放资源按需加载，不阻塞资料详情。</p>
+            </>
+          )}
           {virtualLivePlayback ? (
             <>
               <div className="virtual-live-hero">
@@ -2005,9 +2259,9 @@ export function App() {
                 </details>
               )}
             </>
-          ) : (
+          ) : !virtualLiveDetail ? (
             <div className="empty-state">从左侧选择一个虚拟 Live，加载真实 setlist、MC timeline、语音和歌曲音频。</div>
-          )}
+          ) : null}
         </article>
       </section>
     );
@@ -2147,7 +2401,10 @@ export function App() {
     if (activeSection === "tools") return <ToolsPage />;
     if (activeSection === "deckCompare") return <DeckComparePage />;
     if (activeSection === "share") return <SharePage />;
-    if (["information", "exchanges", "missions", "virtualLives", "live2d", "mysekai"].includes(activeSection)) return <ContentPage section={activeSection as any} />;
+    if (activeSection === "information") return InformationPage({ data: contentData.information });
+    if (activeSection === "mysekai") return MysekaiPage();
+    if (activeSection === "exchanges") return ExchangePage({ data: contentData.exchanges });
+    if (["missions", "virtualLives", "live2d"].includes(activeSection)) return <ContentPage section={activeSection as any} />;
     if (activeSection === "stories") return <StoriesPage />;
     if (activeSection === "about") return <AboutPage />;
     return <HomePage />;
@@ -2196,8 +2453,8 @@ export function App() {
           <Route path="/me/assets" element={<RequireAuth><AssetsPage /></RequireAuth>} />
           <Route path="/me/deck" element={<RequireAuth><BoundDeckPage eventId={event?.id === "none" ? undefined : event?.id} /></RequireAuth>} />
           <Route path="/me/scores" element={<RequireAuth><ScoresPage songs={songs} region={region} /></RequireAuth>} />
-          <Route path="/" element={<LegacySections />} />
-          <Route path="/section/:sectionId" element={<LegacySections />} />
+          <Route path="/" element={LegacySections()} />
+          <Route path="/section/:sectionId" element={LegacySections()} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </section>

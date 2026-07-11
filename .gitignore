@@ -7,6 +7,7 @@ dist/
 .DS_Store
 *.log
 apps/api/data/reference-cache/
+apps/api/data/content-cache/
 apps/api/data/master-cache/
 apps/api/data/music-meta/
 apps/api/data/music-score/

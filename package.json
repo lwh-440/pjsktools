@@ -16,6 +16,7 @@
     "verify:local": "npm run build -w apps/api && npx tsc -b apps/web/tsconfig.json && npm run check:encoding && node scripts/smoke-local.mjs",
     "verify:regions": "npm run build -w apps/api && node scripts/verify-regions.mjs",
     "verify:story-live2d": "npm run build -w apps/api && node scripts/verify-story-live2d.mjs",
+    "verify:content": "npm run build -w apps/api && node scripts/verify-content.mjs",
     "verify:card-import": "npm run build -w apps/api && node scripts/verify-card-import.mjs",
     "check:encoding": "node scripts/check-encoding.mjs",
     "config:haruki": "node scripts/set-haruki-base-url.mjs"

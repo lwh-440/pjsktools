@@ -47,7 +47,7 @@ for (const region of regions) {
   if (!parsed.preloadPlan.models.find((model) => model.costumeType === "costume_a")?.motions.includes("talk01")) failures.push(`${region}: motion plan`);
   if (!parsed.unsupportedActions.includes("SnippetAction.99")) failures.push(`${region}: unsupported action`);
   const urls = parsed.preloadPlan.media.map((item) => item.url).filter(Boolean);
-  const expectedDirectory = { jp: "/sekai-jp-assets/", en: "/sekai-en-assets/", tw: "/sekai-tc-assets/", kr: "/sekai-kr-assets/", cn: "/sekai-cn-assets/" }[region];
+  const expectedDirectory = { jp: "/sekai-jp-assets/", en: "/sekai-en-assets/", tw: "/sekai-tw-assets/", kr: "/sekai-kr-assets/", cn: "/sekai-cn-assets/" }[region];
   if (urls.some((url) => !url.includes(expectedDirectory))) failures.push(`${region}: cross-region media URL`);
 }
 

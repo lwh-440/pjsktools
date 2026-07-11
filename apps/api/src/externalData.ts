@@ -42,6 +42,7 @@ export interface InformationItem {
   startAt?: number;
   endAt?: number;
   bannerUrl?: string;
+  bannerImageCandidates?: string[];
   detailUrl?: string;
   raw: unknown;
 }
@@ -107,15 +108,19 @@ const oldComicAssetbundleNames = Array.from({ length: 40 }, (_, index) => `comic
 
 const metadataCollections: Record<string, string[]> = {
   costumes: ["moe_costume.json"],
-  exchanges: ["materialExchanges.json", "materialExchangeSummaries.json", "exchangeItems.json", "exchanges.json"],
+  // Exchange entries are nested in summaries. Costs and rewards use the three lookup collections below.
+  exchanges: ["materialExchangeSummaries.json", "materials.json", "mysekaiMaterials.json", "resourceBoxes.json"],
   shopItems: ["shopItems.json", "billingShopItems.json", "goods.json"],
   missions: ["normalMissions.json", "beginnerMissions.json", "characterMissions.json", "honorMissions.json"],
-  virtualLives: ["virtualLives.json", "virtualLiveSchedules.json", "virtualLiveSetlists.json", "virtualLiveRewards.json"],
+  // Schedules, setlists, and rewards are nested in virtualLives on current metadata servers.
+  virtualLives: ["virtualLives.json"],
   mysekai: [
-    "mysekaiFixtureInfos.json",
+    "mysekaiFixtures.json",
+    "mysekaiFixtureMainGenres.json",
+    "mysekaiFixtureSubGenres.json",
     "mysekaiBlueprints.json",
+    "mysekaiBlueprintMaterialCosts.json",
     "mysekaiMaterials.json",
-    "mysekaiFixtureGenres.json",
     "mysekaiFixtureTags.json",
     "mysekaiCharacterTalks.json",
     "mysekaiCharacterTalkConditions.json",
@@ -154,7 +159,7 @@ function displayName(raw: unknown, fallback: string) {
 
 function recordId(raw: unknown, fallback: string) {
   const record = asRecord(raw);
-  return String(record.id ?? record.storyId ?? record.scenarioId ?? record.assetbundleName ?? record.seq ?? fallback);
+  return String(record.id ?? record.storyId ?? record.scenarioId ?? record.unit ?? record.assetbundleName ?? record.seq ?? fallback);
 }
 
 function previewItem(raw: unknown, group: string, index: number): DisplayPreviewItem {
@@ -394,6 +399,20 @@ async function fetchMetadataFile<T>(region: RegionId, path: string): Promise<{ d
   }
 }
 
+export async function getOptionalMetadata(region: RegionId, path: string) {
+  try {
+    const result = await fetchMetadataFile<unknown>(region, path);
+    return { ...result, status: "matched" as const };
+  } catch (error) {
+    return {
+      data: [],
+      source: metadataSource(region, path, error),
+      status: "missing-data" as const,
+      warning: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
 async function fetchFirstMetadata(region: RegionId, paths: string[]) {
   let lastError: unknown;
   for (const path of paths) {
@@ -463,7 +482,7 @@ function resolveStoryMatches(entries: Awaited<ReturnType<typeof fetchManyMetadat
       .filter(({ raw, group }) => {
         if (!raw || typeof raw !== "object") return false;
         const record = raw as Record<string, unknown>;
-        const id = String(record.id ?? record.scenarioId ?? record.assetbundleName ?? "");
+        const id = String(record.id ?? record.scenarioId ?? record.unit ?? record.assetbundleName ?? "");
         return (group.toLowerCase().includes(normalizedType) || normalizedType === "any") && id === storyId;
       });
   });
@@ -520,9 +539,17 @@ function scenarioInfosForMatch(region: RegionId, match: { raw: unknown; group: s
   const parent = asRecord(match.raw);
   const children = firstArrayField(parent, ["eventStoryEpisodes", "episodes", "chapters", "unitStoryEpisodes", "specialStoryEpisodes"]);
   if (children.length) {
-    return children
-      .map((child, index) => childScenarioInfo(region, match.group, parent, asRecord(child), index, storyType, storyId))
-      .filter((item): item is ScenarioInfo => Boolean(item));
+    return children.flatMap((child, index) => {
+      const childRecord = asRecord(child);
+      const nestedEpisodes = firstArrayField(childRecord, ["episodes", "unitStoryEpisodes"]);
+      if (nestedEpisodes.length) {
+        return nestedEpisodes
+          .map((episode, episodeIndex) => childScenarioInfo(region, match.group, { ...parent, assetbundleName: childRecord.assetbundleName ?? parent.assetbundleName }, asRecord(episode), index * 100 + episodeIndex, storyType, storyId))
+          .filter((item): item is ScenarioInfo => Boolean(item));
+      }
+      const info = childScenarioInfo(region, match.group, parent, childRecord, index, storyType, storyId);
+      return info ? [info] : [];
+    });
   }
   const self = childScenarioInfo(region, match.group, parent, parent, match.index, storyType, storyId);
   return self ? [self] : [];
@@ -721,7 +748,20 @@ export function normalizeScenarioData(region: RegionId, info: ScenarioInfo, scen
     }
   }
 
-  const live2dModels = appearCharacters.map((character) => {
+  const appearByCharacter = new Map(appearCharacters.map((character) => [Number(character.Character2dId), character]));
+  const referencedCharacterIds = new Set<number>();
+  for (const action of actions) {
+    if (action.character2dId != null) referencedCharacterIds.add(Number(action.character2dId));
+    if (Array.isArray(action.motions)) {
+      for (const motion of action.motions as Record<string, unknown>[]) {
+        if (motion.Character2dId != null) referencedCharacterIds.add(Number(motion.Character2dId));
+      }
+    }
+  }
+  const referencedCharacters = referencedCharacterIds.size
+    ? [...referencedCharacterIds].map((id) => appearByCharacter.get(id)).filter((item): item is Record<string, unknown> => Boolean(item))
+    : appearCharacters.slice(0, 6);
+  const live2dModels = referencedCharacters.map((character) => {
     const costumeType = String(character.CostumeType ?? "");
     const matched = modelList.find((model) => model.modelPath === costumeType || model.id === costumeType || model.modelPath?.endsWith(`/${costumeType}`));
     if (!matched && costumeType) warnings.push(`Live2D model not found for costume ${costumeType}`);
@@ -736,7 +776,7 @@ export function normalizeScenarioData(region: RegionId, info: ScenarioInfo, scen
     };
   });
 
-  const currentCostume = new Map(appearCharacters.map((character) => [Number(character.Character2dId), String(character.CostumeType ?? "")]));
+  const currentCostume = new Map(referencedCharacters.map((character) => [Number(character.Character2dId), String(character.CostumeType ?? "")]));
   const modelQueue: string[][] = [];
   const recent: string[] = [];
   const pushQueue = (costumes: string[]) => {
@@ -764,7 +804,7 @@ export function normalizeScenarioData(region: RegionId, info: ScenarioInfo, scen
     if (motion) (requiredMotions.get(costume) ?? requiredMotions.set(costume, new Set()).get(costume))?.add(String(motion).replaceAll(" ", ""));
     if (expression) (requiredExpressions.get(costume) ?? requiredExpressions.set(costume, new Set()).get(costume))?.add(String(expression).replaceAll(" ", ""));
   };
-  const costumeByCharacter = new Map(appearCharacters.map((character) => [Number(character.Character2dId), String(character.CostumeType ?? "")]));
+  const costumeByCharacter = new Map(referencedCharacters.map((character) => [Number(character.Character2dId), String(character.CostumeType ?? "")]));
   for (const action of actions) {
     if (action.type === "CharacterLayout" || action.type === "CharacterMotion") {
       const costume = String(action.costumeType ?? costumeByCharacter.get(Number(action.character2dId)) ?? "");
@@ -782,11 +822,11 @@ export function normalizeScenarioData(region: RegionId, info: ScenarioInfo, scen
     audio: Array.from(media.values()).filter((asset) => asset && ["voice", "bgm", "se"].includes(asset.kind)),
     video: Array.from(media.values()).filter((asset) => asset?.kind === "video")
   };
-  const modelsWithActions = live2dModels.map((model) => ({
+  const modelsWithActions = Array.from(new Map(live2dModels.map((model) => [model.costumeType, {
     ...model,
     motions: [...(requiredMotions.get(model.costumeType) ?? [])],
     expressions: [...(requiredExpressions.get(model.costumeType) ?? [])]
-  }));
+  }])).values());
   const preloadPlan = {
     region,
     stages: ["scenario", "media", "model-data", "model-assets", "model-motion", "render-model"],
@@ -859,6 +899,11 @@ export function normalizeScenarioData(region: RegionId, info: ScenarioInfo, scen
       modelQueueMax: 6,
       referenceIndexPreserved: true,
       degradationPolicy: "text, background, and audio remain available when the Live2D runtime or a region resource is unavailable"
+    },
+    renderAcceptance: {
+      status: "pending-browser-validation",
+      serverValidation: "scenario-parsed",
+      matchedPolicy: "Only browser canvas, model, action, and media checks may promote this scenario to matched."
     },
     runtimeRequirements: ["pixi.js@7", "@sekai-world/pixi-live2d-display-mulmotion", "howler", "Cubism Core"],
     warnings
@@ -989,13 +1034,22 @@ export async function informationCollection(region: RegionId): Promise<ResolvedC
     const items = (data.informations ?? []).map((item) => {
       const raw = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const bannerAssetbundleName = typeof raw.bannerAssetbundleName === "string" ? raw.bannerAssetbundleName : "";
+      const encodedBannerName = bannerAssetbundleName ? encodeURIComponent(bannerAssetbundleName) : "";
+      const directCandidates = encodedBannerName ? [
+        `${imageBase}/${encodedBannerName}.png`,
+        `${imageBase}/${encodedBannerName}.webp`
+      ] : [];
+      const bannerImageCandidates = directCandidates.flatMap((url) => [url, proxyUrl(url)]).filter((url): url is string => Boolean(url));
       return {
         ...raw,
-        bannerUrl: bannerAssetbundleName ? `${imageBase}/${encodeURIComponent(bannerAssetbundleName)}.webp` : undefined,
+        bannerUrl: bannerImageCandidates[0],
+        bannerImageCandidates,
         detailUrl: typeof raw.path === "string"
-          ? region === "jp"
-            ? `https://production-web.sekai.colorfulpalette.org/${raw.path.replace(/^\/+/, "")}`
-            : raw.path
+          ? /^https?:\/\//i.test(raw.path)
+            ? raw.path
+            : region === "jp"
+              ? `https://production-web.sekai.colorfulpalette.org/${raw.path.replace(/^\/+/, "")}`
+              : raw.path
           : undefined
       } satisfies Partial<InformationItem>;
     });
@@ -1077,7 +1131,15 @@ export async function getLive2dModels(_region: RegionId): Promise<{ models: Live
         raw
       };
     });
-    return { models, sourceMetadata, realDataRequired: true };
+    return {
+      models,
+      sourceMetadata: {
+        ...sourceMetadata,
+        scope: "global-shared-model-asset",
+        regionAvailability: "A model is playable only after a scenario in the selected region references it and its files load successfully."
+      } as ExternalDataSource,
+      realDataRequired: true
+    };
   } catch (error) {
     return { models: [], sourceMetadata: live2dSource(error), realDataRequired: true };
   }
@@ -1152,7 +1214,11 @@ export async function getLive2dModel3Proxy(region: RegionId, modelId: string) {
 }
 
 export async function getExternalContext(region: RegionId, kind: "exchanges" | "missions" | "virtualLives" | "mysekai") {
-  const paths = metadataCollections[kind] ?? [];
+  // Overseas metadata keeps resource-box details in a separate collection,
+  // while JP/EN already embed them in resourceBoxes.json.
+  const paths = kind === "exchanges" && ["tw", "kr", "cn"].includes(region)
+    ? [...metadataCollections.exchanges, "resourceBoxDetails.json"]
+    : metadataCollections[kind] ?? [];
   const entries = await fetchManyMetadata(region, paths);
   const groups = Object.fromEntries(entries.map((entry) => [entry.path.replace(/\.json$/i, ""), entry.data]));
   const firstSource = entries.find((entry) => !entry.unavailableReason)?.source ?? metadataSource(region, paths[0] ?? kind, entries[0]?.unavailableReason);
@@ -1182,7 +1248,13 @@ export async function getExternalContext(region: RegionId, kind: "exchanges" | "
 
 export async function getMysekaiFullContext(region: RegionId) {
   const context = await getExternalContext(region, "mysekai");
-  const groups = context.groups as Record<string, unknown[]>;
+  const sourceGroups = context.groups as Record<string, unknown[]>;
+  const groups: Record<string, unknown[]> = {
+    ...sourceGroups,
+    // Compatibility aliases for older web clients.
+    mysekaiFixtureInfos: sourceGroups.mysekaiFixtures ?? [],
+    mysekaiFixtureGenres: sourceGroups.mysekaiFixtureMainGenres ?? []
+  };
   const groupedPreview = Object.fromEntries(Object.entries(groups).map(([key, value]) => [
     key,
     {
@@ -1203,7 +1275,7 @@ export async function getMysekaiFullContext(region: RegionId) {
       ]
     },
     summary: {
-      fixtures: Array.isArray(groups.mysekaiFixtureInfos) ? groups.mysekaiFixtureInfos.length : 0,
+      fixtures: Array.isArray(groups.mysekaiFixtures) ? groups.mysekaiFixtures.length : 0,
       blueprints: Array.isArray(groups.mysekaiBlueprints) ? groups.mysekaiBlueprints.length : 0,
       materials: Array.isArray(groups.mysekaiMaterials) ? groups.mysekaiMaterials.length : 0,
       gates: Array.isArray(groups.mysekaiGates) ? groups.mysekaiGates.length : 0,
@@ -1354,6 +1426,7 @@ export async function getStoryPlaybackContext(region: RegionId, storyType: strin
     preloadStatus: parsed?.preloadStatus ?? { mediaAssets: [], live2dModels: [] },
     runtimeRequirements: parsed?.runtimeRequirements ?? [],
     playbackDiagnostics: parsed?.playbackDiagnostics ?? { playbackVersion: "story-live2d-v2-reference", actionCount: 0 },
+    renderAcceptance: parsed?.renderAcceptance ?? { status: "not-applicable", serverValidation: "scenario-unavailable" },
     unsupportedActions: parsed?.unsupportedActions ?? [],
     sourceMetadata: source,
     sourceHealth: sourceHealthFromEntries(entries),

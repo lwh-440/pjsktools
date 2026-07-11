@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { apiResourceUrl } from "../api";
 
-const pageSizeOptions = [24, 48, 96];
+const pageSizeOptions = [12, 24, 48, 96];
 const successfulImageSources = new Map<string, string>();
 const failedImageSources = new Set<string>();
 
@@ -12,13 +12,15 @@ export function ArtImage({
   srcCandidates,
   label,
   variant = "square",
-  eager = false
+  eager = false,
+  fallback
 }: {
   src?: string;
   srcCandidates?: Array<string | undefined>;
   label: string;
   variant?: "square" | "card" | "wide" | "avatar";
   eager?: boolean;
+  fallback?: ReactNode;
 }) {
   const sources = useMemo(
     () => [...new Set([src, ...(srcCandidates ?? [])].filter((value): value is string => Boolean(value && value.trim())).map(apiResourceUrl))],
@@ -76,7 +78,7 @@ export function ArtImage({
   if (failed || sources.length === 0) {
     return (
       <div className={`art-fallback ${variant}`}>
-        <span>真实图片暂不可用</span>
+        {fallback ?? <span>图片暂不可用</span>}
       </div>
     );
   }

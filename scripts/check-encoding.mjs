@@ -6,7 +6,7 @@ const extensions = new Set([".ts", ".tsx", ".css", ".html", ".json", ".md", ".kt
 const suspiciousPatterns = [
   /\uFFFD/u,
   /\?{4,}/u,
-  /鐩|褰|鍗|绋|涓|鏃|瑙|妗|鏆|姝|鍔|绾|鎼|鏉|瀹|銆|鈽/u
+  /鐩|褰|鍗|绋|涓|鏃|瑙|妗|鏆|姝|鍔|绾|鎼|鏉|瀹|銆|鈽|鎾|妯|杩|濯|棰|琛|璧/u
 ];
 
 async function collectFiles(target) {

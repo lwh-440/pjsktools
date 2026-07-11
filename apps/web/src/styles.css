@@ -3941,6 +3941,139 @@ code {
 .screenshot-result.matched { border-color: #70ad8d; } .screenshot-result.ambiguous { border-color: #d7a94a; } .screenshot-result.unknown { border-color: #c97979; }
 .screenshot-result > img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; }
 .inventory-modal-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(16,27,38,.58); }
+
+.timeline-card-button {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.timeline-card-button .art-frame,
+.timeline-card-button .art-image {
+  width: 128px;
+  max-width: 100%;
+}
+
+.timeline-card-button > div { min-width: 0; }
+
+.content-detail-backdrop {
+  position: fixed;
+  z-index: 130;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(13, 24, 34, .64);
+}
+
+.content-detail-modal {
+  width: min(1040px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .28);
+}
+
+.announcement-frame {
+  width: 100%;
+  height: min(72vh, 760px);
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.mysekai-catalog-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, 240px) auto;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.mysekai-catalog-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.mysekai-catalog-toolbar label input { width: 100%; border: 0; background: transparent; }
+
+.mysekai-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.mysekai-catalog-card {
+  min-width: 0;
+  padding: 10px;
+  text-align: left;
+  color: var(--text);
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.mysekai-catalog-card .art-image { width: 100%; aspect-ratio: 1; object-fit: contain; }
+.mysekai-catalog-card strong, .mysekai-catalog-card span, .mysekai-catalog-card small { display: block; overflow-wrap: anywhere; }
+.mysekai-catalog-card span, .mysekai-catalog-card small { color: var(--muted); }
+
+.mysekai-detail-layout { display: grid; grid-template-columns: minmax(180px, 320px) 1fr; gap: 20px; align-items: start; }
+.mysekai-detail-layout .art-image { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--surface-soft); }
+.mysekai-cost-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.mysekai-cost-grid > div { padding: 8px; border: 1px solid var(--line); background: var(--surface-soft); }
+.mysekai-cost-grid .art-image { width: 56px; height: 56px; object-fit: contain; }
+
+.exchange-summary-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.exchange-summary-row > div { display: grid; gap: 3px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface-soft); }
+.exchange-summary-row span { color: var(--muted); font-size: 12px; }
+.exchange-summary-row strong { font-size: 20px; }
+.exchange-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(140px, 180px) minmax(180px, 280px); gap: 10px; margin-bottom: 14px; }
+.exchange-toolbar label { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 10px; border: 1px solid var(--line); background: var(--surface); }
+.exchange-toolbar input { width: 100%; min-width: 0; border: 0; background: transparent; }
+.exchange-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.exchange-card { display: grid; gap: 10px; min-width: 0; padding: 12px; text-align: left; color: var(--text); border: 1px solid var(--line); background: var(--surface); }
+.exchange-card:hover { border-color: var(--accent); background: var(--surface-soft); }
+.exchange-card-head { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; align-items: center; }
+.exchange-card-head .art-frame, .exchange-card-head .art-image { width: 64px; height: 64px; object-fit: contain; background: var(--surface-soft); }
+.exchange-card-head > div { display: grid; min-width: 0; gap: 2px; }
+.exchange-card-head span { width: max-content; padding: 2px 6px; border: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.exchange-card-head strong, .exchange-card-head small { overflow-wrap: anywhere; }
+.exchange-card-head small { color: var(--muted); }
+.exchange-resource-line { display: grid; grid-template-columns: 38px repeat(3, minmax(0, 1fr)); gap: 6px; align-items: center; min-width: 0; }
+.exchange-resource-line > span { color: var(--muted); font-size: 12px; }
+.exchange-resource-line > div { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 5px; align-items: center; min-width: 0; }
+.exchange-resource-line .art-frame, .exchange-resource-line .art-image { width: 30px; height: 30px; object-fit: contain; }
+.exchange-resource-fallback { display: grid; place-items: center; width: 100%; height: 100%; color: var(--muted); }
+.exchange-resource-line small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exchange-detail-meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 18px; }
+.exchange-detail-meta span { padding: 5px 8px; border: 1px solid var(--line); background: var(--surface-soft); }
+.exchange-detail-resources { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.exchange-detail-resources > div { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; align-items: center; min-width: 0; padding: 8px; border: 1px solid var(--line); background: var(--surface-soft); }
+.exchange-detail-resources .art-frame, .exchange-detail-resources .art-image { width: 56px; height: 56px; object-fit: contain; }
+.exchange-detail-resources > div > div { display: grid; gap: 3px; min-width: 0; }
+.exchange-detail-resources strong { overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .content-detail-backdrop { padding: 8px; }
+  .content-detail-modal { width: 100%; max-height: 96vh; padding: 14px; }
+  .announcement-frame { height: 72vh; }
+  .mysekai-catalog-toolbar { grid-template-columns: 1fr; }
+  .mysekai-catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mysekai-detail-layout { grid-template-columns: 1fr; }
+  .exchange-summary-row, .exchange-toolbar { grid-template-columns: 1fr; }
+  .exchange-grid { grid-template-columns: 1fr; }
+  .exchange-resource-line { grid-template-columns: 38px minmax(0, 1fr); }
+  .exchange-resource-line > div { grid-column: 2; }
+  .timeline-card-button { grid-template-columns: 92px minmax(0, 1fr); }
+  .timeline-card-button .art-frame, .timeline-card-button .art-image { width: 92px; }
+}
 .inventory-modal { width: min(620px,100%); max-height: calc(100vh - 36px); overflow: auto; display: grid; gap: 16px; border-radius: 8px; background: #fff; padding: 18px; }
 .inventory-edit-head { display: grid; grid-template-columns: 130px minmax(0,1fr); gap: 14px; align-items: center; }
 .inventory-edit-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }

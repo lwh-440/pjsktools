@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
+import { classifyInformationDetail } from "../src/contentData.js";
 
 describe("pjsktools api", () => {
   it("lists supported regions", async () => {
@@ -13,6 +14,39 @@ describe("pjsktools api", () => {
     const app = await buildApp();
     const response = await app.inject({ method: "GET", url: "/api/master/xx/songs" });
     expect(response.statusCode).toBe(400);
+  });
+
+  it("classifies JP and CN information details without cross-region URL rules", () => {
+    expect(classifyInformationDetail("jp", {
+      browseType: "internal",
+      path: "/information/index.html?id=notice_123"
+    })).toMatchObject({
+      detailKind: "jp-static-id",
+      embedStatus: "ready",
+      staticContentId: "notice_123",
+      contentSourceUrl: "https://production-web.sekai.colorfulpalette.org/html/notice_123.html"
+    });
+    expect(classifyInformationDetail("jp", {
+      browseType: "external",
+      path: "https://pjsekai.sega.jp/"
+    })).toMatchObject({ detailKind: "external", embedStatus: "external-only", detailUrl: "https://pjsekai.sega.jp/" });
+    expect(classifyInformationDetail("jp", {
+      browseType: "external",
+      detailUrl: "https://production-web.sekai.colorfulpalette.org/https://pjsekai.sega.jp/"
+    })).toMatchObject({ detailUrl: "https://pjsekai.sega.jp/", embedStatus: "external-only" });
+
+    expect(classifyInformationDetail("cn", {
+      browseType: "internal",
+      path: "https://lf3-cdn-tos.draftstatic.com/obj/pjsk/example.html"
+    })).toMatchObject({ detailKind: "cn-static-url", embedStatus: "ready" });
+    expect(classifyInformationDetail("cn", {
+      browseType: "external",
+      path: "weixin://dl/business/?appid=test"
+    })).toMatchObject({ detailKind: "external", embedStatus: "external-only" });
+    expect(classifyInformationDetail("cn", {
+      browseType: "internal",
+      path: "https://example.com/untrusted.html"
+    })).toMatchObject({ detailKind: "external", embedStatus: "missing-resource" });
   });
 
   it("returns a real-data asset config", async () => {
