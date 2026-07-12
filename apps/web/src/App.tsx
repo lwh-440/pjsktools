@@ -308,6 +308,47 @@ function ExchangeResourceIcon({ resource }: { resource: any }) {
   return <ArtImage src={resource?.imageUrl} srcCandidates={asArray(resource?.imageCandidates)} label={resource?.name || "奖励素材"} fallback={fallback} />;
 }
 
+const missionTypeLabels: Record<string, string> = {
+  live_clear: "完成 Live",
+  clear_live: "完成 Live",
+  play_live: "进行 Live",
+  clear_solo_challenge_live: "完成挑战 Live",
+  clear_virtual_live: "参加虚拟 Live",
+  use_virtual_item: "使用虚拟道具",
+  make_friend: "添加好友",
+  set_honor: "设置称号",
+  make_rare_costume_3d: "制作稀有服装",
+  make_another_color_costume_3d: "制作异色服装",
+  buy_avatar_skin: "兑换虚拟形象服装",
+  read_card_episode_first: "阅读前篇卡牌剧情",
+  read_card_episode_second: "阅读后篇卡牌剧情",
+  read_character_profile_episode: "阅读角色档案",
+  character_rank_3: "提升角色 Rank",
+  master_rank: "提升 Master Rank",
+  skill_level_2: "提升技能等级",
+  clear_live_another_vocal: "使用 Another Vocal 完成 Live",
+  inherit_platform: "完成账号继承",
+  waiting_room: "成员进入休息室",
+  collect_costume_3d: "收集服装",
+  collect_stamp: "收集贴纸",
+  read_area_talk: "阅读区域对话",
+  skill_level_up: "提升技能等级",
+  collect_another_vocal: "收集 Another Vocal",
+  area_item_level_up_character: "升级角色区域道具",
+  area_item_level_up_unit: "升级组合区域道具",
+  area_item_level_up_reality_world: "升级现实世界区域道具",
+  collect_member: "收集成员"
+};
+
+function missionTypeLabel(type: unknown) {
+  const key = String(type ?? "unknown");
+  return missionTypeLabels[key] ?? key.replaceAll("_", " ");
+}
+
+function StatefulRenderBoundary({ render }: { render: () => any }) {
+  return render();
+}
+
 function rawRecord(value: any): Record<string, any> {
   return value && typeof value === "object" ? value : {};
 }
@@ -2054,33 +2095,85 @@ export function App() {
 
   function MissionPage({ data }: { data: any }) {
     const groups = contentGroups(data);
-    const [missionTab, setMissionTab] = useState(groups[0]?.key ?? "normalMissions");
+    const [missionTab, setMissionTab] = useState(groups[0]?.key ?? "normal");
+    const [missionSearch, setMissionSearch] = useState("");
+    const [missionType, setMissionType] = useState("all");
+    const [missionCharacter, setMissionCharacter] = useState("all");
+    const [missionCategory, setMissionCategory] = useState("all");
+    const [missionSort, setMissionSort] = useState("seq");
+    const [missionPage, setMissionPage] = useState(1);
+    const [missionPageSize, setMissionPageSize] = useState(24);
+    const [expandedMissionId, setExpandedMissionId] = useState<string | null>(null);
     const selected = groups.find((group) => group.key === missionTab) ?? groups[0];
-    const items = selected ? groupItems(data, selected.key).slice(0, 80) : [];
+    const allItems = selected ? groupItems(data, selected.key) : [];
+    const types = Array.from(new Set(allItems.map((item: any) => String(item.missionType ?? "unknown")))).sort();
+    const characters = Array.from(new Map(allItems.filter((item: any) => item.character).map((item: any) => [String(item.character.id), item.character])).values()) as any[];
+    const categories = Array.from(new Set(allItems.map((item: any) => item.category).filter(Boolean).map(String))).sort();
+    const normalizedSearch = missionSearch.trim().toLowerCase();
+    const filteredItems = allItems.filter((item: any) => {
+      if (missionType !== "all" && String(item.missionType) !== missionType) return false;
+      if (missionCharacter !== "all" && String(item.character?.id) !== missionCharacter) return false;
+      if (missionCategory !== "all" && String(item.category) !== missionCategory) return false;
+      if (!normalizedSearch) return true;
+      return [item.id, item.sentence, item.missionType, item.character?.name].filter(Boolean).join(" ").toLowerCase().includes(normalizedSearch);
+    }).sort((left: any, right: any) => {
+      if (missionSort === "id") return Number(left.id) - Number(right.id);
+      if (missionSort === "requirement") return Number(left.requirement ?? 0) - Number(right.requirement ?? 0);
+      if (missionSort === "stages") return asArray(right.stages).length - asArray(left.stages).length;
+      return Number(left.seq ?? left.id ?? 0) - Number(right.seq ?? right.id ?? 0);
+    });
+    const totalPages = Math.max(1, Math.ceil(filteredItems.length / missionPageSize));
+    const items = filteredItems.slice((missionPage - 1) * missionPageSize, missionPage * missionPageSize);
     useEffect(() => {
       if (groups.length && !groups.some((group) => group.key === missionTab)) setMissionTab(groups[0].key);
     }, [groups.map((group) => group.key).join("|")]);
+    useEffect(() => {
+      setMissionPage(1);
+      setExpandedMissionId(null);
+    }, [missionTab, missionSearch, missionType, missionCharacter, missionCategory, missionSort]);
+    useEffect(() => {
+      if (missionPage > totalPages) setMissionPage(totalPages);
+    }, [missionPage, totalPages]);
     return (
       <section className="content-workspace">
         <article className="panel wide">
-          <div className="panel-heading"><div><h2>任务</h2><p>normal、beginner、character、honor 分组查看任务条件与奖励摘要。</p></div><button type="button" onClick={() => loadContent("missions")}><RefreshCw size={16} />刷新</button></div>
-          <SourcePanel data={data} />
+          <div className="panel-heading"><div><h2>任务</h2><p>查看普通、新手、角色和称号任务的条件、阶段与奖励。</p></div><button type="button" onClick={() => loadContent("missions")}><RefreshCw size={16} />刷新</button></div>
+          {data?.capabilityStatus === "partial" && <p className="status-note">部分任务资料缺失，其他分组仍可正常浏览。</p>}
           <div className="mission-tabs">
             {groups.map((group) => <button type="button" className={group.key === selected?.key ? "active" : ""} key={group.key} onClick={() => setMissionTab(group.key)}>{group.label ?? group.key}<span>{formatNumber(group.count ?? 0)}</span></button>)}
           </div>
-          <div className="content-detail-list spacious">
+          <div className="mission-toolbar">
+            <SearchBox value={missionSearch} onChange={setMissionSearch} placeholder="搜索任务、角色或 ID" />
+            <select value={missionType} onChange={(event) => setMissionType(event.target.value)} aria-label="任务类型"><option value="all">全部类型</option>{types.map((type) => <option key={type} value={type}>{missionTypeLabel(type)}</option>)}</select>
+            {characters.length > 0 && <select value={missionCharacter} onChange={(event) => setMissionCharacter(event.target.value)} aria-label="角色"><option value="all">全部角色</option>{characters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select>}
+            {categories.length > 0 && <select value={missionCategory} onChange={(event) => setMissionCategory(event.target.value)} aria-label="新手任务分类"><option value="all">全部分类</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select>}
+            <select value={missionSort} onChange={(event) => setMissionSort(event.target.value)} aria-label="任务排序"><option value="seq">任务顺序</option><option value="id">任务 ID</option><option value="requirement">要求值</option><option value="stages">阶段数量</option></select>
+          </div>
+          <p className="catalog-result-count">共 {formatNumber(filteredItems.length)} 条任务</p>
+          <div className="mission-card-grid">
             {items.map((item: any, index: number) => {
-              const raw = rawRecord(item.raw ?? item);
+              const stages = asArray(item.stages);
+              const expanded = expandedMissionId === String(item.id);
               return (
-                <div key={`${selected?.key}:${contentId(item, String(index))}:${index}`}>
-                  <strong>{contentName(item, `任务 #${index + 1}`)}</strong>
-                  <span>{String(raw.missionType ?? raw.requirementType ?? raw.conditionType ?? selected?.key ?? "mission")}</span>
-                  <small>奖励 {String(raw.rewardResourceBoxId ?? raw.rewardId ?? raw.resourceBoxId ?? "-")} · ID {contentId(item, String(index))}</small>
-                </div>
+                <article className="mission-card" key={`${selected?.key}:${contentId(item, String(index))}`}>
+                  <div className="mission-card-heading"><span className="mission-kind-chip">{missionTypeLabel(item.missionType)}</span><small>ID {item.id}</small></div>
+                  {item.character && <strong className="mission-character-name">{item.character.name}</strong>}
+                  <p>{item.sentence || "任务文本缺失"}</p>
+                  <div className="mission-card-meta">
+                    {item.requirement != null && <span>初始目标 {formatNumber(item.requirement)}</span>}
+                    {item.maxRequirement != null && <span>最高目标 {formatNumber(item.maxRequirement)}</span>}
+                    {stages.length > 0 && <span>{formatNumber(stages.length)} 个阶段</span>}
+                  </div>
+                  {asArray(item.rewards).length > 0 && <div className="mission-rewards">{asArray(item.rewards).map((reward: any, rewardIndex: number) => <div key={`${reward.resourceType}:${reward.resourceId}:${rewardIndex}`}><span className={`mission-reward-art resource-${String(reward.resourceType ?? "unknown").replace(/[^a-z0-9_-]/gi, "-")}`}><ExchangeResourceIcon resource={reward} /></span><span>{reward.name}<small>× {formatNumber(reward.quantity)}</small></span></div>)}</div>}
+                  {stages.length > 0 && <button type="button" className="mission-stage-toggle" onClick={() => setExpandedMissionId(expanded ? null : String(item.id))}>{expanded ? "收起阶段" : "查看阶段"}</button>}
+                  {expanded && <div className="mission-stage-list">{stages.map((stage: any) => <div key={stage.seq}><span>阶段 {stage.seq}</span><strong>{formatNumber(stage.requirement)}</strong><small>Rank EXP +{formatNumber(stage.exp)}{stage.quantity ? ` · 数量 ${formatNumber(stage.quantity)}` : ""}</small></div>)}</div>}
+                  {item.lookupStatus === "missing-data" && <small className="warning-text">部分关联资料缺失</small>}
+                </article>
               );
             })}
           </div>
           {items.length === 0 && <p className="empty-state">当前任务分组没有可展示记录。</p>}
+          {filteredItems.length > missionPageSize && <Pagination page={missionPage} totalPages={totalPages} pageSize={missionPageSize} onPageChange={setMissionPage} onPageSizeChange={setMissionPageSize} />}
         </article>
       </section>
     );
@@ -2404,7 +2497,10 @@ export function App() {
     if (activeSection === "information") return InformationPage({ data: contentData.information });
     if (activeSection === "mysekai") return MysekaiPage();
     if (activeSection === "exchanges") return ExchangePage({ data: contentData.exchanges });
-    if (["missions", "virtualLives", "live2d"].includes(activeSection)) return <ContentPage section={activeSection as any} />;
+    if (activeSection === "missions") {
+      return <StatefulRenderBoundary key="missions" render={() => MissionPage({ data: contentData.missions })} />;
+    }
+    if (["virtualLives", "live2d"].includes(activeSection)) return <ContentPage section={activeSection as any} />;
     if (activeSection === "stories") return <StoriesPage />;
     if (activeSection === "about") return <AboutPage />;
     return <HomePage />;

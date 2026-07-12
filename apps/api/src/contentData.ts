@@ -482,6 +482,189 @@ function resolveExchangeResource(
   };
 }
 
+const MISSION_SCHEMA_VERSION = "missions-v2";
+const missionFiles = [
+  "normalMissions.json",
+  "beginnerMissions.json",
+  "characterMissionV2s.json",
+  "characterMissionV2ParameterGroups.json",
+  "honorMissions.json",
+  "gameCharacters.json",
+  "characterProfiles.json",
+  "resourceBoxes.json"
+] as const;
+
+function formatMissionSentence(template: unknown, replacements: Record<string, unknown>) {
+  const missing: string[] = [];
+  const sentence = String(template ?? "").replace(/\{(requirement|progress|name)\}/g, (_, key: string) => {
+    const value = replacements[key];
+    if (value === undefined || value === null || value === "") {
+      missing.push(key);
+      return "-";
+    }
+    return String(value);
+  });
+  return { sentence, missing };
+}
+
+function missionCharacterName(character: Record<string, any>, profile?: Record<string, any>) {
+  if (profile?.name || profile?.characterName) return String(profile.name ?? profile.characterName);
+  if (character.firstName && character.givenName) return `${character.firstName}${character.givenName}`;
+  return String(character.name ?? character.givenName ?? `角色 #${character.id ?? "-"}`);
+}
+
+export async function getMissionCatalog(region: RegionId) {
+  return cached(`mission-catalog:${MISSION_SCHEMA_VERSION}:${region}`, async () => {
+    const requestedFiles = region === "tw" || region === "kr" || region === "cn"
+      ? [...missionFiles, "resourceBoxDetails.json"]
+      : [...missionFiles];
+    const [results, cards] = await Promise.all([
+      Promise.all(requestedFiles.map(async (file) => [file, await getOptionalMetadata(region, file)] as const)),
+      getCards(region)
+    ]);
+    const data = new Map(results.map(([file, result]) => [file, array(result.data).map(rawItem)]));
+    const normal = data.get("normalMissions.json") ?? [];
+    const beginner = data.get("beginnerMissions.json") ?? [];
+    const character = data.get("characterMissionV2s.json") ?? [];
+    const parameters = data.get("characterMissionV2ParameterGroups.json") ?? [];
+    const honor = data.get("honorMissions.json") ?? [];
+    const characters = data.get("gameCharacters.json") ?? [];
+    const profiles = data.get("characterProfiles.json") ?? [];
+    const boxes = data.get("resourceBoxes.json") ?? [];
+    const standaloneDetails = data.get("resourceBoxDetails.json") ?? [];
+
+    const characterMap = new Map(characters.map((item) => [Number(item.id), item]));
+    const profileMap = new Map(profiles.map((item) => [Number(item.characterId ?? item.gameCharacterId ?? item.id), item]));
+    const parameterMap = new Map<number, Record<string, any>[]>();
+    for (const parameter of parameters) {
+      const group = Number(parameter.id);
+      parameterMap.set(group, [...(parameterMap.get(group) ?? []), parameter]);
+    }
+    for (const stages of parameterMap.values()) stages.sort((left, right) => Number(left.seq ?? 0) - Number(right.seq ?? 0));
+
+    const detailsByBox = new Map<number, Record<string, any>[]>();
+    for (const detail of standaloneDetails) {
+      const id = Number(detail.resourceBoxId);
+      if (Number.isFinite(id)) detailsByBox.set(id, [...(detailsByBox.get(id) ?? []), detail]);
+    }
+    const resourceBoxMap = new Map<number, Record<string, any>[]>();
+    for (const box of boxes) {
+      if (String(box.resourceBoxPurpose ?? "") !== "mission_reward") continue;
+      const id = Number(box.id);
+      const embedded = array(box.details).map(rawItem);
+      resourceBoxMap.set(id, embedded.length ? embedded : detailsByBox.get(id) ?? []);
+    }
+    const rewardTypes = new Set<string>();
+    for (const mission of [...normal, ...beginner, ...honor]) {
+      for (const reward of array(mission.rewards)) {
+        for (const detail of resourceBoxMap.get(Number(rawItem(reward).resourceBoxId)) ?? []) {
+          rewardTypes.add(String(detail.resourceType ?? "unknown"));
+        }
+      }
+    }
+    if (rewardTypes.has("mysekai_blueprint")) rewardTypes.add("mysekai_fixture");
+    const { maps: lookupMaps, diagnostics: lookupDiagnostics } = await loadExchangeLookups(region, rewardTypes);
+    const [materialResult, mysekaiMaterialResult] = await Promise.all([
+      getOptionalMetadata(region, "materials.json"),
+      getOptionalMetadata(region, "mysekaiMaterials.json")
+    ]);
+    const materialMap = new Map(array(materialResult.data).map(rawItem).map((item) => [Number(item.id), item]));
+    const mysekaiMaterialMap = new Map(array(mysekaiMaterialResult.data).map(rawItem).map((item) => [Number(item.id), item]));
+    const cardMap = new Map(cards.map((item) => [Number(item.id), item as unknown as Record<string, any>]));
+    const rewardsFor = (mission: Record<string, any>) => array(mission.rewards).flatMap((rewardValue) => {
+      const reward = rawItem(rewardValue);
+      return (resourceBoxMap.get(Number(reward.resourceBoxId)) ?? []).map((detail) => ({
+        ...resolveExchangeResource(region, detail, materialMap, mysekaiMaterialMap, cardMap, lookupMaps),
+        resourceBoxId: Number(reward.resourceBoxId)
+      }));
+    });
+    const normalizeFixedMission = (kind: "normal" | "beginner" | "honor", mission: Record<string, any>) => {
+      const requirement = Number(mission.requirement ?? 0);
+      const formatted = formatMissionSentence(mission.sentence, { requirement, progress: requirement });
+      const rewards = rewardsFor(mission);
+      return {
+        id: String(mission.id ?? ""),
+        seq: Number(mission.seq ?? mission.id ?? 0),
+        missionKind: kind,
+        missionType: String(mission[`${kind}MissionType`] ?? "unknown"),
+        category: kind === "beginner" ? String(mission.beginnerMissionCategory ?? "normal") : undefined,
+        sentence: formatted.sentence,
+        requirement,
+        rewards,
+        stages: [],
+        lookupStatus: formatted.missing.length || rewards.some((item) => item.lookupStatus === "missing-data") ? "missing-data" : "matched",
+        missingFields: formatted.missing
+      };
+    };
+    const normalizedCharacter = character.map((mission) => {
+      const characterId = Number(mission.characterId);
+      const characterRecord = characterMap.get(characterId) ?? {};
+      const profile = profileMap.get(characterId);
+      const name = missionCharacterName(characterRecord, profile);
+      const stages = (parameterMap.get(Number(mission.parameterGroupId)) ?? []).map((stage) => ({
+        seq: Number(stage.seq ?? 0),
+        requirement: Number(stage.requirement ?? 0),
+        exp: Number(stage.exp ?? 0),
+        quantity: Number(stage.quantity ?? 0)
+      }));
+      const requirement = stages[0]?.requirement;
+      const formatted = formatMissionSentence(mission.sentence, { requirement, progress: requirement, name });
+      return {
+        id: String(mission.id ?? ""),
+        seq: Number(mission.seq ?? mission.id ?? 0),
+        missionKind: "character",
+        missionType: String(mission.characterMissionType ?? "unknown"),
+        sentence: formatted.sentence,
+        progressLabel: formatMissionSentence(mission.progressSentence, { progress: requirement, requirement, name }).sentence,
+        requirement,
+        maxRequirement: stages.at(-1)?.requirement,
+        parameterGroupId: Number(mission.parameterGroupId),
+        isAchievementMission: Boolean(mission.isAchievementMission),
+        character: { id: characterId, name },
+        stages,
+        rewards: [],
+        lookupStatus: stages.length && characterMap.has(characterId) && !formatted.missing.length ? "matched" : "missing-data",
+        missingFields: [
+          ...formatted.missing,
+          ...(!stages.length ? ["parameterGroup"] : []),
+          ...(!characterMap.has(characterId) ? ["character"] : [])
+        ]
+      };
+    });
+    const groups = {
+      normal: normal.map((item) => normalizeFixedMission("normal", item)),
+      beginner: beginner.map((item) => normalizeFixedMission("beginner", item)),
+      character: normalizedCharacter,
+      honor: honor.map((item) => normalizeFixedMission("honor", item))
+    };
+    const labels = { normal: "普通任务", beginner: "新手任务", character: "角色任务", honor: "称号任务" };
+    const groupStatus = Object.fromEntries(Object.entries(groups).map(([key, items]) => [
+      key,
+      items.length ? "ready" : key === "beginner" ? "not-released" : "source-unavailable"
+    ]));
+    const unavailable = Object.values(groupStatus).filter((status) => status !== "ready").length;
+    const missingItems = Object.values(groups).flat().filter((item) => item.lookupStatus !== "matched").length;
+    const capabilityStatus: ContentCapabilityStatus = Object.values(groups).some((items) => items.length)
+      ? unavailable || missingItems ? "partial" : "ready"
+      : "source-unavailable";
+    return {
+      region,
+      type: "missions",
+      groups,
+      displayGroups: Object.entries(groups).map(([key, items]) => ({ key, label: labels[key as keyof typeof labels], count: items.length })),
+      groupStatus,
+      summary: Object.fromEntries(Object.entries(groups).map(([key, items]) => [key, items.length])),
+      total: Object.values(groups).reduce((sum, items) => sum + items.length, 0),
+      capabilityStatus,
+      sourceHealth: { status: capabilityStatus, availableGroups: 4 - unavailable, unavailableGroups: unavailable, totalGroups: 4 },
+      warnings: results.flatMap(([file, result]) => result.warning ? [`${file}: ${result.warning}`] : []),
+      diagnostics: Object.fromEntries(results.map(([file, result]) => [file, { status: result.status, count: array(result.data).length, warning: result.warning }])),
+      lookupDiagnostics,
+      syncedAt: new Date().toISOString()
+    };
+  });
+}
+
 export async function getExchangeCatalog(region: RegionId) {
   return cached(`exchange-catalog:v2:${region}`, async () => {
     const [context, cards] = await Promise.all([

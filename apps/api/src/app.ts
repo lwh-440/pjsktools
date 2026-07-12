@@ -60,6 +60,7 @@ import {
   getExchangeDetail,
   getInformationCollection,
   getInformationDetail,
+  getMissionCatalog,
   getMysekaiCatalog,
   getMysekaiDetail,
   getVirtualLiveCatalog,
@@ -1000,7 +1001,7 @@ export async function buildApp() {
   app.get("/api/master/:region/missions/context", async (request, reply) => {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    return getExternalContext(region, "missions");
+    return catalogResponse(reply, request, await getMissionCatalog(region));
   });
 
   app.get("/api/master/:region/virtual-lives/context", async (request, reply) => {

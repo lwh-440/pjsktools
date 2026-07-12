@@ -62,6 +62,18 @@ try {
     if (!exchangeDetail?.item) failures.push(`${region}: exchange detail missing`);
     checkRegionUrls(region, exchangeDetail, "exchanges");
 
+    const missions = await get(`/api/master/${region}/missions/context`);
+    for (const group of ["normal", "beginner", "character", "honor"]) {
+      if (!rows(missions.groups?.[group]).length && missions.groupStatus?.[group] !== "not-released") failures.push(`${region}: mission group ${group} is empty without not-released status`);
+    }
+    if (JSON.stringify(missions).includes("characterMissions.json")) failures.push(`${region}: missions still reference removed characterMissions.json`);
+    const characterMission = rows(missions.groups?.character).find((item) => rows(item.stages).length > 1 && item.character?.name);
+    if (!characterMission || !characterMission.maxRequirement || characterMission.lookupStatus !== "matched") failures.push(`${region}: character mission V2 stages were not resolved`);
+    const fixedMission = [...rows(missions.groups?.normal), ...rows(missions.groups?.beginner), ...rows(missions.groups?.honor)].find((item) => rows(item.rewards).length);
+    if (!fixedMission) failures.push(`${region}: mission rewards were not resolved`);
+    if (JSON.stringify(missions.groups).match(/\{(?:requirement|progress|name)\}/)) failures.push(`${region}: mission placeholder remains unresolved`);
+    checkRegionUrls(region, missions.groups, "missions");
+
     const liveCatalog = await get(`/api/master/${region}/virtual-lives/context`);
     const live = liveCatalog.items?.find((item) => item.setlistCount > 0) ?? liveCatalog.items?.[0];
     const liveDetail = live ? await get(`/api/master/${region}/virtual-lives/${live.id}/full`) : null;
@@ -123,6 +135,7 @@ try {
       virtualLive: { total: liveCatalog.total, sampleId: live?.id, setlists: liveDetail?.setlists?.length ?? 0 },
       information: { total: information.items?.length ?? 0, detail: Boolean(informationDetail) },
       exchanges: { total: exchanges.total, summaries: exchanges.summaries?.length ?? 0, rewardCoverage: exchanges.rewardCoverage },
+      missions: missions.summary,
       stories
     };
   }

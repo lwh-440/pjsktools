@@ -163,7 +163,7 @@ Content UX status:
 - Web content pages now present stable-source data as player-assistant workflows instead of generic JSON cards.
 - Announcements use a timeline with category, availability time, banner, source, and detail links when the upstream provides them.
 - Exchanges flatten `materialExchangeSummaries[].materialExchanges`, resolve rewards through material-exchange resource boxes, and resolve costs through the current region's material masters. JP/EN embed resource-box details; TW/KR/CN use the same-region `resourceBoxDetails` collection.
-- Missions use source-backed tabs for normal, beginner, character, and honor mission groups with task/reward summaries.
+- Missions use region-isolated `normalMissions`, `beginnerMissions`, `characterMissionV2s` + `characterMissionV2ParameterGroups`, and `honorMissions`. Character V2 stages are resolved by `parameterGroupId`; fixed mission rewards reuse the exchange resource lookup and icon rules.
 - Virtual Live uses separate groups for live records, schedules, setlists, and rewards.
 - Stories now load `/stories/context` automatically, show story groups/lists, and open `/stories/:storyType/:storyId/full` from list selections. Story full responses expose chapters, relation hints, resourceCandidates, sourceHealth, warnings, and unavailableReason. This is still a resource workflow, not a full story or live演出播放器.
 - Backend content-context endpoints add compatible displayGroups, previewItems, sourceHealth, warnings, unavailableGroups, relationHints, and resourceCandidates fields while preserving old groups/files/summary/sourceMetadata fields.

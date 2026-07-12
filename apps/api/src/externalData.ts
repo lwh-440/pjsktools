@@ -111,7 +111,7 @@ const metadataCollections: Record<string, string[]> = {
   // Exchange entries are nested in summaries. Costs and rewards use the three lookup collections below.
   exchanges: ["materialExchangeSummaries.json", "materials.json", "mysekaiMaterials.json", "resourceBoxes.json"],
   shopItems: ["shopItems.json", "billingShopItems.json", "goods.json"],
-  missions: ["normalMissions.json", "beginnerMissions.json", "characterMissions.json", "honorMissions.json"],
+  missions: ["normalMissions.json", "beginnerMissions.json", "characterMissionV2s.json", "characterMissionV2ParameterGroups.json", "honorMissions.json"],
   // Schedules, setlists, and rewards are nested in virtualLives on current metadata servers.
   virtualLives: ["virtualLives.json"],
   mysekai: [
