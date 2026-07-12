@@ -50,6 +50,13 @@ export type StoryPlaybackContext = {
   scenarioData?: Record<string, unknown>;
   actions?: ScenarioAction[];
   mediaAssets?: MediaAsset[];
+  essentialAssets?: MediaAsset[];
+  deferredAssets?: MediaAsset[];
+  initialActions?: ScenarioAction[];
+  episodeId?: string;
+  episodeIndex?: number;
+  playbackStatus?: string;
+  missingResources?: string[];
   live2dModels?: StoryModel[];
   scenarioResource?: { image?: MediaAsset[]; audio?: MediaAsset[]; video?: MediaAsset[] };
   modelQueue?: string[][];

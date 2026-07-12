@@ -8,6 +8,7 @@ export function apiResourceUrl(url?: string) {
 type RequestOptions = {
   token?: string;
   body?: unknown;
+  signal?: AbortSignal;
 };
 
 export class ApiError extends Error {
@@ -26,7 +27,8 @@ async function request<T>(method: string, path: string, options: RequestOptions 
       ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
     },
-    body: options.body ? JSON.stringify(options.body) : undefined
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: options.signal
   });
 
   if (!response.ok) {
@@ -39,6 +41,10 @@ async function request<T>(method: string, path: string, options: RequestOptions 
 
 export function apiGet<T>(path: string, token?: string): Promise<T> {
   return request<T>("GET", path, { token });
+}
+
+export function apiGetWithSignal<T>(path: string, signal: AbortSignal, token?: string): Promise<T> {
+  return request<T>("GET", path, { token, signal });
 }
 
 export function apiPost<T>(path: string, body: unknown, token?: string): Promise<T> {

@@ -55,6 +55,13 @@ export interface Live2dModelSummary {
   model3JsonUrl?: string;
   modelBaseUrl?: string;
   motionBaseUrl?: string;
+  characterId?: number;
+  costumeType?: string;
+  scope?: "global-shared-model-asset";
+  regionReferenceStatus?: "region-referenced" | "global-only";
+  referencedStories?: Array<{ storyType: string; storyId: string; scenarioId?: string }>;
+  playbackStatus?: "region-referenced" | "global-only" | "partial" | "missing-resource";
+  assetCounts?: { motions: number; expressions: number; textures: number };
   raw: unknown;
 }
 
@@ -90,6 +97,22 @@ const moeAssetBase = "https://storage.exmeaning.com";
 const moeOverseasAssetBase = "https://storage.pjsk.moe";
 const live2dAssetBase = `${sekaiBestAssetBase}/sekai-live2d-assets`;
 const comicsAssetBase = `${sekaiBestAssetBase}/sekai-comics`;
+const live2dRegionReferences = new Map<RegionId, Map<string, Map<string, { storyType: string; storyId: string; scenarioId?: string }>>>();
+
+function rememberLive2dReference(region: RegionId, model: Live2dModelSummary, info: ScenarioInfo) {
+  const regionReferences = live2dRegionReferences.get(region) ?? new Map();
+  const modelReferences = regionReferences.get(model.id) ?? new Map();
+  const reference = { storyType: info.storyType, storyId: info.storyId, scenarioId: info.scenarioId };
+  modelReferences.set(`${reference.storyType}:${reference.storyId}:${reference.scenarioId ?? ""}`, reference);
+  regionReferences.set(model.id, modelReferences);
+  live2dRegionReferences.set(region, regionReferences);
+}
+
+function live2dCharacterId(modelPath: string) {
+  const match = modelPath.match(/(?:^|\/)(?:\d+_)?(?:chara|character)?(\d{1,3})(?:_|\/|$)/i)
+    ?? modelPath.match(/(?:^|\/)(\d{1,3})_[^/]+$/);
+  return match ? Number(match[1]) : undefined;
+}
 
 const regionAssetDir: Record<RegionId, string> = {
   jp: "sekai-jp-assets",
@@ -261,6 +284,16 @@ function regionAssetBase(region: RegionId) {
 
 function regionAssetUrl(region: RegionId, path: string) {
   return `${regionAssetBase(region)}/${path.replace(/^\/+/, "")}`;
+}
+
+function regionAssetCandidates(region: RegionId, path: string) {
+  const normalized = path.replace(/^\/+/, "");
+  const direct = [
+    `${moeAssetBase}/${regionAssetDir[region]}/${normalized}`,
+    `${moeOverseasAssetBase}/${regionAssetDir[region]}/${normalized}`,
+    `${sekaiBestAssetBase}/${regionAssetDir[region]}/${normalized}`
+  ];
+  return [...direct, ...direct.map((url) => proxyUrl(url)!)];
 }
 
 function scenarioIdToAssetbundleName(scenarioId: string) {
@@ -765,6 +798,7 @@ export function normalizeScenarioData(region: RegionId, info: ScenarioInfo, scen
     const costumeType = String(character.CostumeType ?? "");
     const matched = modelList.find((model) => model.modelPath === costumeType || model.id === costumeType || model.modelPath?.endsWith(`/${costumeType}`));
     if (!matched && costumeType) warnings.push(`Live2D model not found for costume ${costumeType}`);
+    if (matched) rememberLive2dReference(region, matched, info);
     return {
       character2dId: character.Character2dId,
       costumeType,
@@ -1111,28 +1145,79 @@ async function live2dCollection(region: RegionId): Promise<ResolvedCollectionRes
   return toCollection(region, "live2d", models.models, models.sourceMetadata);
 }
 
-export async function getLive2dModels(_region: RegionId): Promise<{ models: Live2dModelSummary[]; sourceMetadata: ExternalDataSource; realDataRequired: true }> {
+type Live2dCatalogOptions = {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  characterId?: number;
+  costumeType?: string;
+  availability?: "verified-playable" | "region-referenced" | "global-only" | "unavailable" | "all";
+};
+
+export async function getLive2dModels(region: RegionId, options: Live2dCatalogOptions = {}): Promise<{
+  models: Live2dModelSummary[];
+  items?: Live2dModelSummary[];
+  page?: number;
+  pageSize?: number;
+  total?: number;
+  totalPages?: number;
+  filters?: Live2dCatalogOptions;
+  availabilitySummary?: Record<string, number>;
+  sourceMetadata: ExternalDataSource;
+  realDataRequired: true;
+}> {
   const sourceMetadata = live2dSource();
   try {
     const rows = await fetchJsonUrl<unknown[]>(sourceMetadata.primaryUrl);
+    const references = live2dRegionReferences.get(region) ?? new Map();
     const models = rows.map((item, index): Live2dModelSummary => {
       const raw = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const modelPath = String(raw.modelPath ?? raw.path ?? raw.modelBase ?? "");
       const modelFile = String(raw.modelFile ?? raw.file ?? "model.model3.json");
       const modelBaseUrl = modelPath ? `${live2dAssetBase}/live2d/model/${modelPath}/` : undefined;
+      const id = String(raw.id ?? raw.modelId ?? raw.name ?? modelPath ?? index + 1);
+      const referencedStories = [...(references.get(id)?.values() ?? [])];
       return {
-        id: String(raw.id ?? raw.modelId ?? raw.name ?? modelPath ?? index + 1),
+        id,
         name: typeof raw.name === "string" ? raw.name : undefined,
         modelPath,
         modelFile,
         model3JsonUrl: modelPath ? `${modelBaseUrl}${modelFile}` : undefined,
         modelBaseUrl,
         motionBaseUrl: modelPath ? `${live2dAssetBase}/live2d/motion/${modelPath}/` : undefined,
+        characterId: live2dCharacterId(modelPath),
+        costumeType: modelPath.split("/").filter(Boolean).at(-1) ?? modelPath,
+        scope: "global-shared-model-asset",
+        regionReferenceStatus: referencedStories.length ? "region-referenced" : "global-only",
+        referencedStories,
+        playbackStatus: referencedStories.length ? "region-referenced" : "global-only",
+        assetCounts: { motions: 0, expressions: 0, textures: 0 },
         raw
       };
     });
+    const hasCatalogOptions = Object.keys(options).length > 0;
+    const normalizedQuery = options.q?.trim().toLowerCase() ?? "";
+    const availability = options.availability ?? "all";
+    const filtered = models.filter((model) => {
+      if (normalizedQuery && !`${model.id} ${model.name ?? ""} ${model.modelPath ?? ""}`.toLowerCase().includes(normalizedQuery)) return false;
+      if (options.characterId && model.characterId !== options.characterId) return false;
+      if (options.costumeType && !String(model.costumeType ?? "").toLowerCase().includes(options.costumeType.toLowerCase())) return false;
+      if (["verified-playable", "region-referenced"].includes(availability) && model.regionReferenceStatus !== "region-referenced") return false;
+      if (availability === "global-only" && model.regionReferenceStatus !== "global-only") return false;
+      if (availability === "unavailable") return false;
+      return true;
+    });
+    const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 24));
+    const page = Math.min(Math.max(1, options.page ?? 1), Math.max(1, Math.ceil(filtered.length / pageSize)));
+    const items = filtered.slice((page - 1) * pageSize, page * pageSize);
+    const availabilitySummary = {
+      "region-referenced": models.filter((model) => model.regionReferenceStatus === "region-referenced").length,
+      "global-only": models.filter((model) => model.regionReferenceStatus === "global-only").length,
+      unavailable: 0
+    };
     return {
       models,
+      ...(hasCatalogOptions ? { items, page, pageSize, total: filtered.length, totalPages: Math.max(1, Math.ceil(filtered.length / pageSize)), filters: options, availabilitySummary } : {}),
       sourceMetadata: {
         ...sourceMetadata,
         scope: "global-shared-model-asset",
@@ -1197,6 +1282,18 @@ export async function getLive2dModelDetail(region: RegionId, modelId: string) {
         model.motionBaseUrl,
         `${model.modelBaseUrl ?? ""}motions/`
       ].filter(Boolean) : []
+    },
+    playbackStatus: unavailableReason
+      ? "missing-resource"
+      : (parsedModel3?.textureFiles.length ?? 0) === 0
+        ? "missing-resource"
+        : (parsedModel3?.motionFiles.length ?? 0) === 0 || (parsedModel3?.expressionFiles.length ?? 0) === 0
+          ? "partial"
+          : model.regionReferenceStatus === "region-referenced" ? "region-referenced" : "global-only",
+    assetCounts: {
+      motions: parsedModel3?.motionFiles.length ?? 0,
+      expressions: parsedModel3?.expressionFiles.length ?? 0,
+      textures: parsedModel3?.textureFiles.length ?? 0
     },
     sourceMetadata: list.sourceMetadata,
     runtimeRequired: ["pixi.js@7", "@sekai-world/pixi-live2d-display-mulmotion", "Cubism runtime"],
@@ -1309,6 +1406,23 @@ export async function getStoryFullContext(region: RegionId, storyType: string, s
   const entries = await fetchManyMetadata(region, paths);
   const matches = resolveStoryMatches(entries, storyType, storyId);
   const source = entries.find((entry) => !entry.unavailableReason)?.source ?? metadataSource(region, paths[0]);
+  const relationRows = storyType === "eventStories"
+    ? await fetchMetadataFile<unknown[]>(region, "events.json").then((result) => result.data.map(asRecord)).catch(() => [])
+    : storyType === "cardEpisodes"
+      ? await fetchMetadataFile<unknown[]>(region, "cards.json").then((result) => result.data.map(asRecord)).catch(() => [])
+      : [];
+  const relationRecord = storyType === "eventStories"
+    ? relationRows.find((row) => String(row.id ?? row.eventId) === storyId)
+    : storyType === "cardEpisodes"
+      ? relationRows.find((row) => String(row.id ?? row.cardId) === String(asRecord(matches[0]?.raw).cardId ?? ""))
+      : undefined;
+  const displayTitle = String(relationRecord?.name ?? relationRecord?.title ?? relationRecord?.prefix ?? asRecord(matches[0]?.raw).title ?? asRecord(matches[0]?.raw).name ?? storyId);
+  const relationAssetbundleName = String(relationRecord?.assetbundleName ?? "");
+  const storyImageCandidates = storyType === "eventStories" && relationAssetbundleName
+    ? regionAssetCandidates(region, `event_story/${relationAssetbundleName}/screen_image/banner_event_story.webp`)
+    : storyType === "cardEpisodes" && relationAssetbundleName
+      ? regionAssetCandidates(region, `thumbnail/chara/${relationAssetbundleName}_normal.webp`)
+      : [];
   const scenarioInfo = findScenarioInfo(region, matches, storyType, storyId);
   const scenarioAssetCandidates = matches.flatMap((match) => {
     const raw = match.raw as Record<string, unknown>;
@@ -1324,10 +1438,24 @@ export async function getStoryFullContext(region: RegionId, storyType: string, s
     const candidates = [raw.episodes, raw.chapters, raw.eventStoryEpisodes, raw.unitStoryEpisodes, raw.specialStoryEpisodes];
     const list = candidates.find(Array.isArray) as unknown[] | undefined;
     if (list) {
-      return list.map((chapter, index) => ({
-        ...previewItem(chapter, match.group, index),
-        storyType: match.group
-      }));
+      return list.flatMap((chapter, index) => {
+        const chapterRecord = asRecord(chapter);
+        const episodes = firstArrayField(chapterRecord, ["episodes", "unitStoryEpisodes"]);
+        if (episodes.length) return episodes.map((episode, episodeIndex) => ({
+          ...previewItem(episode, match.group, episodeIndex),
+          storyType: match.group,
+          chapterId: String(chapterRecord.id ?? index + 1),
+          chapterTitle: displayName(chapterRecord, `Chapter ${index + 1}`),
+          episodeIndex,
+          scenarioStatus: asRecord(episode).scenarioId ? "ready" : "missing-scenario"
+        }));
+        return [{
+          ...previewItem(chapter, match.group, index),
+          storyType: match.group,
+          episodeIndex: index,
+          scenarioStatus: chapterRecord.scenarioId ? "ready" : "missing-scenario"
+        }];
+      });
     }
     return [{
       ...previewItem(match.raw, match.group, match.index),
@@ -1338,11 +1466,14 @@ export async function getStoryFullContext(region: RegionId, storyType: string, s
     region,
     storyType,
     storyId,
+    displayTitle,
     matches,
     scenarioInfo,
     scenarioDataUrl: scenarioInfo?.scenarioDataUrl,
     proxiedScenarioDataUrl: scenarioInfo?.proxiedScenarioDataUrl,
-    bannerUrl: scenarioInfo?.bannerUrl,
+    bannerUrl: storyImageCandidates[0] ?? scenarioInfo?.bannerUrl,
+    imageCandidates: storyImageCandidates,
+    imageStatus: storyImageCandidates.length ? "matched" : "reference-no-cover",
     playbackUrl: `/api/master/${region}/stories/${encodeURIComponent(storyType)}/${encodeURIComponent(storyId)}/playback`,
     playbackReadiness: {
       hasScenario: Boolean(scenarioInfo?.scenarioDataUrl),
@@ -1370,18 +1501,22 @@ export async function getStoryFullContext(region: RegionId, storyType: string, s
   };
 }
 
-export async function getStoryPlaybackContext(region: RegionId, storyType: string, storyId: string) {
+export async function getStoryPlaybackContext(region: RegionId, storyType: string, storyId: string, episodeId?: string) {
   const paths = metadataCollections.stories;
   const entries = await fetchManyMetadata(region, paths);
   const matches = resolveStoryMatches(entries, storyType, storyId);
   const source = entries.find((entry) => !entry.unavailableReason)?.source ?? metadataSource(region, paths[0]);
-  const scenarioInfo = findScenarioInfo(region, matches, storyType, storyId);
+  const scenarioInfos = matches.flatMap((match) => scenarioInfosForMatch(region, match, storyType, storyId));
+  const scenarioInfo = episodeId
+    ? scenarioInfos.find((item) => String(asRecord(item.raw).id ?? "") === episodeId || item.scenarioId === episodeId) ?? null
+    : findScenarioInfo(region, matches, storyType, storyId);
   const warnings = warningsFromEntries(entries);
   if (!scenarioInfo?.scenarioDataUrl) {
     return {
       region,
       storyType,
       storyId,
+      episodeId,
       scenarioInfo,
       scenarioData: null,
       appearCharacters: [],
@@ -1411,6 +1546,8 @@ export async function getStoryPlaybackContext(region: RegionId, storyType: strin
     region,
     storyType,
     storyId,
+    episodeId: episodeId ?? String(asRecord(scenarioInfo.raw).id ?? scenarioInfo.scenarioId ?? storyId),
+    episodeIndex: Math.max(0, scenarioInfos.indexOf(scenarioInfo)),
     scenarioInfo,
     scenarioData,
     appearCharacters: parsed?.appearCharacters ?? [],
@@ -1428,11 +1565,92 @@ export async function getStoryPlaybackContext(region: RegionId, storyType: strin
     playbackDiagnostics: parsed?.playbackDiagnostics ?? { playbackVersion: "story-live2d-v2-reference", actionCount: 0 },
     renderAcceptance: parsed?.renderAcceptance ?? { status: "not-applicable", serverValidation: "scenario-unavailable" },
     unsupportedActions: parsed?.unsupportedActions ?? [],
+    essentialAssets: (parsed?.mediaAssets ?? []).filter((asset) => ["background", "card-still"].includes(String(asset?.kind))).slice(0, 3),
+    deferredAssets: (parsed?.mediaAssets ?? []).filter((asset) => !["background", "card-still"].includes(String(asset?.kind))),
+    initialActions: (parsed?.actions ?? []).slice(0, 6),
+    playbackStatus: unavailableReason || !parsed?.actions?.length
+      ? "missing-resource"
+      : (parsed.warnings.length || parsed.unsupportedActions.length || !parsed.live2dModels.length) ? "partial-ready" : "ready",
+    missingResources: parsed?.warnings ?? [],
     sourceMetadata: source,
     sourceHealth: sourceHealthFromEntries(entries),
     warnings: [...warnings, ...(parsed?.warnings ?? [])],
     unavailableReason,
     realDataRequired: true
+  };
+}
+
+const storyCatalogTypes = ["eventStories", "unitStories", "cardEpisodes", "specialStories"] as const;
+
+export async function getStoryCatalog(region: RegionId, options: { storyType?: string; page?: number; pageSize?: number; q?: string; unit?: string; characterId?: string; relatedId?: string; sort?: string } = {}) {
+  const context = await getStoriesContext(region);
+  const groups = context.groups as Record<string, unknown[]>;
+  const [events, cards] = await Promise.all([
+    fetchMetadataFile<unknown[]>(region, "events.json").then((result) => result.data.map(asRecord)).catch(() => []),
+    fetchMetadataFile<unknown[]>(region, "cards.json").then((result) => result.data.map(asRecord)).catch(() => [])
+  ]);
+  const eventNames = new Map(events.map((row) => [String(row.id ?? row.eventId), String(row.name ?? row.title ?? "")]));
+  const cardNames = new Map(cards.map((row) => [String(row.id ?? row.cardId), String(row.prefix ?? row.name ?? row.title ?? "")]));
+  const eventRows = new Map(events.map((row) => [String(row.id ?? row.eventId), row]));
+  const cardRows = new Map(cards.map((row) => [String(row.id ?? row.cardId), row]));
+  const normalizedQuery = options.q?.trim().toLowerCase() ?? "";
+  const selectedTypes = options.storyType && storyCatalogTypes.includes(options.storyType as any) ? [options.storyType] : [...storyCatalogTypes];
+  const allItems = selectedTypes.flatMap((storyType) => (Array.isArray(groups[storyType]) ? groups[storyType] : []).map((value, index) => {
+    const raw = asRecord(value);
+    const nested = firstArrayField(raw, ["eventStoryEpisodes", "episodes", "chapters", "unitStoryEpisodes", "specialStoryEpisodes"]);
+    const nestedEpisodeCount = nested.reduce((total, child) => total + Math.max(1, firstArrayField(asRecord(child), ["episodes", "unitStoryEpisodes"]).length), 0);
+    const item = previewItem(value, storyType, index);
+    const startAt = numeric(raw.startAt ?? raw.publishedAt ?? raw.releaseAt);
+    const relatedId = raw.eventId ?? raw.cardId ?? raw.specialStoryId;
+    const relationName = storyType === "eventStories" ? eventNames.get(String(raw.eventId ?? raw.id)) : storyType === "cardEpisodes" ? cardNames.get(String(raw.cardId ?? "")) : undefined;
+    const relatedRecord = storyType === "eventStories" ? eventRows.get(String(raw.eventId ?? raw.id)) : storyType === "cardEpisodes" ? cardRows.get(String(raw.cardId ?? "")) : undefined;
+    const relatedAssetbundleName = String(relatedRecord?.assetbundleName ?? "");
+    const imageCandidates = storyType === "eventStories" && relatedAssetbundleName
+      ? regionAssetCandidates(region, `event_story/${relatedAssetbundleName}/screen_image/banner_event_story.webp`)
+      : storyType === "cardEpisodes" && relatedAssetbundleName
+        ? regionAssetCandidates(region, `thumbnail/chara/${relatedAssetbundleName}_normal.webp`)
+        : [];
+    return {
+      id: item.id,
+      storyType,
+      name: relationName ? `${relationName}${storyType === "cardEpisodes" ? ` · ${item.name}` : ""}` : item.name,
+      description: String(raw.outline ?? raw.description ?? raw.summary ?? ""),
+      unit: String(raw.unit ?? raw.unitId ?? ""),
+      characterId: raw.gameCharacterId ?? raw.characterId,
+      relatedId,
+      startAt,
+      chapterCount: nested.length || 1,
+      episodeCount: nestedEpisodeCount || nested.length || 1,
+      bannerUrl: imageCandidates[0],
+      imageCandidates,
+      imageStatus: imageCandidates.length ? "matched" : "reference-no-cover",
+      capabilityStatus: "ready",
+      raw
+    };
+  }));
+  const filtered = allItems.filter((item) => {
+    if (normalizedQuery && !`${item.id} ${item.name} ${item.description}`.toLowerCase().includes(normalizedQuery)) return false;
+    if (options.unit && item.unit !== options.unit) return false;
+    if (options.characterId && String(item.characterId ?? "") !== options.characterId) return false;
+    if (options.relatedId && String(item.relatedId ?? "") !== options.relatedId) return false;
+    return true;
+  }).sort((left, right) => {
+    if (options.sort === "id-asc") return Number(left.id) - Number(right.id);
+    if (options.sort === "time-asc") return left.startAt - right.startAt;
+    return (right.startAt - left.startAt) || (Number(right.id) - Number(left.id));
+  });
+  const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 24));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const page = Math.min(totalPages, Math.max(1, options.page ?? 1));
+  return {
+    region,
+    items: filtered.slice((page - 1) * pageSize, page * pageSize),
+    page,
+    pageSize,
+    total: filtered.length,
+    totalPages,
+    capabilityStatus: context.warnings.length ? "partial" : "ready",
+    warnings: context.warnings
   };
 }
 
@@ -1601,6 +1819,52 @@ async function enrichVirtualLiveStep(region: RegionId, step: Record<string, unkn
     };
   }
   return { index, type: type || "unknown", raw: step, warnings: [`Unsupported virtual live setlist type: ${type || "unknown"}`] };
+}
+
+export async function getVirtualLiveStepContext(region: RegionId, virtualLiveId: string, stepIndex: number) {
+  const context = await getExternalContext(region, "virtualLives");
+  const groups = context.groups as Record<string, unknown[]>;
+  const lives = Array.isArray(groups.virtualLives) ? groups.virtualLives.map(asRecord) : [];
+  const live = lives.find((item) => String(item.id ?? item.virtualLiveId) === virtualLiveId);
+  if (!live) return null;
+  const setlists = Array.isArray(live.virtualLiveSetlists) ? live.virtualLiveSetlists.map(asRecord) : [];
+  const step = setlists[stepIndex];
+  if (!step) return null;
+  const [musicVocals, musics] = await Promise.all([
+    fetchMetadataFile<unknown[]>(region, "musicVocals.json").then((result) => result.data.map(asRecord)).catch(() => []),
+    fetchMetadataFile<unknown[]>(region, "musics.json").then((result) => result.data.map(asRecord)).catch(() => [])
+  ]);
+  const enriched = await enrichVirtualLiveStep(region, step, stepIndex, musicVocals, musics);
+  const playbackQueue = enriched.type === "music" && enriched.proxiedAudioUrl
+    ? [{ type: "music", label: String((enriched.music as any)?.title ?? `Music ${stepIndex + 1}`), url: enriched.proxiedAudioUrl }]
+    : Array.isArray(enriched.events)
+      ? enriched.events.flatMap((event) => {
+          const url = event.type === "talk" ? event.voice?.proxiedUrl : undefined;
+          return url ? [{
+            type: "voice",
+            label: String(event.serif ?? event.voiceKey ?? `Voice ${event.id}`),
+            time: event.time,
+            url
+          }] : [];
+        })
+      : [];
+  const warnings = Array.isArray(enriched.warnings) ? enriched.warnings : [];
+  return {
+    region,
+    virtualLiveId,
+    stepIndex,
+    step: enriched,
+    music: enriched.music,
+    musicVocal: enriched.musicVocal,
+    audioCandidates: enriched.proxiedAudioUrl ? [enriched.proxiedAudioUrl] : playbackQueue.map((item) => item.url),
+    mcEvents: Array.isArray(enriched.events) ? enriched.events : [],
+    playbackQueue,
+    warnings,
+    playbackStatus: enriched.unavailableReason
+      ? warnings.some((warning) => String(warning).includes("__timelineParse")) ? "unsupported-format" : "missing-resource"
+      : playbackQueue.length ? "ready" : "partial",
+    unavailableReason: enriched.unavailableReason
+  };
 }
 
 export async function getVirtualLivePlaybackContext(region: RegionId, virtualLiveId: string) {

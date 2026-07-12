@@ -972,7 +972,10 @@ export async function getEventRelations(region: RegionId, eventId: string) {
     relatedSongs: matchedEventMusics
       .map((item) => songs.find((song) => rawIdEquals(item, "musicId", song.id)))
       .filter((song): song is Song => Boolean(song)),
-    relatedCards: event?.relatedCards ?? [],
+    relatedCards: (event?.relatedCards ?? []).map((card) => ({
+      ...card,
+      assets: getCardAssetDetail(region, card)
+    })),
     relatedGachas: event
       ? gachas.items.filter((item) => rawIdEquals(item, "eventId", eventId) || dateOverlaps(item.startAt, item.endAt, event.startAt, event.endAt))
       : gachas.items.filter((item) => rawIdEquals(item, "eventId", eventId)),

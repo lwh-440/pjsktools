@@ -12,7 +12,7 @@ import { getAssetConfig, getCardAssetDetail, getChartAssetDetail, getEventAssetD
 import { config, isRegion, regions, type RegionId } from "./config.js";
 import { estimateEventPoint, getCalculationContext, getCalculationSchema, getDeckRecommendSchema, getEventBonusConfig } from "./calcData.js";
 import { sendVerificationEmail, smtpConfigured } from "./emailService.js";
-import { getExternalContext, getLive2dModel3Proxy, getLive2dModelDetail, getLive2dModels, getMysekaiFullContext, getStoriesContext, getStoryFullContext, getStoryPlaybackContext, getVirtualLivePlaybackContext, informationCollection, isAllowedExternalAssetUrl } from "./externalData.js";
+import { getExternalContext, getLive2dModel3Proxy, getLive2dModelDetail, getLive2dModels, getMysekaiFullContext, getStoriesContext, getStoryCatalog, getStoryFullContext, getStoryPlaybackContext, getVirtualLivePlaybackContext, getVirtualLiveStepContext, informationCollection, isAllowedExternalAssetUrl } from "./externalData.js";
 import { harukiClient } from "./harukiClient.js";
 import {
   getCardDetail,
@@ -962,7 +962,16 @@ export async function buildApp() {
   app.get("/api/master/:region/live2d/models", async (request, reply) => {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    return getLive2dModels(region);
+    const query = request.query as Record<string, string | undefined>;
+    const hasCatalogQuery = ["page", "pageSize", "q", "characterId", "costumeType", "availability"].some((key) => query[key] != null);
+    return getLive2dModels(region, hasCatalogQuery ? {
+      page: Number(query.page ?? 1),
+      pageSize: Number(query.pageSize ?? 24),
+      q: query.q,
+      characterId: query.characterId ? Number(query.characterId) : undefined,
+      costumeType: query.costumeType,
+      availability: query.availability as "verified-playable" | "region-referenced" | "global-only" | "unavailable" | "all" | undefined
+    } : {});
   });
 
   app.get("/api/master/:region/live2d/models/:modelId/full", async (request, reply) => {
@@ -1023,6 +1032,15 @@ export async function buildApp() {
     return getVirtualLivePlaybackContext(region, virtualLiveId);
   });
 
+  app.get("/api/master/:region/virtual-lives/:virtualLiveId/steps/:stepIndex", async (request, reply) => {
+    const { region, virtualLiveId, stepIndex } = request.params as { region: string; virtualLiveId: string; stepIndex: string };
+    if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    const index = Number(stepIndex);
+    if (!Number.isInteger(index) || index < 0) return reply.badRequest("Invalid Virtual Live step index");
+    const step = await getVirtualLiveStepContext(region, virtualLiveId, index);
+    return step ?? reply.notFound("Virtual Live step not found");
+  });
+
   app.get("/api/master/:region/mysekai/context", async (request, reply) => {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
@@ -1062,6 +1080,19 @@ export async function buildApp() {
     const { region, storyType, storyId } = request.params as { region: string; storyType: string; storyId: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     return getStoryPlaybackContext(region, storyType, storyId);
+  });
+
+  app.get("/api/master/:region/stories/:storyType/:storyId/episodes/:episodeId/playback", async (request, reply) => {
+    const { region, storyType, storyId, episodeId } = request.params as { region: string; storyType: string; storyId: string; episodeId: string };
+    if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    return getStoryPlaybackContext(region, storyType, storyId, episodeId);
+  });
+
+  app.get("/api/master/:region/stories/catalog", async (request, reply) => {
+    const { region } = request.params as { region: string };
+    if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    const query = request.query as Record<string, string | undefined>;
+    return getStoryCatalog(region, { storyType: query.storyType, page: Number(query.page ?? 1), pageSize: Number(query.pageSize ?? 24), q: query.q, unit: query.unit, characterId: query.characterId, relatedId: query.relatedId, sort: query.sort });
   });
 
   app.get("/api/master/:region/stories/context", async (request, reply) => {

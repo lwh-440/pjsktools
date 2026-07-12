@@ -277,12 +277,90 @@ export async function getVirtualLiveDetail(region: RegionId, virtualLiveId: stri
   const catalog = await getVirtualLiveCatalog(region);
   const live = catalog.items.find((item) => String(item.id) === virtualLiveId);
   if (!live) return null;
+  const [musicsResult, vocalsResult, unitsResult, charactersResult, profilesResult, boxesResult, boxDetailsResult, materialsResult] = await Promise.all([
+    getOptionalMetadata(region, "musics.json"),
+    getOptionalMetadata(region, "musicVocals.json"),
+    getOptionalMetadata(region, "gameCharacterUnits.json"),
+    getOptionalMetadata(region, "gameCharacters.json"),
+    getOptionalMetadata(region, "characterProfiles.json"),
+    getOptionalMetadata(region, "resourceBoxes.json"),
+    getOptionalMetadata(region, "resourceBoxDetails.json"),
+    getOptionalMetadata(region, "materials.json")
+  ]);
+  const musics = array(musicsResult.data).map(rawItem);
+  const vocals = array(vocalsResult.data).map(rawItem);
+  const units = array(unitsResult.data).map(rawItem);
+  const characters = array(charactersResult.data).map(rawItem);
+  const profiles = array(profilesResult.data).map(rawItem);
+  const musicMap = new Map(musics.map((item) => [Number(item.id), item]));
+  const vocalMap = new Map(vocals.map((item) => [Number(item.id), item]));
+  const characterMap = new Map(characters.map((item) => [Number(item.id), item]));
+  const profileMap = new Map(profiles.map((item) => [Number(item.characterId ?? item.gameCharacterId ?? item.id), item]));
+  const resolvedCharacters = array(live.virtualLiveCharacters).map(rawItem).map((entry) => {
+    const unit = units.find((item) => Number(item.id) === Number(entry.gameCharacterUnitId));
+    const characterId = Number(unit?.gameCharacterId ?? entry.gameCharacterId ?? entry.characterId);
+    const character = characterMap.get(characterId) ?? {};
+    return {
+      id: characterId,
+      name: missionCharacterName(character, profileMap.get(characterId)),
+      gameCharacterUnitId: Number(entry.gameCharacterUnitId),
+      performanceType: entry.virtualLivePerformanceType
+    };
+  }).filter((item) => Number.isFinite(item.id));
+  const setlistSummaries = array(live.virtualLiveSetlists).map(rawItem).map((step, index) => {
+    const type = String(step.virtualLiveSetlistType ?? "unknown");
+    const vocal = type === "music" ? vocalMap.get(Number(step.musicVocalId)) : undefined;
+    const music = type === "music" ? musicMap.get(Number(vocal?.musicId ?? step.musicId)) : undefined;
+    const jacketCandidates = music?.assetbundleName
+      ? getAssetCandidates(region, `music/jacket/${music.assetbundleName}/${music.assetbundleName}.webp`)
+      : [];
+    return {
+      index,
+      id: String(step.id ?? index),
+      seq: Number(step.seq ?? index + 1),
+      type,
+      assetbundleName: step.assetbundleName,
+      music: music ? { id: String(music.id), title: String(music.title ?? music.name ?? `Music #${music.id}`), jacketCandidates } : undefined,
+      musicVocal: vocal ? { id: String(vocal.id), assetbundleName: vocal.assetbundleName, characters: array(vocal.characters) } : undefined,
+      character3dIds: [1, 2, 3, 4, 5, 6].map((slot) => Number(step[`character3dId${slot}`])).filter(Number.isFinite),
+      playbackLoading: "deferred"
+    };
+  });
+  const boxes = array(boxesResult.data).map(rawItem);
+  const standaloneDetails = array(boxDetailsResult.data).map(rawItem);
+  const detailsByBox = new Map<number, Record<string, any>[]>();
+  for (const detail of standaloneDetails) {
+    const boxId = Number(detail.resourceBoxId);
+    detailsByBox.set(boxId, [...(detailsByBox.get(boxId) ?? []), detail]);
+  }
+  const boxMap = new Map<number, Record<string, any>[]>();
+  for (const box of boxes) {
+    if (String(box.resourceBoxPurpose ?? "") !== "virtual_live_reward") continue;
+    const embedded = array(box.details).map(rawItem);
+    boxMap.set(Number(box.id), embedded.length ? embedded : detailsByBox.get(Number(box.id)) ?? []);
+  }
+  const rewardDetails = array(live.virtualLiveRewards).map(rawItem).flatMap((reward) => boxMap.get(Number(reward.resourceBoxId)) ?? []);
+  const rewardTypes = new Set(rewardDetails.map((detail) => String(detail.resourceType ?? "unknown")));
+  const { maps: lookupMaps } = await loadExchangeLookups(region, rewardTypes);
+  const materialMap = new Map(array(materialsResult.data).map(rawItem).map((item) => [Number(item.id), item]));
+  const resolvedRewards = rewardDetails.map((detail) => resolveExchangeResource(region, detail, materialMap, new Map(), new Map(), lookupMaps));
   return {
     region,
     live,
     schedules: array(live.virtualLiveSchedules),
     setlists: array(live.virtualLiveSetlists),
     rewards: array(live.virtualLiveRewards),
+    characters: resolvedCharacters,
+    resolvedRewards,
+    setlistSummaries,
+    relatedEvent: live.eventId ? { id: String(live.eventId) } : undefined,
+    detailReadiness: {
+      status: setlistSummaries.length ? resolvedRewards.length || !array(live.virtualLiveRewards).length ? "ready" : "partial" : "missing-resource",
+      setlistCount: setlistSummaries.length,
+      characterCount: resolvedCharacters.length,
+      rewardCount: resolvedRewards.length,
+      playbackDeferred: true
+    },
     playbackUrl: `/api/master/${region}/virtual-lives/${encodeURIComponent(virtualLiveId)}/playback`,
     playbackLoading: "deferred",
     sourceHealth: catalog.sourceHealth,

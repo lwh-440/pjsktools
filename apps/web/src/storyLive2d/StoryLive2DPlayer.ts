@@ -22,10 +22,12 @@ export class StoryLive2DPlayer {
   private background?: Sprite;
   private overlay?: Graphics;
   private movieElement?: HTMLVideoElement;
+  private readonly canvas: HTMLCanvasElement;
 
   constructor(private readonly host: HTMLElement) {
     this.app = new Application({ backgroundAlpha: 0, antialias: true, resizeTo: host });
-    host.replaceChildren(this.app.view as HTMLCanvasElement);
+    this.canvas = this.app.view as HTMLCanvasElement;
+    host.replaceChildren(this.canvas);
     this.app.stage.addChild(this.root);
     this.root.addChild(
       this.layers.background,
@@ -195,6 +197,6 @@ export class StoryLive2DPlayer {
     for (const entry of this.models.values()) entry.model.destroy?.({ children: true });
     this.models.clear();
     this.app.destroy(true, { children: true, texture: false, baseTexture: false });
-    this.host.replaceChildren();
+    if (this.host.contains(this.canvas)) this.host.replaceChildren();
   }
 }

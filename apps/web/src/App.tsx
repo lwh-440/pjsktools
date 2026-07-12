@@ -31,19 +31,26 @@
   Wand2,
   Zap
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { apiGet, apiPost, apiResourceUrl } from "./api";
 import { loadCachedCatalog } from "./catalogCache";
 import { useAuth } from "./AuthContext";
 import type { DeckConfig, PlayerBinding } from "./accountTypes";
 import { ArtImage, DetailDrawer, Pagination, SearchBox } from "./components/ui";
-import { Live2dPlayer, type Live2dDetail } from "./components/Live2dPlayer";
-import { StoryPlaybackPlayer, type StoryPlaybackContext } from "./components/StoryPlaybackPlayer";
+import type { StoryPlaybackContext } from "./components/StoryPlaybackPlayer";
 import { AssetsPage, BindingsPage, BoundDeckPage, LoginPage, MeHomePage, MeProfileAnalysisPage, RegisterPage, RequireAuth, ScoresPage } from "./pages/account";
 import { RealChartPreview } from "./RealChartPreview";
 import type { RankingEntry, RankingPlayerDetail } from "./components/RankingDetailPanel";
 import { RankingDetailPanel } from "./components/RankingDetailPanel";
+import { VirtualLiveCatalogPage, VirtualLiveDetailPage } from "./pages/virtualLive";
+import { Live2dCatalogPage } from "./pages/live2d";
+import { LazyRouteBoundary } from "./components/LazyRouteBoundary";
+import { StoryCatalogPage, StoryDetailPage } from "./pages/story";
+
+const LazyLive2dDetailPage = lazy(() => import("./pages/live2dDetail").then((module) => ({ default: module.Live2dDetailPage })));
+const StoryPlaybackPlayer = lazy(() => import("./components/StoryPlaybackPlayer").then((module) => ({ default: module.StoryPlaybackPlayer })));
+const LazyStoryPlayerPage = lazy(() => import("./pages/storyPlayerPage").then((module) => ({ default: module.StoryPlayerPage })));
 
 type Region = { id: string; name: string };
 type DifficultyDetail = { difficulty: string; playLevel: number; totalNoteCount: number };
@@ -548,7 +555,6 @@ export function App() {
     timeoutMs: "15000"
   });
   const [mysekaiCalcResult, setMysekaiCalcResult] = useState<any>(null);
-  const [live2dDetail, setLive2dDetail] = useState<Live2dDetail | null>(null);
   const [storyForm, setStoryForm] = useState({ storyType: "event", storyId: "1" });
   const [storyDetail, setStoryDetail] = useState<any>(null);
   const [storyPlayback, setStoryPlayback] = useState<StoryPlaybackContext | null>(null);
@@ -559,6 +565,12 @@ export function App() {
   const [virtualLiveQueue, setVirtualLiveQueue] = useState<{ index: number; title: string; url: string }[]>([]);
   const [virtualLiveQueueIndex, setVirtualLiveQueueIndex] = useState(-1);
   const [virtualLiveQueueWarnings, setVirtualLiveQueueWarnings] = useState<string[]>([]);
+
+  function changeRegion(nextRegion: string) {
+    if (nextRegion === region) return;
+    setRegion(nextRegion);
+    if (/^\/section\/stories\/.+/.test(location.pathname)) navigate("/section/stories", { replace: true });
+  }
 
   const routeSection = useMemo(() => {
     if (location.pathname === "/") return "home";
@@ -614,7 +626,7 @@ export function App() {
     if (activeSection === "songs" || activeSection === "cards") loadCatalog(activeSection).catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
     if (["tools", "deckCompare"].includes(activeSection)) ensureFullToolData().catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
     if (activeSection === "historyEvents") ensureEvents().catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
-    if (["information", "exchanges", "missions", "virtualLives", "live2d", "mysekai", "stories"].includes(activeSection)) {
+    if (["information", "exchanges", "missions", "mysekai"].includes(activeSection)) {
       loadContent(activeSection).catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
     }
   }, [activeSection, region, page, pageSize, filter, costumeFilters.partType, costumeFilters.source, costumeFilters.rarity, costumeFilters.gender, costumeFilters.characterId]);
@@ -878,9 +890,9 @@ export function App() {
     setAreaRecommendResult(await apiPost("/api/tools/area-item-recommend", { region, eventId: event?.id, targetCardIds: cards.slice(0, 5).map((card) => card.id) }));
   }
 
-  function RelatedCardTile({ card }: { card: Card }) {
+  function renderRelatedCardTile(card: Card, key: string) {
     const candidates = card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates ?? [];
-    return <button type="button" className="related-card related-card-visual" onClick={() => openCard(card.id, true)}>
+    return <button key={key} type="button" className="related-card related-card-visual" onClick={() => openCard(card.id, true)}>
       <ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={candidates} label={card.title} variant="square" />
       <span className="related-card-copy"><strong>{card.title}</strong><span>{card.character}</span><small>星级 {card.rarity} · {card.attribute} · ID {card.id}</small></span>
     </button>;
@@ -1080,9 +1092,6 @@ export function App() {
     };
   }
 
-  async function openLive2dModel(modelId: string) {
-    setLive2dDetail(await apiGet<Live2dDetail>(`/api/master/${region}/live2d/models/${encodeURIComponent(modelId)}/full`));
-  }
 
   async function loadStory() {
     const detail = await apiGet(`/api/master/${region}/stories/${storyForm.storyType}/${storyForm.storyId}/full`);
@@ -1684,54 +1693,6 @@ export function App() {
         <article className="panel"><h2>组卡推荐工具</h2><p className="warning-text">公开工具只使用手动输入的持有卡；登录态组卡请进入个人信息管理。</p><textarea value={deckOwnedIds} onChange={(event) => setDeckOwnedIds(event.target.value)} placeholder="例如：1, 2, 109" /><button type="button" onClick={calculateDeck}><Wand2 size={16} />推荐</button>{deckResult && <pre className="json-preview">{JSON.stringify(deckResult, null, 2)}</pre>}</article>
         <article className="panel"><h2>周回歌曲推荐</h2><p>调用后端 music-recommend，按真实音乐 meta 与估算收益给出候选。</p><button type="button" onClick={calculateMusicRecommend}><Music size={16} />推荐歌曲</button>{musicRecommendResult && <pre className="json-preview">{JSON.stringify(musicRecommendResult, null, 2)}</pre>}</article>
         <article className="panel"><h2>区域道具升级建议</h2><p>调用后端 area-item-recommend，不假设素材持有量。</p><button type="button" onClick={calculateAreaRecommend}><Package size={16} />生成建议</button>{areaRecommendResult && <pre className="json-preview">{JSON.stringify(areaRecommendResult, null, 2)}</pre>}</article>
-      </section>
-    );
-  }
-  function Live2dPage() {
-    const data = contentData.live2d;
-    const models = data?.models ?? [];
-    const selectedModelName = live2dDetail?.model?.name ?? live2dDetail?.model?.modelPath ?? live2dDetail?.model?.id;
-    return (
-      <section className="live2d-workspace">
-        <article className="panel wide">
-          <div className="panel-heading">
-            <div>
-              <h2>Live2D 播放器</h2>
-              <p>使用 Sekai Viewer 的真实 Live2D 资源索引。播放器会优先加载后端重写后的 model3，失败时保留资源诊断。</p>
-            </div>
-            <button type="button" onClick={() => loadContent("live2d")}><RefreshCw size={16} />刷新</button>
-          </div>
-          {data?.sourceMetadata?.unavailableReason && <p className="warning-text">{data.sourceMetadata.unavailableReason}</p>}
-        </article>
-        <article className="panel live2d-model-list">
-          <h3>模型列表</h3>
-          <p className="empty-state">共 {formatNumber(models.length)} 个模型。选择模型后可查看动作、表情、纹理和运行时诊断。</p>
-          <div className="compact-list live2d-model-scroll">
-            {models.slice(0, 160).map((model: any, index: number) => (
-              <div key={`${model.id}:${model.modelFile ?? index}`} className={live2dDetail?.model?.id === model.id ? "selected-row" : ""}>
-                <span>{model.name ?? model.modelPath ?? model.id}</span>
-                <button type="button" onClick={() => openLive2dModel(model.id)}>播放</button>
-              </div>
-            ))}
-          </div>
-          {models.length === 0 && <p className="empty-state">真实 Live2D 模型列表暂不可用。</p>}
-        </article>
-        <article className="panel live2d-player-panel">
-          <div className="panel-heading compact-heading"><div><h3>{selectedModelName ?? "播放器"}</h3><p>拖拽模型可移动视图，动作和表情使用真实 model3 资源。</p></div></div>
-          <Live2dPlayer detail={live2dDetail} />
-        </article>
-        <article className="panel wide">
-          <h3>资源详情</h3>
-          {live2dDetail ? (
-            <div className="resource-summary">
-              <span>model3: {live2dDetail.assets?.model3JsonUrl ? "可用" : "暂不可用"}</span>
-              <span>动作: {formatNumber(live2dDetail.assets?.motionFiles?.length ?? 0)}</span>
-              <span>表情: {formatNumber(live2dDetail.assets?.expressionFiles?.length ?? 0)}</span>
-              <span>纹理: {formatNumber(live2dDetail.assets?.textureFiles?.length ?? 0)}</span>
-              <pre className="json-preview">{JSON.stringify(live2dDetail.assets, null, 2)}</pre>
-            </div>
-          ) : <p className="empty-state">请选择一个模型查看真实 model3、动作、表情和纹理资源。</p>}
-        </article>
       </section>
     );
   }
@@ -2361,7 +2322,7 @@ export function App() {
   }
 
   function ContentPage({ section }: { section: "information" | "exchanges" | "missions" | "virtualLives" | "live2d" | "mysekai" }) {
-    if (section === "live2d") return <Live2dPage />;
+    if (section === "live2d") return null;
     if (section === "mysekai") return <MysekaiPage />;
     const data = contentData[section];
     if (section === "information") return <InformationPage data={data} />;
@@ -2489,7 +2450,7 @@ export function App() {
     if (activeSection === "currentEvent") return <RankingPage />;
     if (activeSection === "forecast") return <ForecastPage />;
     if (activeSection === "profile") return <ProfilePage />;
-    if (activeSection === "historyEvents") return <HistoryPage />;
+    if (activeSection === "historyEvents") return HistoryPage();
     if (activeSection === "songs" || activeSection === "cards" || activeSection in collectionMeta) return <CatalogPage type={activeSection as any} />;
     if (activeSection === "tools") return <ToolsPage />;
     if (activeSection === "deckCompare") return <DeckComparePage />;
@@ -2501,7 +2462,7 @@ export function App() {
       return <StatefulRenderBoundary key="missions" render={() => MissionPage({ data: contentData.missions })} />;
     }
     if (["virtualLives", "live2d"].includes(activeSection)) return <ContentPage section={activeSection as any} />;
-    if (activeSection === "stories") return <StoriesPage />;
+    if (activeSection === "stories") return null;
     if (activeSection === "about") return <AboutPage />;
     return <HomePage />;
   }
@@ -2537,7 +2498,7 @@ export function App() {
       <section className="content">
         <header className="topbar">
           <div><h1>{sectionTitle()}</h1><p>{location.pathname.startsWith("/me") ? auth.message : message}</p></div>
-          <div className="top-actions"><select value={region} onChange={(event) => setRegion(event.target.value)}>{regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" onClick={() => loadBase(region)}><RefreshCw size={16} />刷新</button></div>
+          <div className="top-actions"><select value={region} onChange={(event) => changeRegion(event.target.value)}>{regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" onClick={() => loadBase(region)}><RefreshCw size={16} />刷新</button></div>
         </header>
 
         <Routes>
@@ -2550,6 +2511,13 @@ export function App() {
           <Route path="/me/deck" element={<RequireAuth><BoundDeckPage eventId={event?.id === "none" ? undefined : event?.id} /></RequireAuth>} />
           <Route path="/me/scores" element={<RequireAuth><ScoresPage songs={songs} region={region} /></RequireAuth>} />
           <Route path="/" element={LegacySections()} />
+          <Route path="/section/virtualLives" element={<VirtualLiveCatalogPage region={region} />} />
+          <Route path="/section/virtualLives/:virtualLiveId" element={<VirtualLiveDetailPage region={region} />} />
+          <Route path="/section/live2d" element={<Live2dCatalogPage region={region} />} />
+          <Route path="/section/live2d/:modelId" element={<LazyRouteBoundary label="Live2D 详情"><Suspense fallback={<p className="empty-state">正在加载 Live2D 运行时...</p>}><LazyLive2dDetailPage region={region} /></Suspense></LazyRouteBoundary>} />
+          <Route path="/section/stories" element={<StoryCatalogPage key={region} region={region} />} />
+          <Route path="/section/stories/:storyType/:storyId" element={<StoryDetailPage key={`${region}:detail`} region={region} />} />
+          <Route path="/section/stories/:storyType/:storyId/:episodeId/play" element={<LazyRouteBoundary label="故事播放器"><Suspense fallback={<p className="empty-state">正在加载故事播放器...</p>}><LazyStoryPlayerPage region={region} /></Suspense></LazyRouteBoundary>} />
           <Route path="/section/:sectionId" element={LegacySections()} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -2590,14 +2558,14 @@ export function App() {
         <DetailDrawer title={selectedEvent.event.name} onClose={() => setSelectedEvent(null)}>
           <div className="detail-hero"><ArtImage src={stringAsset(selectedEvent.assets, "bannerUrl")} label={selectedEvent.event.name} /><div><strong>{selectedEvent.event.name}</strong><span>{formatDate(selectedEvent.event.startAt)} - {formatDate(selectedEvent.event.endAt)}</span><p>{selectedEvent.event.storyOutline ?? "真实剧情简介暂不可用。"}</p></div></div>
           <section className="compact-list"><h3>相关歌曲</h3>{selectedEvent.relations.relatedSongs.map((song) => <div key={song.id}><span>{song.title}</span><button type="button" onClick={() => openSong(song.id)}>歌曲详情</button></div>)}</section>
-          <section className="related-card-grid">{selectedEvent.relations.relatedCards.map((card) => <RelatedCardTile key={card.id} card={card} />)}</section>
+          <section className="related-card-grid">{selectedEvent.relations.relatedCards.map((card) => renderRelatedCardTile(card, `${region}:event-card:${card.id}`))}</section>
         </DetailDrawer>
       )}
       {selectedCollection && (
         <DetailDrawer title={selectedCollection.item.name} onClose={() => setSelectedCollection(null)}>
           <div className={`detail-hero ${selectedCollection.item.type === "honors" ? "honor-detail" : ""}`}><ArtImage src={imageCandidates(selectedCollection.assets, true)[0]} srcCandidates={imageCandidates(selectedCollection.assets, true)} label={selectedCollection.item.name} variant={selectedCollection.item.type === "honors" || selectedCollection.item.type === "comics" ? "wide" : "square"} /><div><strong>{selectedCollection.item.name}</strong><span>ID {selectedCollection.item.id}</span><p>{selectedCollection.item.description ?? selectedCollection.item.category ?? "真实 master 展示数据"}</p><small>{formatDate(selectedCollection.item.startAt)} - {formatDate(selectedCollection.item.endAt)}</small></div></div>
           {selectedCollection.item.type === "costumes" && <section className="costume-detail-grid"><div><h3>服装信息</h3><p>部件：{selectedCollection.item.partTypes?.join(" / ") || "缺失"}</p><p>来源：{selectedCollection.item.source ?? "未知"} / 稀有度：{selectedCollection.item.rarity ?? "未知"}</p><p>性别：{selectedCollection.item.gender ?? "未知"}{selectedCollection.item.designer ? ` / 设计：${selectedCollection.item.designer}` : ""}</p><p>适用角色：{selectedCollection.item.characterIds?.join("、") || "未提供"}</p></div><div><h3>颜色与部件</h3>{Object.entries(selectedCollection.item.parts ?? {}).map(([partType, variants]) => <div key={partType} className="costume-part"><strong>{partType}</strong><span>{variants.map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}{(selectedCollection.item.extraParts ?? []).map((part, index) => <div key={`${part.characterId}-${part.partType}-${index}`} className="costume-part"><strong>{part.partType ?? "extra"} / 角色 {part.characterId ?? "-"}</strong><span>{(part.variants ?? []).map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}</div></section>}
-          <section className="related-card-grid">{(selectedCollection.relations?.relatedCards ?? []).slice(0, 30).map((card) => <RelatedCardTile key={card.id} card={card} />)}</section>
+          <section className="related-card-grid">{(selectedCollection.relations?.relatedCards ?? []).slice(0, 30).map((card) => renderRelatedCardTile(card, `${region}:collection-card:${card.id}`))}</section>
         </DetailDrawer>
       )}    </main>
   );

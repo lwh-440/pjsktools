@@ -79,7 +79,14 @@ try {
     const liveDetail = live ? await get(`/api/master/${region}/virtual-lives/${live.id}/full`) : null;
     if (!live || !liveDetail?.live || !Array.isArray(liveDetail.setlists)) failures.push(`${region}: virtual live detail missing`);
     if (liveDetail?.playbackLoading !== "deferred") failures.push(`${region}: virtual live detail is not deferred`);
+    if (!Array.isArray(liveDetail?.setlistSummaries) || !liveDetail.setlistSummaries.length) failures.push(`${region}: virtual live light setlist missing`);
+    if (JSON.stringify(liveDetail).includes('"mcEvents"')) failures.push(`${region}: virtual live light detail eagerly contains MC events`);
+    const playableStep = liveDetail?.setlistSummaries?.find((step) => ["music", "mc", "mc_timeline"].includes(step.type));
+    const stepDetail = playableStep ? await get(`/api/master/${region}/virtual-lives/${live.id}/steps/${playableStep.index}`) : null;
+    if (playableStep && (!stepDetail?.step || stepDetail.stepIndex !== playableStep.index)) failures.push(`${region}: virtual live step endpoint missing`);
+    if (stepDetail && !["ready", "partial", "missing-resource", "unsupported-format"].includes(stepDetail.playbackStatus)) failures.push(`${region}: virtual live step status invalid`);
     checkRegionUrls(region, liveDetail, "virtual-live");
+    checkRegionUrls(region, stepDetail, "virtual-live-step");
 
     const information = await get(`/api/master/${region}/information`);
     const informationItem = information.items?.find((item) => item.bannerImageCandidates?.length || item.raw?.bannerImageCandidates?.length) ?? information.items?.[0];
@@ -110,6 +117,20 @@ try {
     if (!["jp", "cn"].includes(region) && status.modules.information.status !== "not-released") failures.push(`${region}: information should be not-released`);
 
     const storyContext = await get(`/api/master/${region}/stories/context`);
+    const storyCatalog = await get(`/api/master/${region}/stories/catalog?page=1&pageSize=4`);
+    if (storyCatalog.page !== 1 || storyCatalog.pageSize !== 4 || rows(storyCatalog.items).length > 4) failures.push(`${region}: story catalog pagination missing`);
+    if (rows(storyCatalog.items).some((item) => !["eventStories", "unitStories", "cardEpisodes", "specialStories"].includes(item.storyType))) failures.push(`${region}: non-story collection leaked into story catalog`);
+    for (const storyType of ["eventStories", "cardEpisodes", "unitStories", "specialStories"]) {
+      const imageCatalog = await get(`/api/master/${region}/stories/catalog?page=1&pageSize=1&storyType=${storyType}`);
+      const sample = rows(imageCatalog.items)[0];
+      if (!sample) continue;
+      if (["eventStories", "cardEpisodes"].includes(storyType)) {
+        if (sample.imageStatus !== "matched" || !rows(sample.imageCandidates).length) failures.push(`${region}:${storyType}: story image candidates missing`);
+        checkRegionUrls(region, sample.imageCandidates, `story-image-${storyType}`);
+        if (storyType === "eventStories" && !rows(sample.imageCandidates).some((url) => String(url).includes("/event_story/") && String(url).includes("banner_event_story"))) failures.push(`${region}: event story banner path invalid`);
+        if (storyType === "cardEpisodes" && !rows(sample.imageCandidates).some((url) => String(url).includes("/thumbnail/chara/"))) failures.push(`${region}: card story thumbnail path invalid`);
+      } else if (sample.imageStatus !== "reference-no-cover") failures.push(`${region}:${storyType}: expected reference-no-cover`);
+    }
     const stories = {};
     for (const group of storyGroups) {
       const story = rows(storyContext.groups?.[group])[0];
@@ -118,9 +139,15 @@ try {
         continue;
       }
       const storyId = String(story.id ?? story.storyId ?? story.scenarioId ?? story.unit ?? story.assetbundleName ?? "");
-      const playback = await get(`/api/master/${region}/stories/${group}/${encodeURIComponent(storyId)}/playback`);
+      const detail = await get(`/api/master/${region}/stories/${group}/${encodeURIComponent(storyId)}/full`);
+      const episode = rows(detail.chapters)[0];
+      const playback = episode
+        ? await get(`/api/master/${region}/stories/${group}/${encodeURIComponent(storyId)}/episodes/${encodeURIComponent(String(episode.id))}/playback`)
+        : await get(`/api/master/${region}/stories/${group}/${encodeURIComponent(storyId)}/playback`);
       const state = playback.unavailableReason ? "missing-resource" : rows(playback.actions).length ? "scenario-parsed" : "missing-resource";
       stories[group] = state;
+      if (episode && String(playback.episodeId) !== String(episode.id)) failures.push(`${region}:${group}: episode playback mismatch`);
+      if (!playback.playbackStatus || !Array.isArray(playback.essentialAssets) || !Array.isArray(playback.deferredAssets)) failures.push(`${region}:${group}: staged playback fields missing`);
       if (playback.renderAcceptance?.status !== "pending-browser-validation" && !playback.unavailableReason) failures.push(`${region}:${group}: render acceptance policy missing`);
       if (rows(playback.live2dModels).length > 12) failures.push(`${region}:${group}: excessive model preload ${playback.live2dModels.length}`);
       checkRegionUrls(region, playback, `story-${group}`);
@@ -128,6 +155,15 @@ try {
 
     const live2d = await get(`/api/master/${region}/live2d/models`);
     if (live2d.sourceMetadata?.scope !== "global-shared-model-asset") failures.push(`${region}: Live2D scope missing`);
+    const live2dCatalog = await get(`/api/master/${region}/live2d/models?page=1&pageSize=2&availability=all`);
+    if (live2dCatalog.page !== 1 || live2dCatalog.pageSize !== 2 || rows(live2dCatalog.items).length > 2) failures.push(`${region}: Live2D pagination missing`);
+    if (!live2dCatalog.availabilitySummary || live2dCatalog.total !== rows(live2d.models).length) failures.push(`${region}: Live2D availability summary missing`);
+    const live2dSample = rows(live2dCatalog.items)[0];
+    if (live2dSample) {
+      if (live2dSample.scope !== "global-shared-model-asset") failures.push(`${region}: Live2D model scope missing`);
+      const live2dDetail = await get(`/api/master/${region}/live2d/models/${encodeURIComponent(String(live2dSample.id))}/full`);
+      if (!live2dDetail.playbackStatus || !live2dDetail.assetCounts) failures.push(`${region}: Live2D detail status missing`);
+    }
 
     report[region] = {
       modules: status.modules,
@@ -136,7 +172,9 @@ try {
       information: { total: information.items?.length ?? 0, detail: Boolean(informationDetail) },
       exchanges: { total: exchanges.total, summaries: exchanges.summaries?.length ?? 0, rewardCoverage: exchanges.rewardCoverage },
       missions: missions.summary,
-      stories
+      stories,
+      storyCatalog: { total: storyCatalog.total, status: storyCatalog.capabilityStatus },
+      live2d: { total: live2dCatalog.total, availability: live2dCatalog.availabilitySummary }
     };
   }
 } finally {

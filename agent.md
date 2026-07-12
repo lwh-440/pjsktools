@@ -147,6 +147,7 @@ Master/detail APIs:
 - GET /api/master/:region/exchanges/context
 - GET /api/master/:region/missions/context
 - GET /api/master/:region/virtual-lives/context
+- GET /api/master/:region/virtual-lives/:virtualLiveId/steps/:stepIndex
 - GET /api/master/:region/stories/context
 - GET /api/master/:region/stories/:storyType/:storyId/full
 
@@ -348,13 +349,19 @@ Stable-source content pages:
 - Exchange rewards follow Moesekai resource rules: currencies use `thumbnail/common_material`, practice tickets use their dedicated PNG directories, and optional name masters are loaded only for reward types present in the current region. Types for which Moesekai defines no image use a semantic UI icon and `assetStatus: reference-no-image`; guessed asset paths and cross-region fallback are forbidden.
 - Missions page consumes /api/master/:region/missions/context.
 - Virtual Live page consumes /api/master/:region/virtual-lives/context.
-- Virtual Live page can open /api/master/:region/virtual-lives/:virtualLiveId/playback and now uses a two-column workflow: searchable/sortable live list, banner/logo detail, schedules, rewards, setlist cards, MC spawn/unspawn/talk timeline, per-talk voice audio, music audio, source diagnostics, and a basic continuous playback queue that skips missing resources with warnings.
+- Virtual Live uses an independent catalog route and shareable detail route. The detail response contains schedules, resolved rewards, characters, and lightweight setlist summaries; music and MC assets load through the per-step endpoint only when a step is opened or played. The legacy full playback endpoint remains for compatibility and diagnostics.
 - Virtual Live playback now returns referenceSources, referenceParity, preloadStatus, playbackDiagnostics, and playbackQueue. Reference paths reviewed: Sekai Viewer `src/pages/virtual_live/VirtualLiveDetail.tsx`, `VirtualLiveStep.tsx`, `VirtualLiveStepMC.tsx`, `VirtualLiveStepMCTimeline.tsx`, and `VirtualLiveStepMusic.tsx`.
 - Virtual Live target is Sekai Viewer `virtual_live/*` parity: details, schedules, rewards, setlist dispatch, MC `.asset`, MC `.playable`, voice, music audio, preload/playback diagnostics, and source health. Future virtual-live work should deepen these reference-project capabilities only.
 - Story playback now returns actionSupport, preloadStatus, and playbackDiagnostics, with a Sekai Viewer style support matrix. Reference paths reviewed: `src/utils/Live2DPlayer/action/index.ts`, `action/special_effect/index.ts`, `src/pages/storyreader-live2d/StoryReaderLive2DStage.tsx`, and the related special_effect files for camera, black/white in/out, wipe, shake, telop, place info, full screen text, and scenario effects. The frontend executes additional fallback stage effects for camera, black/white overlay, shake, telop, place info, and full-screen text while keeping text/audio diagnostics available when full Live2D runtime behavior is unavailable.
-- Live2D player page consumes /api/master/:region/live2d/models, /api/master/:region/live2d/models/:modelId/full, and the rewritten model3 proxy URL returned by full detail.
+- Live2D uses an independent paginated catalog at `/section/live2d` and a shareable model preview at `/section/live2d/:modelId`. The catalog does not load Cubism or model assets; the detail route lazy-loads the runtime and consumes `/api/master/:region/live2d/models/:modelId/full` plus its rewritten model3 proxy.
+- The Live2D index is a global shared asset list. `global-only` means the asset exists, not that it is released or referenced in the selected region. Only real scenarios parsed for that region may add `region-referenced`; no cross-region reference inference is allowed.
+- Live2D detail status distinguishes `region-referenced`, `global-only`, `partial`, `missing-resource`, and browser `render-failed`. A model3 without motion or expression definitions remains `partial`; the UI must not invent controls or guessed motion paths.
+- Standalone Live2D preview keeps one stable Pixi canvas across parent rerenders, supports abort/retry/resize/drag/zoom, and performs browser render acceptance. Story keeps its multi-layer controller and must use the same model loading and cleanup semantics when its runtime is next consolidated.
 - MySekai assistant page consumes /api/master/:region/mysekai/context/full and POST /api/tools/mysekai-calc.
-- Story reader page consumes /api/master/:region/stories/:storyType/:storyId/full and /playback. It now has a playback mode with real scenario actions, background, dialogue, voice/BGM/SE audio through proxied URLs, basic character layout/motion state, autoplay, previous/next, reset, and volume controls. If Live2D/model resources or advanced effects are unavailable, it degrades to text/audio/resource diagnostics instead of blanking.
+- Story uses independent catalog, work detail, and episode player routes. `/section/stories` consumes the paginated `/api/master/:region/stories/catalog`; work details list real nested episodes; `/section/stories/:storyType/:storyId/:episodeId/play` consumes the episode-specific playback endpoint and must never silently play the first episode instead.
+- Story catalog includes only event, unit, card, and special stories. Area items and other metadata groups must not leak into the story UI. Catalog requests never load scenario, Cubism, models, or audio.
+- Story playback is staged: scenario text and the first readable line become available first, then the initial background and at most the current/next model queue are loaded. Voice, BGM, SE, movie, and later models remain deferred until their actions execute. A media or Cubism failure enters `partial-ready` text mode rather than blanking the stage.
+- Story player routes are lazy-loaded behind a visible error boundary. Parent timers and ranking refreshes must not recreate its canvas, controller, audio, or progress. Chapter changes abort requests and destroy the prior Pixi/Howler/video state.
 - These pages display unavailableReason from the backend when a real source is unavailable and must not invent replacement data.
 
 Catalog/detail behavior:

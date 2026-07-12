@@ -1,150 +1,100 @@
-import { Move, RotateCcw, ZoomIn } from "lucide-react";
+import { Move, Pause, Play, RefreshCw, RotateCcw, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiResourceUrl } from "../api";
+import { Live2DRuntimeStage } from "../live2d/Live2DRuntimeStage";
 
-type AssetFile = { name: string; url: string; group?: string };
-
+type AssetFile = { name: string; url: string; group?: string; index?: number };
 export type Live2dDetail = {
-  model?: { id: string; name?: string; model3JsonUrl?: string; modelPath?: string };
-  assets?: {
-    model3JsonUrl?: string;
-    proxiedModel3JsonUrl?: string;
-    rewrittenModel3JsonUrl?: string;
-    motionFiles?: AssetFile[];
-    proxiedMotionFiles?: AssetFile[];
-    expressionFiles?: AssetFile[];
-    proxiedExpressionFiles?: AssetFile[];
-    textureFiles?: AssetFile[];
-  };
-  runtimeRequired?: string[];
+  model?: { id: string; name?: string; model3JsonUrl?: string; modelPath?: string; regionReferenceStatus?: string };
+  assets?: { model3JsonUrl?: string; proxiedModel3JsonUrl?: string; rewrittenModel3JsonUrl?: string; motionFiles?: AssetFile[]; expressionFiles?: AssetFile[]; textureFiles?: AssetFile[] };
+  assetCounts?: { motions: number; expressions: number; textures: number };
+  playbackStatus?: string;
   unavailableReason?: string;
 };
 
-function proxy(url?: string) {
-  if (!url) return "";
-  return apiResourceUrl(url.startsWith("/api/") ? url : `/api/assets/proxy?url=${encodeURIComponent(url)}`);
-}
-
-function label(file: AssetFile) {
-  return file.name.replace(/\.(motion3|exp3)\.json$/i, "");
-}
+function label(file: AssetFile) { return file.name.replace(/\.(motion3|exp3)\.json$/i, ""); }
 
 export function Live2dPlayer({ detail }: { detail: Live2dDetail | null }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const appRef = useRef<any>(null);
+  const stageRef = useRef<Live2DRuntimeStage | null>(null);
   const modelRef = useRef<any>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const dragRef = useRef<{ x: number; y: number; modelX: number; modelY: number } | null>(null);
-  const [status, setStatus] = useState("选择模型后加载 Live2D。");
-  const [scale, setScale] = useState(0.22);
+  const [loadKey, setLoadKey] = useState(0);
+  const [status, setStatus] = useState("正在等待模型资料");
+  const [runtimeStatus, setRuntimeStatus] = useState<"idle" | "loading" | "ready" | "render-failed" | "failed">("idle");
+  const [scaleFactor, setScaleFactor] = useState(1);
+  const [baseScale, setBaseScale] = useState(1);
   const [motionGroup, setMotionGroup] = useState("all");
   const [selectedMotion, setSelectedMotion] = useState("");
   const [selectedExpression, setSelectedExpression] = useState("");
-  const modelUrl = apiResourceUrl(detail?.assets?.rewrittenModel3JsonUrl ?? detail?.assets?.proxiedModel3JsonUrl) || proxy(detail?.assets?.model3JsonUrl ?? detail?.model?.model3JsonUrl);
-  const motions = detail?.assets?.proxiedMotionFiles?.length ? detail.assets.proxiedMotionFiles : detail?.assets?.motionFiles ?? [];
-  const expressions = detail?.assets?.proxiedExpressionFiles?.length ? detail.assets.proxiedExpressionFiles : detail?.assets?.expressionFiles ?? [];
+  const [autoIdle, setAutoIdle] = useState(true);
+  const modelUrl = apiResourceUrl(detail?.assets?.rewrittenModel3JsonUrl ?? detail?.assets?.proxiedModel3JsonUrl ?? detail?.assets?.model3JsonUrl);
+  const motions = detail?.assets?.motionFiles ?? [];
+  const expressions = detail?.assets?.expressionFiles ?? [];
   const groups = useMemo(() => ["all", ...new Set(motions.map((motion) => motion.group).filter((value): value is string => Boolean(value)))], [motions]);
   const visibleMotions = motionGroup === "all" ? motions : motions.filter((motion) => motion.group === motionGroup);
 
-  function fitModel(app: any, model: any, value: number) {
-    model.position.set(app.renderer.width / 2, app.renderer.height * 0.72);
-    model.scale.set(value);
-  }
+  useEffect(() => {
+    if (!hostRef.current) return;
+    const stage = new Live2DRuntimeStage(hostRef.current);
+    stageRef.current = stage;
+    return () => { abortRef.current?.abort(); stage.destroy(); stageRef.current = null; modelRef.current = null; };
+  }, []);
 
   useEffect(() => {
-    let disposed = false;
-    async function mount() {
-      if (!hostRef.current || !modelUrl) {
-        setStatus(detail?.unavailableReason ?? "真实 model3.json 暂不可用。");
-        return;
-      }
-      try {
-        setStatus("正在加载 Live2D 运行时...");
-        const PIXI = await import("pixi.js");
-        const runtime = await import("@sekai-world/pixi-live2d-display-mulmotion/cubism4");
-        if (disposed || !hostRef.current) return;
-        const app = new PIXI.Application({ backgroundAlpha: 0, resizeTo: hostRef.current, antialias: true });
-        hostRef.current.replaceChildren(app.view as HTMLCanvasElement);
-        const model = await (runtime as any).Live2DModel.from(modelUrl, { autoInteract: false });
-        if (disposed) return app.destroy(true);
-        model.anchor?.set?.(0.5, 0.52);
-        model.eventMode = "static";
-        model.interactive = true;
-        model.cursor = "grab";
-        model.on?.("pointerdown", (event: any) => {
-          const point = event.global ?? event.data?.global;
-          if (!point) return;
-          model.cursor = "grabbing";
-          dragRef.current = { x: point.x, y: point.y, modelX: model.x, modelY: model.y };
-        });
-        model.on?.("pointermove", (event: any) => {
-          if (!dragRef.current) return;
-          const point = event.global ?? event.data?.global;
-          if (point) model.position.set(dragRef.current.modelX + point.x - dragRef.current.x, dragRef.current.modelY + point.y - dragRef.current.y);
-        });
-        const release = () => { model.cursor = "grab"; dragRef.current = null; };
-        model.on?.("pointerup", release);
-        model.on?.("pointerupoutside", release);
-        app.stage.addChild(model);
-        appRef.current = app;
-        modelRef.current = model;
-        fitModel(app, model, scale);
-        setStatus("Live2D 模型已加载。");
-      } catch (error) {
-        setStatus(`播放器加载失败，已降级为资源索引：${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-    void mount();
-    return () => {
-      disposed = true;
-      dragRef.current = null;
-      modelRef.current?.destroy?.({ children: true });
-      appRef.current?.destroy?.(true, { children: true, texture: false, baseTexture: false });
-      modelRef.current = null;
-      appRef.current = null;
-      hostRef.current?.replaceChildren();
-    };
-  }, [modelUrl]);
+    const stage = stageRef.current;
+    if (!stage || !modelUrl) { setRuntimeStatus("idle"); setStatus(detail?.unavailableReason ?? "该模型缺少可加载的 model3 资源"); return; }
+    abortRef.current?.abort();
+    const abort = new AbortController();
+    abortRef.current = abort;
+    stage.destroyModel(modelRef.current);
+    modelRef.current = null;
+    setRuntimeStatus("loading"); setSelectedMotion(""); setSelectedExpression("");
+    stage.loadModel(modelUrl, abort.signal, (progress) => setStatus(progress.message)).then(async (model) => {
+      if (abort.signal.aborted) return;
+      modelRef.current = model;
+      model.eventMode = "static"; model.cursor = "grab";
+      model.on?.("pointerdown", (event: any) => { const point = event.global; if (point) dragRef.current = { x: point.x, y: point.y, modelX: model.x, modelY: model.y }; });
+      model.on?.("pointermove", (event: any) => { const drag = dragRef.current; const point = event.global; if (drag && point) model.position.set(drag.modelX + point.x - drag.x, drag.modelY + point.y - drag.y); });
+      const release = () => { dragRef.current = null; };
+      model.on?.("pointerup", release); model.on?.("pointerupoutside", release);
+      const fitted = stage.fit(model); setBaseScale(fitted); setScaleFactor(1);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (!stage.hasVisiblePixels()) { setRuntimeStatus("render-failed"); setStatus("模型资源已加载，但画布没有可见内容"); return; }
+      setRuntimeStatus("ready"); setStatus("模型已加载，可以拖拽、播放动作或切换表情");
+      const idle = motions.find((motion) => /idle|wait|stand/i.test(`${motion.group} ${motion.name}`)) ?? motions[0];
+      if (autoIdle && idle) void playMotion(idle, model);
+    }).catch((error) => { if (error?.name !== "AbortError") { setRuntimeStatus("failed"); setStatus(error instanceof Error ? error.message : String(error)); } });
+    return () => abort.abort();
+  }, [modelUrl, loadKey]);
 
-  useEffect(() => { modelRef.current?.scale?.set?.(scale); }, [scale]);
+  useEffect(() => { modelRef.current?.scale?.set?.(baseScale * scaleFactor); }, [baseScale, scaleFactor]);
 
-  async function playMotion(file: AssetFile) {
-    try {
-      if (!modelRef.current) throw new Error("模型尚未加载");
-      const group = file.group ?? "Motion";
-      const index = Math.max(0, motions.filter((item) => item.group === file.group).findIndex((item) => item.url === file.url));
-      await modelRef.current.motion?.(group, index);
-      setSelectedMotion(file.url);
-      setStatus(`正在播放动作：${group} / ${label(file)}`);
-    } catch (error) {
-      setStatus(`动作播放失败：${error instanceof Error ? error.message : String(error)}`);
-    }
+  async function playMotion(file: AssetFile, model = modelRef.current) {
+    if (!model) return;
+    const group = file.group ?? "Motion";
+    const groupItems = motions.filter((item) => (item.group ?? "Motion") === group);
+    const index = file.index ?? Math.max(0, groupItems.findIndex((item) => item.url === file.url));
+    await (model.motion?.(group, index) ?? model.internalModel?.motionManager?.startMotion?.(group, index));
+    setSelectedMotion(file.url); setStatus(`正在播放：${group} / ${label(file)}`);
   }
 
   async function applyExpression(file: AssetFile) {
-    try {
-      if (!modelRef.current) throw new Error("模型尚未加载");
-      const index = Math.max(0, expressions.findIndex((item) => item.url === file.url));
-      await modelRef.current.expression?.(index);
-      setSelectedExpression(file.url);
-      setStatus(`已切换表情：${label(file)}`);
-    } catch (error) {
-      setStatus(`表情切换失败：${error instanceof Error ? error.message : String(error)}`);
-    }
+    if (!modelRef.current) return;
+    const index = file.index ?? Math.max(0, expressions.findIndex((item) => item.url === file.url));
+    await (modelRef.current.expression?.(index) ?? modelRef.current.internalModel?.motionManager?.expressionManager?.setExpression?.(index));
+    setSelectedExpression(file.url); setStatus(`当前表情：${label(file)}`);
   }
 
-  return <section className="live2d-player-grid">
-    <article className="live2d-stage-panel"><div ref={hostRef} className="live2d-stage" /><p className="empty-state">{status}</p></article>
-    <article className="panel live2d-controls">
-      <h3>播放器控制</h3>
-      <div className="control-hint"><Move size={16} />拖拽模型移动视图</div>
-      <label><span><ZoomIn size={16} />缩放</span><input type="range" min="0.08" max="0.6" step="0.01" value={scale} onChange={(event) => setScale(Number(event.target.value))} /></label>
-      <button type="button" onClick={() => appRef.current && modelRef.current && fitModel(appRef.current, modelRef.current, scale)}><RotateCcw size={16} />重置视图</button>
-      <div className="segmented">{groups.map((group) => <button key={group} type="button" className={motionGroup === group ? "active" : ""} onClick={() => setMotionGroup(group)}>{group === "all" ? "全部动作" : group}</button>)}</div>
-      <div className="live2d-button-grid">{visibleMotions.map((motion) => <button key={`${motion.group}:${motion.url}`} type="button" className={selectedMotion === motion.url ? "active" : ""} onClick={() => playMotion(motion)}>{label(motion)}</button>)}{!motions.length && <p className="empty-state">真实动作资源暂不可用。</p>}</div>
-      <h4>表情</h4>
-      <div className="live2d-button-grid">{expressions.map((expression) => <button key={expression.url} type="button" className={selectedExpression === expression.url ? "active" : ""} onClick={() => applyExpression(expression)}>{label(expression)}</button>)}{!expressions.length && <p className="empty-state">真实表情资源暂不可用。</p>}</div>
-      <div className="runtime-diagnostics"><strong>运行时诊断</strong><span>model3: {modelUrl ? "可用" : "暂不可用"}</span><span>动作: {motions.length}</span><span>表情: {expressions.length}</span><span>纹理: {detail?.assets?.textureFiles?.length ?? 0}</span><small>{detail?.runtimeRequired?.join(" / ") ?? "pixi.js 7 / mulmotion / Cubism runtime"}</small></div>
-      {detail?.unavailableReason && <p className="warning-text">{detail.unavailableReason}</p>}
-    </article>
+  const ready = runtimeStatus === "ready";
+  return <section className="live2d-preview-layout">
+    <article className="live2d-stage-panel"><div ref={hostRef} className="live2d-stage" /><div className={`live2d-stage-status ${runtimeStatus}`}><span>{status}</span>{runtimeStatus === "loading" && <progress />}{["failed", "render-failed"].includes(runtimeStatus) && <button type="button" onClick={() => setLoadKey((value) => value + 1)}><RefreshCw size={15} />重试</button>}</div></article>
+    <aside className="live2d-controls">
+      <section><h3>视图</h3><p><Move size={15} />拖拽模型调整位置</p><label><span><ZoomIn size={15} />缩放</span><input type="range" min="0.45" max="1.8" step="0.05" value={scaleFactor} onChange={(event) => setScaleFactor(Number(event.target.value))} /></label><button type="button" className="secondary" disabled={!ready} onClick={() => { if (stageRef.current && modelRef.current) { const value = stageRef.current.fit(modelRef.current); setBaseScale(value); setScaleFactor(1); } }}><RotateCcw size={15} />复位视图</button></section>
+      <section><div className="panel-heading compact-heading"><h3>动作</h3><label className="check-row"><input type="checkbox" checked={autoIdle} onChange={(event) => setAutoIdle(event.target.checked)} />自动待机</label></div><div className="segmented">{groups.map((group) => <button key={group} type="button" className={motionGroup === group ? "active" : ""} onClick={() => setMotionGroup(group)}>{group === "all" ? "全部" : group}</button>)}</div><div className="live2d-button-grid">{visibleMotions.map((motion) => <button key={`${motion.group}:${motion.url}`} type="button" disabled={!ready} className={selectedMotion === motion.url ? "active" : ""} onClick={() => void playMotion(motion)}><Play size={13} />{label(motion)}</button>)}</div>{!motions.length && <p className="empty-state">该模型没有动作定义。</p>}</section>
+      <section><h3>表情</h3><div className="live2d-button-grid">{expressions.map((expression) => <button key={expression.url} type="button" disabled={!ready} className={selectedExpression === expression.url ? "active" : ""} onClick={() => void applyExpression(expression)}>{label(expression)}</button>)}</div>{!expressions.length && <p className="empty-state">该模型没有表情定义。</p>}</section>
+      <details><summary>运行诊断</summary><div className="runtime-diagnostics"><span>状态：{runtimeStatus}</span><span>动作：{motions.length}</span><span>表情：{expressions.length}</span><span>纹理：{detail?.assets?.textureFiles?.length ?? 0}</span><span>资源状态：{detail?.playbackStatus ?? "unknown"}</span></div></details>
+    </aside>
   </section>;
 }
