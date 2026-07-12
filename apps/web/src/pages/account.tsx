@@ -58,7 +58,7 @@ type AssetDefinition = {
 };
 
 const inventoryFields: AssetField[] = [
-  { key: "cardId", label: "卡牌 ID", placeholder: "例: 1001", help: "对应真实 master cards.id，参考 Sekai Viewer 用户卡牌列表。" },
+  { key: "cardId", label: "卡牌 ID", placeholder: "例: 1001", help: "可在卡牌图鉴详情中查看对应 ID。" },
   { key: "level", label: "等级", type: "number", placeholder: "60", help: "影响卡牌综合力。" },
   { key: "masterRank", label: "Master Rank", type: "number", placeholder: "0-5", help: "影响综合力、活动加成和部分支援加成。" },
   { key: "skillLevel", label: "技能等级", type: "number", placeholder: "1-4", help: "影响技能收益和高分组卡。" },
@@ -777,7 +777,6 @@ export function BoundDeckPage({ eventId }: { eventId?: string }) {
           {!cards.length && <p className="empty-state">点击开始推荐后会展示每卡贡献分解。</p>}
         </div>
         {result?.missingFields?.length > 0 && <div className="tag-row">{result.missingFields.map((item: string) => <span key={item}>{item}</span>)}</div>}
-        {result && <details><summary>查看完整 JSON</summary><pre className="json-preview">{formatJson(result)}</pre></details>}
       </article>
     </section>
   );

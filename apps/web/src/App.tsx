@@ -1183,9 +1183,9 @@ export function App() {
       <section className="workspace">
         <div className="dashboard-hero">
           <div>
-            <span className="home-kicker">统一真实数据中台</span>
+            <span className="home-kicker">连接每一次 Live 与成长</span>
             <h2>Project Sekai 工具台</h2>
-            <p>网页端与 Android 共用同一后端。图鉴、分数线、账号资产和计算工具都以真实数据为准，不可用时明确提示。</p>
+            <p>快速查看活动、图鉴与个人资料，在清晰顺手的工作台里完成计算和比较。</p>
           </div>
           <div className="hero-metrics">
             <div><span>区服</span><strong>{region.toUpperCase()}</strong></div>
@@ -1223,21 +1223,21 @@ export function App() {
     const filteredRanking = keyword ? ranking.filter((entry) => `${entry.rank} ${entry.playerName ?? entry.name ?? ""} ${entry.userId ?? ""}`.toLowerCase().includes(keyword)) : ranking;
     const sourceStatus = rankingSourceHealth?.status ?? "waiting";
     const sourceLabel = sourceStatus === "fresh"
-      ? "实时快源"
+      ? "已更新"
       : sourceStatus === "stale-refreshing"
         ? "旧缓存刷新中"
         : sourceStatus === "fallback-haruki"
-          ? "Haruki 兜底"
+          ? "备用数据"
           : sourceStatus === "source-unavailable"
-            ? "源不可用"
+            ? "暂时不可用"
             : "等待数据";
     return (
       <section className="rank-page">
         <div className="rank-hero">
-          <div><span className="home-kicker">10 秒自动刷新 · 首屏快源</span><h2>{event?.name ?? "正在加载活动"}</h2><div className="rank-meta"><span>{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</span><span>{ranking.length} 条 T100 数据</span><span>{borders.length} 条普通分数线</span><span>{sourceLabel}</span><span>更新 {formatDate(rankingUpdatedAt ?? undefined)}</span><span>{rankingRefreshing ? "刷新中" : `${rankingCountdown}s 后刷新`}</span></div></div>
+          <div><span className="home-kicker">活动排名每 10 秒更新</span><h2>{event?.name ?? "正在加载活动"}</h2><div className="rank-meta"><span>{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</span><span>{ranking.length} 条 T100 数据</span><span>{borders.length} 条普通分数线</span><span>{sourceLabel}</span><span>更新 {formatDate(rankingUpdatedAt ?? undefined)}</span><span>{rankingRefreshing ? "刷新中" : `${rankingCountdown}s 后刷新`}</span></div></div>
           <div className="rank-actions"><button type="button" onClick={loadRankings} disabled={rankingRefreshing}><RefreshCw size={16} />{rankingRefreshing ? "刷新中" : "立即刷新"}</button><button type="button" className="secondary" onClick={() => goSection("forecast")}>预测线</button></div>
         </div>
-        {(rankingWarnings.length > 0 || rankingSourceHealth?.fallbackLine || rankingSourceHealth?.stale) && <div className="notice compact"><strong>数据源状态</strong><span>{rankingSourceHealth?.fallbackLine ? `使用 ${rankingSourceHealth.fallbackLine} fallback line。` : ""}{rankingSourceHealth?.stale ? "当前显示旧缓存，后台正在刷新。" : ""}{rankingWarnings.join(" / ")}</span></div>}
+        {(rankingWarnings.length > 0 || rankingSourceHealth?.fallbackLine || rankingSourceHealth?.stale) && <div className="notice compact"><strong>更新状态</strong><span>{rankingSourceHealth?.stale ? "当前内容可能稍有延迟，正在刷新。" : "部分内容正在恢复。"}</span></div>}
         <div className="rank-stat-grid">{borders.map((line) => <div key={line.rank}><span>T{line.rank}</span><strong>{formatNumber(line.score)} pt</strong><small>{formatDate(line.updatedAt)}</small></div>)}{borders.length === 0 && <div><span>状态</span><strong>暂无分数线</strong><small>无活动或上游不可用</small></div>}</div>
         <article className="panel wide">
           <div className="panel-heading"><h2>Top 1-100</h2><SearchBox value={filter} onChange={setFilter} placeholder="搜索排名、玩家名或 ID" /></div>
@@ -1385,11 +1385,11 @@ export function App() {
   function CatalogPage({ type }: { type: "songs" | "cards" | keyof typeof collectionMeta }) {
     if (type === "songs") {
       const pageData = catalogs.songs ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
-      return <section className="panel wide"><div className="panel-heading"><div><h2>歌曲图鉴</h2><p>封面和谱面入口由后端聚合真实资源。</p></div><SearchBox value={filter} onChange={setFilter} placeholder="搜索歌曲、ID、分类" /></div><div className="catalog-grid songs">{pageData.items.map((song: Song, index: number) => <button key={`${region}:song:${song.id}`} type="button" className="catalog-card song-card" onClick={() => openSong(song.id)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span><strong>{song.title}</strong><small>{song.unit} / ID {song.id}</small></span><small>{song.durationSeconds ? `${song.durationSeconds}s` : "时长待同步"}</small></button>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h2>歌曲图鉴</h2><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={setFilter} placeholder="搜索歌曲、ID、分类" /></div><div className="catalog-grid songs">{pageData.items.map((song: Song, index: number) => <button key={`${region}:song:${song.id}`} type="button" className="catalog-card song-card" onClick={() => openSong(song.id)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span><strong>{song.title}</strong><small>{song.unit} / ID {song.id}</small></span><small>{song.durationSeconds ? `${song.durationSeconds}s` : "时长待同步"}</small></button>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
     }
     if (type === "cards") {
       const pageData = catalogs.cards ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
-      return <section className="panel wide"><div className="panel-heading"><div><h2>卡牌图鉴</h2><p>卡牌大图和技能详情使用 full 接口。</p></div><SearchBox value={filter} onChange={setFilter} placeholder="搜索角色、卡名、属性" /></div><div className="catalog-grid cards">{pageData.items.map((card: Card, index: number) => <button key={`${region}:card:${card.id}`} type="button" className="catalog-card card-card" onClick={() => openCard(card.id)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates} label={card.title} variant="square" eager={index < 8} /><strong>{card.title}</strong><span>{card.character}</span><small>星级 {card.rarity} / {card.attribute} / ID {card.id}</small></button>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h2>卡牌图鉴</h2><p>浏览卡面、角色信息与各等级技能效果。</p></div><SearchBox value={filter} onChange={setFilter} placeholder="搜索角色、卡名、属性" /></div><div className="catalog-grid cards">{pageData.items.map((card: Card, index: number) => <button key={`${region}:card:${card.id}`} type="button" className="catalog-card card-card" onClick={() => openCard(card.id)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates} label={card.title} variant="square" eager={index < 8} /><strong>{card.title}</strong><span>{card.character}</span><small>星级 {card.rarity} / {card.attribute} / ID {card.id}</small></button>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
     }
     const collectionType = collectionMeta[type].type;
     const activeCollection = catalogs[collectionType];
@@ -1407,7 +1407,7 @@ export function App() {
         </div>}
         <div className="catalog-grid cards">{pageData.items.map((item: CollectionItem) => {
           const candidates = imageCandidates(item.assets);
-          return <button key={`${region}:${collectionType}:${item.id}`} type="button" className={`catalog-card card-card ${collectionType === "honors" ? "honor-card" : ""}`} onClick={() => openCollection(collectionType, item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionType === "honors" ? "wide" : "square"} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件缺失"} · ${item.source ?? "来源未知"}` : item.category ?? item.rarity ?? "真实 master 数据"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button>;
+          return <button key={`${region}:${collectionType}:${item.id}`} type="button" className={`catalog-card card-card ${collectionType === "honors" ? "honor-card" : ""}`} onClick={() => openCollection(collectionType, item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionType === "honors" ? "wide" : "square"} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : item.category ?? item.rarity ?? "详细资料"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button>;
         })}</div>
         {type === "stamps" && <><div className="panel-heading compact-heading collection-subheading"><div><h3>漫画</h3><p>浏览游戏内漫画内容。</p></div></div>{comicItems.length > 0 ? <div className="catalog-grid cards">{comicItems.slice(0, 96).map((item: CollectionItem) => { const candidates = imageCandidates(item.assets); return <button key={`${region}:comic:${item.id}`} type="button" className="catalog-card card-card" onClick={() => openCollection("comics", item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant="wide" /><strong>{item.name}</strong><span>{item.category ?? "漫画"}</span><small>ID {item.id}</small></button>; })}</div> : <p className="empty-state">该区服漫画暂不可用或暂无数据。</p>}</>}
         <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
@@ -1429,7 +1429,7 @@ export function App() {
     return (
       <section className="grid">
         <article className="panel"><h2>往期活动</h2><select value={historyEventId} onChange={(event) => setHistoryEventId(event.target.value)}>{events.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" onClick={() => openEvent(historyEventId || events[0]?.id)}>查看详情</button></article>
-        <article className="panel"><h2>活动说明</h2><p>详情页由后端 full 接口聚合剧情简介、相关卡牌、相关歌曲和卡池。</p></article>
+        <article className="panel"><h2>活动资料</h2><p>选择活动后可查看剧情简介、相关歌曲与登场卡牌。</p></article>
       </section>
     );
   }
@@ -1576,7 +1576,6 @@ export function App() {
             {exactTrace && <div className="deck-compare-exact-trace"><strong>Exact Trace</strong><span>notes {formatNumber(exactTrace.noteCount ?? exactTrace.notes?.length)}</span><span>active {formatNumber(exactTrace.activeBonus)}</span><span>fever {exactTrace.feverWindow?.status ?? exactTrace.feverWindow ? "available" : "-"}</span><span>{deckCompareResult.musicScoreTrace?.status ?? deckCompareResult.musicScoreTrace?.source ?? ""}</span></div>}
             <div className="result-tags"><span>缺失字段</span>{missingFields.map((item: string) => <code key={item}>{item}</code>)}</div>
             <div className="result-tags"><span>估算字段</span>{estimatedFields.map((item: string) => <code key={item}>{item}</code>)}</div>
-            <details><summary>查看完整 JSON</summary><pre className="json-preview">{JSON.stringify(deckCompareResult, null, 2)}</pre></details>
           </article>
         )}
 
@@ -1648,7 +1647,6 @@ export function App() {
             <span>风险提示</span>
             {(result.warnings ?? []).slice(0, 12).map((item: string) => <code key={item}>{item}</code>)}
           </div>
-          <details><summary>查看完整 JSON</summary><pre className="json-preview">{JSON.stringify(result, null, 2)}</pre></details>
         </article>
       );
     }
@@ -1690,9 +1688,9 @@ export function App() {
         </article>
         <PlanResultView result={plan} />
         <article className="panel"><h2>周回 / 控分工具</h2><div className="two-col">{Object.entries(controlForm).map(([key, value]) => <input key={key} value={value} onChange={(event) => setControlForm({ ...controlForm, [key]: event.target.value })} placeholder={key} />)}</div><button type="button" onClick={calculateControl}><Check size={16} />计算</button>{controlResult && <pre className="json-preview">{JSON.stringify(controlResult, null, 2)}</pre>}</article>
-        <article className="panel"><h2>组卡推荐工具</h2><p className="warning-text">公开工具只使用手动输入的持有卡；登录态组卡请进入个人信息管理。</p><textarea value={deckOwnedIds} onChange={(event) => setDeckOwnedIds(event.target.value)} placeholder="例如：1, 2, 109" /><button type="button" onClick={calculateDeck}><Wand2 size={16} />推荐</button>{deckResult && <pre className="json-preview">{JSON.stringify(deckResult, null, 2)}</pre>}</article>
-        <article className="panel"><h2>周回歌曲推荐</h2><p>调用后端 music-recommend，按真实音乐 meta 与估算收益给出候选。</p><button type="button" onClick={calculateMusicRecommend}><Music size={16} />推荐歌曲</button>{musicRecommendResult && <pre className="json-preview">{JSON.stringify(musicRecommendResult, null, 2)}</pre>}</article>
-        <article className="panel"><h2>区域道具升级建议</h2><p>调用后端 area-item-recommend，不假设素材持有量。</p><button type="button" onClick={calculateAreaRecommend}><Package size={16} />生成建议</button>{areaRecommendResult && <pre className="json-preview">{JSON.stringify(areaRecommendResult, null, 2)}</pre>}</article>
+        <article className="panel"><h2>组卡推荐工具</h2><p className="warning-text">公开工具只使用手动输入的持有卡；登录后可直接使用已保存的卡牌库存。</p><textarea value={deckOwnedIds} onChange={(event) => setDeckOwnedIds(event.target.value)} placeholder="例如：1, 2, 109" /><button type="button" onClick={calculateDeck}><Wand2 size={16} />推荐</button>{deckResult && <p className="empty-state">推荐完成，请查看候选卡组。</p>}</article>
+        <article className="panel"><h2>周回歌曲推荐</h2><p>根据歌曲时长与预计收益推荐适合的周回曲目。</p><button type="button" onClick={calculateMusicRecommend}><Music size={16} />推荐歌曲</button>{musicRecommendResult && <p className="empty-state">推荐结果已生成。</p>}</article>
+        <article className="panel"><h2>区域道具升级建议</h2><p>比较当前加成与升级收益，整理优先升级项目。</p><button type="button" onClick={calculateAreaRecommend}><Package size={16} />生成建议</button>{areaRecommendResult && <p className="empty-state">升级建议已生成。</p>}</article>
       </section>
     );
   }
@@ -1721,7 +1719,7 @@ export function App() {
           <div className="panel-heading">
             <div>
               <h2>MySekai 玩家助手</h2>
-              <p>展示真实 MySekai master/context，并提供公开手动输入和绑定 UID 资产计算。</p>
+              <p>浏览 MySekai 家具、素材与蓝图，也可结合个人资产进行计算。</p>
             </div>
             <button type="button" onClick={() => loadContent("mysekai")}><RefreshCw size={16} />刷新</button>
           </div>
@@ -1885,7 +1883,6 @@ export function App() {
                 ))}
                 {!(mysekaiCalcResult.assetGapRanking ?? []).length && <p className="empty-state">推荐卡组暂无明显资产缺口。</p>}
               </section>
-              <details className="wide"><summary>查看完整 JSON</summary><pre className="json-preview">{JSON.stringify(mysekaiCalcResult, null, 2)}</pre></details>
             </div>
           ) : <p className="empty-state">输入卡牌和 MySekai 资产后生成分项贡献。</p>}
         </article>
@@ -1898,7 +1895,6 @@ export function App() {
                 <div><p>{mysekaiDetail.item?.description ?? "暂无说明"}</p><small>ID {mysekaiDetail.item?.id}</small></div>
               </div>
               {asArray(mysekaiDetail.materialCosts).length > 0 && <section><h3>制作素材</h3><div className="mysekai-cost-grid">{asArray(mysekaiDetail.materialCosts).map((cost: any, index: number) => <div key={`${cost.id ?? index}`}><ArtImage src={cost.material?.imageUrl} srcCandidates={asArray(cost.material?.imageCandidates)} label={cost.material?.name ?? "素材"} /><strong>{cost.material?.name ?? cost.mysekaiMaterialId}</strong><span>× {cost.quantity}</span></div>)}</div></section>}
-              <details><summary>结构化资料</summary><pre className="json-preview">{JSON.stringify(mysekaiDetail.item?.raw, null, 2)}</pre></details>
             </article>
           </div>
         )}
@@ -1934,7 +1930,6 @@ export function App() {
       <section className="content-workspace">
         <article className="panel wide">
           <div className="panel-heading"><div><h2>公告资讯</h2><p>按时间线浏览游戏公告。</p></div><button type="button" onClick={() => loadContent("information")}><RefreshCw size={16} />刷新</button></div>
-          <SourcePanel data={data} />
           <div className="timeline-list">
             {visibleItems.map((item: any, index: number) => {
               const raw = rawRecord(item.raw ?? item);
@@ -1955,7 +1950,7 @@ export function App() {
             })}
           </div>
           {items.length > 0 && <Pagination page={safeInformationPage} totalPages={informationPages} pageSize={informationPageSize} onPageChange={setInformationPage} onPageSizeChange={(size) => { setInformationPageSize(size); setInformationPage(1); }} />}
-          {items.length === 0 && <p className="empty-state">当前区服没有可展示公告，或 Information API 暂不可用。</p>}
+          {items.length === 0 && <p className="empty-state">当前区服暂时没有可展示的公告。</p>}
         </article>
         {selectedInformation && (
           <div className="modal-backdrop content-detail-backdrop" role="presentation" onMouseDown={closeInformation}>
@@ -2217,7 +2212,6 @@ export function App() {
             </div>
             <button type="button" onClick={() => loadContent("virtualLives")}><RefreshCw size={16} />刷新</button>
           </div>
-          <SourcePanel data={data} />
           <div className="virtual-live-tools">
             <label>
               <Search size={16} />
@@ -2377,7 +2371,6 @@ export function App() {
       <section className="story-workspace">
         <article className="panel story-selector-panel">
           <div className="panel-heading"><div><h2>故事列表</h2><p>按故事分类选择并播放章节。</p></div><button type="button" onClick={() => loadContent("stories")}><RefreshCw size={16} />刷新</button></div>
-          <SourcePanel data={data} />
           <div className="mission-tabs">
             {groups.map((group) => <button type="button" className={group.key === selected?.key ? "active" : ""} key={group.key} onClick={() => setStoryGroup(group.key)}>{group.label ?? group.key}<span>{formatNumber(group.count ?? 0)}</span></button>)}
           </div>
@@ -2419,8 +2412,6 @@ export function App() {
                   </div>
                 ))}
               </div>
-              <SourcePanel data={storyDetail} />
-              <details><summary>查看完整 JSON</summary><pre className="json-preview">{JSON.stringify(storyDetail, null, 2)}</pre></details>
             </div>
           ) : <p className="empty-state">从左侧选择故事，或手动输入故事类型和 ID。</p>}
         </article>
@@ -2563,7 +2554,7 @@ export function App() {
       )}
       {selectedCollection && (
         <DetailDrawer title={selectedCollection.item.name} onClose={() => setSelectedCollection(null)}>
-          <div className={`detail-hero ${selectedCollection.item.type === "honors" ? "honor-detail" : ""}`}><ArtImage src={imageCandidates(selectedCollection.assets, true)[0]} srcCandidates={imageCandidates(selectedCollection.assets, true)} label={selectedCollection.item.name} variant={selectedCollection.item.type === "honors" || selectedCollection.item.type === "comics" ? "wide" : "square"} /><div><strong>{selectedCollection.item.name}</strong><span>ID {selectedCollection.item.id}</span><p>{selectedCollection.item.description ?? selectedCollection.item.category ?? "真实 master 展示数据"}</p><small>{formatDate(selectedCollection.item.startAt)} - {formatDate(selectedCollection.item.endAt)}</small></div></div>
+          <div className={`detail-hero ${selectedCollection.item.type === "honors" ? "honor-detail" : ""}`}><ArtImage src={imageCandidates(selectedCollection.assets, true)[0]} srcCandidates={imageCandidates(selectedCollection.assets, true)} label={selectedCollection.item.name} variant={selectedCollection.item.type === "honors" || selectedCollection.item.type === "comics" ? "wide" : "square"} /><div><strong>{selectedCollection.item.name}</strong><span>ID {selectedCollection.item.id}</span><p>{selectedCollection.item.description ?? selectedCollection.item.category ?? "暂无更多说明"}</p><small>{formatDate(selectedCollection.item.startAt)} - {formatDate(selectedCollection.item.endAt)}</small></div></div>
           {selectedCollection.item.type === "costumes" && <section className="costume-detail-grid"><div><h3>服装信息</h3><p>部件：{selectedCollection.item.partTypes?.join(" / ") || "缺失"}</p><p>来源：{selectedCollection.item.source ?? "未知"} / 稀有度：{selectedCollection.item.rarity ?? "未知"}</p><p>性别：{selectedCollection.item.gender ?? "未知"}{selectedCollection.item.designer ? ` / 设计：${selectedCollection.item.designer}` : ""}</p><p>适用角色：{selectedCollection.item.characterIds?.join("、") || "未提供"}</p></div><div><h3>颜色与部件</h3>{Object.entries(selectedCollection.item.parts ?? {}).map(([partType, variants]) => <div key={partType} className="costume-part"><strong>{partType}</strong><span>{variants.map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}{(selectedCollection.item.extraParts ?? []).map((part, index) => <div key={`${part.characterId}-${part.partType}-${index}`} className="costume-part"><strong>{part.partType ?? "extra"} / 角色 {part.characterId ?? "-"}</strong><span>{(part.variants ?? []).map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}</div></section>}
           <section className="related-card-grid">{(selectedCollection.relations?.relatedCards ?? []).slice(0, 30).map((card) => renderRelatedCardTile(card, `${region}:collection-card:${card.id}`))}</section>
         </DetailDrawer>

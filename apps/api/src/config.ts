@@ -29,7 +29,7 @@ loadEnvironment();
 
 export const config = {
   port: Number(process.env.PORT ?? 4000),
-  host: process.env.API_HOST ?? "127.0.0.1",
+  host: process.env.API_HOST ?? (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1"),
   jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
   databaseUrl: process.env.PJSKTOOLS_FORCE_MEMORY_STORE === "true" ? "" : process.env.DATABASE_URL ?? "",
   redisUrl: process.env.REDIS_URL ?? "",
