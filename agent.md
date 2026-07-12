@@ -605,6 +605,96 @@ Future validation should collect read-only public Suite UIDs by sample purpose. 
 - Live2D/MySekai round: improve mobile gestures and rare shader/scenario-effect assets where real resources exist, plus MySekai fixture/gate/canvas editing and event/support bonus input UX. The core Story runtime and MySekai CardCalculator paths are no longer listed as unfinished.
 - Chart/player-assistant round: enhance chart preview and evaluate MikuMikuWorld/WASM only for player-assistant use cases such as chart inspection, practice planning, and song efficiency analysis.
 - QQ approval follow-up: run real OAuth end-to-end testing, verify production callback URLs, and document deployment environment variables after QQ Connect approval.
+
+## External Requirements for Public Launch
+
+Deployment was intentionally paused on 2026-07-12. This section tracks services, accounts, approvals, domains, credentials, and operational subscriptions that are outside the project code. It is not a list of product-feature gaps. The preliminary `render.yaml` remains only a candidate deployment configuration.
+
+### Required hosting and infrastructure services
+
+- **Frontend hosting:** choose a public web host such as Sites, Cloudflare Pages, Netlify, or Vercel. The host must support SPA route fallback, HTTPS, environment-specific builds, custom domains, and the final `VITE_API_BASE_URL`.
+- **Long-running API hosting:** obtain a service capable of running the Node/Fastify API continuously, accepting public HTTPS traffic, running scheduled ranking/master refresh jobs, proxying images/media, and allowing outbound access to every approved upstream source. Candidate services include Render, Railway, Fly.io, or a VPS.
+- **Production PostgreSQL:** obtain a persistent PostgreSQL service such as Supabase, Neon, Render PostgreSQL, Railway PostgreSQL, or managed VPS PostgreSQL. Record storage, connection, backup, retention, suspension, and free-tier expiry limits before using it for real accounts.
+- **Optional Redis:** obtain a managed Redis-compatible service only if production request coordination, shared cache, or multi-instance deployment requires it. Do not depend on local process memory when multiple API instances are running.
+- **Persistent cache/object storage:** decide whether large cache files, generated artifacts, and proxy results need object storage such as R2/S3. Render/Railway instance disks may be ephemeral and must not be assumed durable.
+
+### Accounts, authorization, and approvals to obtain
+
+- **GitHub hosting authorization:** authorize the selected API/frontend deployment providers to read the `lwh-440/pjsktools` repository and deploy the selected branch. Keep permissions repository-scoped where possible.
+- **QQ Connect approval:** complete the QQ website application review before enabling QQ login. Obtain the production App ID and App Key, register the exact HTTPS callback URL, and set the approved domain. Until approval is complete, QQ login stays disabled.
+- **Email delivery account:** prepare a production SMTP account or transactional email provider for verification codes. For QQ Mail, obtain and safely store an SMTP authorization code; alternatively select Resend, Postmark, Mailgun, Amazon SES, or another provider and verify its sending domain.
+- **Domain registration:** purchase or designate the final domain and control its DNS. Plan at least the web hostname and API hostname, for example `pjsk.example.com` and `api.pjsk.example.com`.
+- **TLS/HTTPS:** ensure the frontend host and API host issue and renew certificates automatically. OAuth callbacks, email links, iframe content, cookies, and API requests must use the final HTTPS domains.
+- **Upstream-source permission review:** confirm acceptable public use and redistribution terms for Sekai.best, Haruki, Uni/Haruki, Moesekai metadata, rks-n, official notices, game assets, audio, Story, Live2D, and player data. Contact maintainers when attribution or usage permission is unclear.
+- **Official-game legal review:** prepare an unofficial-project disclaimer and review whether publicly proxying or redistributing copyrighted game images, audio, scenarios, Live2D models, and announcements is acceptable. Obtain advice or permission where required.
+
+### Production credentials and environment values
+
+- `VITE_API_BASE_URL`: final public HTTPS API origin used when building the frontend.
+- `PUBLIC_WEB_BASE_URL`: final frontend origin used by the API for redirects and links.
+- `DATABASE_URL`: production PostgreSQL connection string stored only in the host secret manager.
+- `JWT_SECRET`: newly generated production-only secret; never reuse the development fallback.
+- `QQ_CONNECT_APP_ID`, `QQ_CONNECT_APP_KEY`, `QQ_CONNECT_REDIRECT_URI`, `QQ_CONNECT_SCOPE`: set only after QQ approval.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`: production email provider values.
+- `HARUKI_API_BASE_URL`, `MASTER_RAW_BASE_URL`, refresh intervals, and any proxy/source allowlists: confirm production-reachable values and provider terms.
+- `REDIS_URL`: add only when a managed Redis service is selected.
+- Keep development, staging, and production credentials separate. No real credential may be committed to Git, written into `agent.md`, included in screenshots, or pasted into public issue logs.
+
+### DNS and provider configuration
+
+- Point the frontend hostname to the selected frontend provider and the API hostname to the API provider.
+- Configure frontend SPA rewrites so direct visits to routes such as `/section/stories/...` do not return 404.
+- Configure API CORS to allow only the final frontend and approved staging origins.
+- Register the final domain with QQ Connect and the email provider before production verification.
+- Configure asset/iframe proxy allowlists for production domains and verify that providers do not block large responses, Range requests, WebSockets if later needed, or long-running media downloads.
+- Decide whether the public site is private beta, public beta, or general availability and configure provider access restrictions accordingly.
+
+### External monitoring and operations services
+
+- **Uptime monitoring:** obtain a service such as UptimeRobot, Better Stack, Pingdom, or equivalent to monitor the web URL, `/health`, and important public endpoints.
+- **Error tracking:** obtain Sentry or equivalent projects for both Web and API, with separate production/staging environments and source-map handling.
+- **Log retention:** choose the hosting provider's logs or an external log service and define retention. Logs must not contain passwords, verification codes, tokens, email contents, or imported player payloads.
+- **Database backups:** enable automated backups or schedule verified exports. Record restore instructions and provider retention limits.
+- **Status/contact channel:** create a support email or issue channel and, if public traffic warrants it, a status page for outages and upstream-source failures.
+- **Analytics:** optional. If analytics are enabled, choose a privacy-conscious provider and disclose it in the privacy policy; do not add tracking silently.
+
+### Public documents and contact information
+
+- Privacy policy covering account data, email, UID bindings, uploaded assets, logs, analytics, retention, export, and deletion.
+- Terms/usage notice and unofficial-project disclaimer.
+- Data and asset attribution page; the existing About page is the starting point but does not replace legal review.
+- Account deletion and data-export instructions with a working support contact.
+- Copyright/takedown contact and process.
+- Provider-specific privacy disclosures for hosting, database, SMTP, OAuth, monitoring, analytics, and error tracking.
+
+### Cost and free-tier decisions
+
+- Record the selected provider, owner account, billing contact, free-tier limit, sleep behavior, bandwidth/storage quota, database expiry policy, and expected upgrade price.
+- Render-style free API instances may sleep and create long first-load delays; scheduled background refresh may be unreliable while sleeping.
+- Free managed PostgreSQL may pause, expire, limit storage, or restrict backup retention. Do not use it for real user accounts without accepting those terms.
+- Large game images, audio, Live2D, and proxy traffic can exceed free bandwidth quickly. Estimate bandwidth before public promotion.
+- Set billing alerts and hard spending limits where the provider supports them.
+
+### Recommended external-service sequence
+
+1. Register the final domain and create a dedicated project email/support address.
+2. Choose the production PostgreSQL provider and verify backup/retention terms.
+3. Choose an always-on or acceptable-sleep API host and authorize the GitHub repository.
+4. Deploy the API, obtain its HTTPS URL, and verify outbound access to required data sources.
+5. Choose the frontend host, set `VITE_API_BASE_URL`, deploy the Web build, and configure SPA rewrites.
+6. Configure DNS, HTTPS, `PUBLIC_WEB_BASE_URL`, CORS, SMTP, and approved OAuth callbacks.
+7. Add uptime monitoring, error tracking, backup alerts, billing alerts, and support contacts.
+8. Publish privacy/terms/disclaimer/attribution/deletion documents before opening registration to the public.
+
+### Current external readiness
+
+- GitHub repository exists and deployment providers can be authorized against it.
+- No final frontend host, API host, production domain, or production API URL is selected.
+- `render.yaml` exists as an optional Render Blueprint but deployment is paused.
+- Supabase has been used as hosted PostgreSQL during development, but the final production database ownership, plan, backup policy, and connection values still need confirmation.
+- QQ Connect approval and production callback registration are still pending.
+- Production SMTP credentials, monitoring, error tracking, support contact, privacy policy, terms, disclaimer, and takedown process are not yet finalized.
+- Sites frontend publication remains blocked until a stable public API URL and its allowed frontend origin are available.
 # 卡牌技能与服装图鉴数据约束
 
 - 卡牌技能详情必须使用 Moesekai `formatSkillDescription` 语义解析模板占位符，并保留 effect ID、等级数值、持续时间与增强参数。旧缓存缺 effect ID 时，只能从当前区服 reference skills master 补齐；无法补齐时显示 `missing-data`，不得展示原始 `{{...}}` 作为正式描述。
