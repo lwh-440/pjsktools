@@ -8,7 +8,178 @@ This project is a Project Sekai / PJSK player toolbox. Target architecture:
 - Two frontends: web and native Android use the same backend APIs.
 - Real data first: music, charts, card skills, events, gachas, honors, ranking borders, player profiles, music meta, vocals, images, and relations must come from real sources. If unavailable, return an explicit unavailable/missing reason instead of fabricated data.
 
-Android is currently roadmap-only. Do not modify Android source unless explicitly requested. Android follow-up plan lives in docs/android-roadmap.md.
+Android now has a clean production-oriented project scaffold under `android/`; feature implementation has not started. Continue from the phases and current API mapping in this file instead of restoring the obsolete prototype.
+
+## Android App Implementation Plan
+
+### Current baseline and decisions
+
+- The removed Android prototype used a single large Activity, handwritten `JSONObject` parsing, hard-coded emulator networking, cleartext traffic, and in-memory state. Do not restore or imitate that architecture. The replacement scaffold uses Compose, Hilt, typed-network/storage dependencies, build variants, and debug-only emulator cleartext configuration.
+- The Android app is a native companion to the web app, not a WebView wrapper and not an independent backend client. It must consume this project's API only. It must not call Team-Haruki, Sekai Viewer, Moesekai, asset mirrors, or game endpoints directly.
+- The backend owns formulas, source selection, region isolation, cache/source diagnostics, player-data validation, recommendation algorithms, and share-card generation. Android owns presentation, local persistence, offline reading, input validation, media playback, notifications, and Android lifecycle behavior.
+- Web pages are product/behavior references only. Their React component structure, desktop navigation, browser storage, and WebGL assumptions are not Android architecture requirements. When no mobile reference exists, choose the solution that best fits Android conventions, small screens, intermittent networks, process death, and background execution limits.
+- Supported regions remain `jp`, `en`, `tw`, `kr`, and `cn`. No region may silently fall back to another region's master data or assets. Every cached row and user selection that depends on region must carry an explicit region key.
+
+### Product scope
+
+Android v1 must make the common player-assistant workflows fast and dependable:
+
+1. App shell: first-run setup, region selection, bottom navigation, global search entry, loading/empty/error/stale states, theme, and app/about diagnostics.
+2. Events: current event, ranking border, top ranking, history, churn/forecast where available, manual refresh, favorites, and optional local notifications for selected borders or event end time.
+3. Catalogs: songs, song detail and chart preview; cards and card detail; events; gachas; honors; materials; costumes; stamps/comics. Lists need search, filters, stable scroll position, image placeholders, and offline cache.
+4. Player lookup: public UID profile, explicit refresh, ranking-player lookup, and saved/favorite players. Detailed profile analysis is available only for an authenticated player binding.
+5. Account: email code/register/login, refresh/logout, QQ login/link when configured, multiple player bindings, default binding, synchronized favorites and scores, and saved deck configurations.
+6. Player assets: card inventory first, then the other structured asset kinds already supported by `/api/me/player-data`. Editing must show server validation, missing fields, import diff, and sync state. Screenshot import stays local to the device until the user confirms structured rows.
+7. Tools: event point, score control, deck recommend, deck compare, music recommend, normal event plan, area item recommend, and MySekai calculation. Android sends inputs to the backend and renders traces, estimates, missing fields, and unavailable reasons; it never ports the private formula implementation into Kotlin.
+8. Sharing: v1 can share text/deep links assembled from real detail data. Image sharing remains blocked because the current share-card endpoint exposes placeholder metadata and points at an unimplemented PNG route.
+
+The following are post-v1 unless a later request promotes them:
+
+- Full Story/Live2D parity. Start with story catalog, metadata, text/voice playback, and explicit unsupported-effect diagnostics. A native Cubism runtime is a separate spike because the web implementation depends on Pixi/WebGL and browser-oriented resources.
+- Full Virtual Live visual reproduction. Start with schedule, set list, rewards, MC timeline, and audio playback using Media3. Do not promise 3D stage playback in v1.
+- Interactive SUS chart playback. v1 uses the backend's real chart data/preview and external links where needed; a native Canvas/OpenGL renderer requires an isolated prototype and performance acceptance before product integration.
+- QQ OAuth end-to-end release, widgets, Wear OS, tablets/foldables optimized layouts, and Play Store production release until credentials, policies, signing, and monitoring are ready.
+
+### Target architecture
+
+- Language/UI: Kotlin, Jetpack Compose, Material 3, edge-to-edge layouts, adaptive navigation, and accessibility semantics. Minimum SDK stays 26 unless a required library forces a reviewed change; compile/target SDK should track the current stable Android toolchain.
+- State model: unidirectional data flow with immutable `UiState`, screen-level ViewModels, `StateFlow`, coroutines, `SavedStateHandle`, and explicit one-shot effects. Compose functions do not call network/storage clients directly.
+- Dependency injection: Hilt. Keep interfaces at repository boundaries so fake implementations can drive tests and previews.
+- Network: Retrofit + OkHttp + kotlinx.serialization with typed request/response DTOs. Add auth, request ID, app version, region, timeout, retry, and structured logging interceptors. Retry only idempotent requests and honor server rate-limit/backoff headers.
+- Persistence: Room for catalog/detail/event/ranking snapshots and local user drafts; DataStore for settings and lightweight metadata. Store timestamps, available dataset/source version, source health, and region on cached entities.
+- Credentials: keep short-lived access tokens in memory where practical; persist refresh credentials only through Android Keystore-backed encryption. Never log tokens, email codes, UID exports, imported screenshots, or full private API payloads.
+- Images: Coil with bounded disk/memory cache, region-aware cache keys, HTTPS-only production URLs, placeholder/error states, and no direct knowledge of upstream asset hosts outside URLs returned by the API.
+- Background work: WorkManager for constrained catalog refresh, explicitly supported retryable writes, and ranking notification checks. Unique work names must include account/binding/region where relevant. Do not depend on exact periodic timing.
+- Media: Media3 for voice/audio queues, audio focus, headset controls, notification controls, lifecycle pause/resume, and cache limits. Keep Live2D/complex story rendering behind a feature boundary.
+- Navigation: Navigation Compose with typed destinations. Preserve region and stable IDs in routes, restore tab stacks, support app links, and use Custom Tabs for external/OAuth pages.
+- Suggested modules after the bootstrap is stable: `app`, `core:model`, `core:network`, `core:database`, `core:datastore`, `core:designsystem`, `core:common`, `core:testing`, plus `feature:*` modules for events, catalogs, player, account/assets, tools, stories/media, and settings. If initial migration speed matters, establish these package boundaries in one module first and split Gradle modules before multiple feature teams or build-time pressure appears.
+
+### Current API baseline and Android mapping
+
+`apps/api/src/app.ts` is the source of truth. Do not plan against routes that exist only in old documents or UI ideas. Android implementation should consume the current endpoints in this order:
+
+- Bootstrap and diagnostics: `GET /health`, `GET /api/regions`, `GET /api/runtime/status`, `GET /api/assets/:region/config`, and read-only `GET /api/assets/proxy` URLs returned by backend responses.
+- Songs: `GET /api/master/:region/songs`, `GET /api/master/:region/music/:musicId`, `/full`, `/assets`, `/relations`, and `/charts/:difficulty`.
+- Cards: `GET /api/master/:region/cards`, `GET /api/master/:region/cards/:cardId`, `/full`, `/assets`, plus `GET /api/master/:region/cards/import-manifest` for local screenshot matching support.
+- Events and rankings: `GET /api/events/:region`, `/current`, `/live-ranking`, `/:eventId/detail`, `/ranking-top100`, `/ranking-border`, `/ranking-churn`, `/ranking-history`, `/ranking-history/summary`, `/ranking-forecast`, `/ranking-player/:rank`, and explicit `POST .../refresh`. Event master detail/asset/relation/calculation routes under `/api/master/:region/events/:eventId/*` provide catalog and tool context.
+- Generic catalogs: `GET /api/master/:region/catalog/:catalogType`; `GET /api/master/:region/:collection`, `/:id`, and `/:id/full` for collections currently exposed by the backend, including gachas, honors, materials, costumes, stamps, and comics. The app must use backend-returned fields and unavailable states rather than assume one schema fits every collection.
+- Content: information routes under `/api/master/:region/information*`; `exchanges/context` and `exchanges/:exchangeId`; `missions/context`; Virtual Live context/full/playback/step routes; MySekai context/full/catalog routes; story context/catalog/full/playback/episode playback routes; and Live2D model list/full/model proxy routes.
+- Public player lookup: `GET /api/players/:region/:userId/profile` and `POST /api/players/:region/:userId/refresh`. There is no unauthenticated full profile-analysis route.
+- Public tools: calculation/deck recommendation schemas plus `POST /api/tools/score-control`, `/event-point-calc`, `/deck-compare`, `/deck-recommend`, `/music-recommend`, `/area-item-recommend`, `/normal-event-plan`, and `/mysekai-calc`.
+- Authentication: `POST /api/auth/email-code/start`, `/register`, `/login`, `/refresh`, `/logout`; `GET /api/auth/me`; QQ start/callback/link/unlink routes when the server reports that QQ is configured.
+- Account data: `GET /api/me/profile`; favorites list/create/delete; scores list/create/update/delete; player binding list/create/update/delete, summary, tool context, profile analysis, and public-profile refresh.
+- Player assets: card inventory list/bulk upsert/delete; import, import review, export, completeness, validation; and generic `GET/PUT /api/me/player-data/:bindingId/:kind`. Use server validation before writes and keep the binding region authoritative.
+- Decks and authenticated tools: deck-config list/create/update/delete and all `/api/me/tools/*` variants. Prefer these variants when a selected binding should supply inventory/player assets.
+- Sharing: `GET /api/share/cards/:type/:id` currently returns placeholder metadata only. Do not request `imageUrl` as a working bitmap until the backend implements and tests the referenced PNG route.
+
+### Known API constraints and pre-implementation decisions
+
+These are gaps in the current API contract, not assumed existing capabilities. Resolve or deliberately design around them before the affected Android phase:
+
+- There is no checked-in OpenAPI specification. Phase 0 must either add one or create hand-maintained typed DTOs from route schemas and lock them with backend JSON fixtures. Android must never infer DTOs from React types.
+- Error responses are primarily HTTP status plus human-readable messages. Add stable error codes, request IDs, field errors, and retryability before relying on fine-grained client recovery; until then, branch only on HTTP status and documented response fields.
+- Large catalog/ranking endpoints do not expose a uniform pagination contract. v1 may cache/filter returned lists locally where payloads are proven acceptable; add server pagination before shipping any screen whose measured payload/startup cost exceeds the agreed budget.
+- Cache validators and mobile compatibility fields are not uniformly exposed. Use response/source timestamps already returned where present, and add dataset versions/ETag plus minimum-supported-app/maintenance flags before public release.
+- Auth refresh rotation exists, but Android must verify access-token expiry behavior and concurrent 401 handling against fixtures before implementing an OkHttp authenticator.
+- Production asset URLs must be audited for HTTPS, expiry, proxy requirements, content type, and cacheability. Debug builds may use emulator cleartext through a debug-only network security config; release builds must not enable global cleartext traffic.
+- Write endpoints do not currently advertise idempotency keys or optimistic concurrency versions. Do not silently replay non-idempotent writes. Initial offline mode should queue only operations proven idempotent or require user confirmation after reconnect; add server support before automatic outbox replay.
+- Account deletion, push subscriptions, binary share-card rendering, and native app-link/OAuth callback contracts are not current API capabilities. Keep them blocked or use a documented web fallback until backend support exists.
+- Add deterministic contract fixtures for all five regions and representative states: matched, not released, missing data, stale cache, source unavailable, unauthenticated, validation failure, and rate limited.
+
+### Data, offline, and synchronization rules
+
+- Use network-bound repositories: emit cached data immediately, refresh when stale, then update Room transactionally. The UI always labels stale or incomplete data and shows the last successful refresh time.
+- Cache catalogs/details by `(region, stableId, datasetVersion)`. Switching region must never briefly display another region's cached content as if it belongs to the new region.
+- Public data is read-through cached. Sensitive player data is cached only when needed for offline editing, encrypted where practical, and removed on logout/account removal according to an explicit retention choice.
+- User edits use immediate online writes first. Introduce an automatic outbox only after the backend supports idempotency/concurrency for that operation; until then, offline drafts remain local and require explicit confirmation after reconnect.
+- Screenshot import pipeline: Storage Access Framework/Photo Picker -> local decode/downsample -> local crop/grid detection -> local hash/OCR -> ambiguity review -> structured diff -> confirmed API upload. Delete temporary images after completion/cancel unless the user explicitly keeps them. Never upload raw screenshots for matching.
+- Bound disk usage for images, audio, chart previews, and Room data. Expose cache size and clear-cache actions. Low-storage failure must degrade to online-only behavior without corrupting user data.
+
+### Android UX rules
+
+- Use bottom navigation only for 3-5 top-level destinations. Recommended v1 destinations: Home, Events, Catalog, Tools, Me. Secondary catalogs use tabs/search/filter sheets rather than a desktop-style permanent sidebar.
+- On phones, details open as full destinations; use dialogs/bottom sheets only for short edits or choices. On larger widths, introduce list-detail panes where it materially improves browsing.
+- Every screen defines loading, refreshing, empty, cached-stale, partial-data, offline, auth-expired, permission-denied, and retry states. `missing-data` and `source-unavailable` are product states, not generic crashes.
+- Long calculations show progress/cancel UI when supported, prevent duplicate submission, retain the last input/result across rotation/process recreation, and explain estimated or omitted fields close to the affected result.
+- Respect font scaling, TalkBack traversal, 48dp touch targets, contrast, reduced motion, dark theme, keyboard/IME insets, system back, and predictive back. Verify Chinese, Japanese, Korean, and long English labels for clipping.
+- Notifications are opt-in, channel-based, deep-link to the exact region/event, and tolerate delayed WorkManager execution. Do not market periodic polling as real-time alerts.
+
+### Delivery phases
+
+#### Phase 0 - Audit and contract freeze
+
+- Inventory web features against the route list in `apps/api/src/app.ts` and produce an Android parity matrix: `v1`, `later`, `web-only`, or `blocked`.
+- Extend the clean Android scaffold; do not restore the removed prototype.
+- Freeze typed DTOs/fixtures for the endpoints in the first slice, add Android environment configuration (`local`, `staging`, `production`), and define versioning/signing/application ID strategy.
+- Exit gate: generated/verified DTOs compile; five-region contract fixtures pass; local emulator reaches the API without production cleartext exceptions.
+
+#### Phase 1 - Production foundation
+
+- Establish Compose theme/design system, navigation, Hilt, network stack, Room, DataStore, secure session store, logging/crash boundary, and test fixtures.
+- Implement region switching, runtime compatibility/maintenance handling, global error mapping, offline banner, cache diagnostics, and settings/about screens.
+- Exit gate: process death, rotation, offline launch, token expiry, region switching, and database migration tests pass on API 26 and current target API.
+
+#### Phase 2 - Read-only MVP
+
+- Build Home, current event/ranking, event history/detail, song/card catalogs and details, public player UID lookup, and text/deep-link sharing.
+- Add Paging where the contract supports it, Coil image loading, chart preview, pull-to-refresh, deep links, and baseline adaptive layouts.
+- Exit gate: Android and web show matching core fields for fixed fixtures in all five regions; stale/unavailable/not-released states are visibly distinct.
+
+#### Phase 3 - Account and synchronized data
+
+- Implement email auth/session lifecycle, player bindings/default binding, favorites/scores, deck configs, card inventory, structured asset editors, import/export/review, and logout/local-data cleanup.
+- Add local drafts and local-only screenshot recognition with manual review. Add automatic queued sync only for endpoints that have gained idempotency/concurrency support.
+- Exit gate: drafts survive restart, confirmed online writes synchronize once, server validation is recoverable, and no raw screenshot or secret appears in logs/network captures.
+
+#### Phase 4 - Calculation tools
+
+- Implement schema-driven forms where practical, binding-aware defaults, validation, result sections, traces, comparison tables/charts, saved inputs, and share actions for every supported tool endpoint.
+- Keep tool results versioned with formula/reference IDs so cached results are invalidated when backend semantics change.
+- Exit gate: golden request/response fixtures match web/backend outputs; missing and estimated fields remain visible; duplicate submissions and stale results are prevented.
+
+#### Phase 5 - Content and media
+
+- Add information, exchanges, missions, MySekai catalogs, story catalog/text/voice playback, Virtual Live schedule/set list/audio, and download/cache management.
+- Run separate spikes for native chart playback and Live2D. Promote them only after representative five-region assets, frame time, memory, cancellation, audio sync, and fallback behavior pass acceptance.
+- Exit gate: background audio follows Android audio-focus rules; interrupted downloads resume or fail cleanly; unsupported scenario effects are named explicitly.
+
+#### Phase 6 - Hardening and release
+
+- Add baseline profiles, startup/macrobenchmarks, ANR/memory/network profiling, R8/resource shrinking, dependency and secret scanning, accessibility review, privacy/data-safety documents, support contact, signing backup, staged rollout, and rollback plan.
+- Use internal -> closed -> open testing tracks. Gate rollout on crash-free sessions, ANR rate, auth success, API error rate, sync failure rate, and backend/app version compatibility.
+- Exit gate: release build uses HTTPS only, no debug endpoint or logging, reproducible CI artifacts, verified app links, tested upgrade/migration path, and approved store disclosures.
+
+### Test and CI matrix
+
+- Unit tests: serializers, mappers, reducers/ViewModels, validators, cache freshness, region isolation, token refresh single-flight, retry policy, conflict resolution, and tool-result formatting.
+- Database tests: migrations, transactional replacement, local drafts, logout cleanup, and five-region key isolation. Add outbox replay/idempotency tests only when backend support exists.
+- API contract tests: recorded deterministic fixtures plus staging smoke tests; never make ordinary unit tests depend on live upstream providers.
+- Compose tests: navigation, search/filter, forms, offline/stale/partial states, accessibility labels, large font, dark theme, and screenshot-import review.
+- End-to-end tests: fresh install, upgrade, login/refresh/logout, region switch, UID binding, offline edit/reconnect, calculation, sharing, deep link, media interruption, and low-storage behavior.
+- Device coverage: API 26, one mid API, current target API; small phone, standard phone, and tablet/foldable width class; at least one low-memory physical device before release.
+- CI commands should eventually include formatting/lint, unit tests, Android lint, debug/release assembly, Room schema verification, dependency checks, and selected emulator instrumentation tests. Keep backend/web verification running because Android depends on their contracts.
+
+### Definition of done for each Android feature
+
+- Uses typed API/domain models and repository boundaries; no `JSONObject` parsing or direct HTTP call from UI code.
+- Handles all five regions and the explicit source states defined by the backend.
+- Works after rotation and process recreation; defines offline/cache behavior and cancellation.
+- Includes unit tests plus Compose/integration coverage proportional to risk.
+- Meets accessibility, localization, dark theme, and small-screen layout requirements.
+- Does not expose secrets or private data in logs, analytics, screenshots, backups, or notifications.
+- Documents any API addition, migration, feature flag, deep link, background job, cache policy, and release impact in the same change.
+
+### First implementation slice
+
+When Android implementation begins, do not start by porting every web page. Deliver this vertical slice first:
+
+1. Complete the existing Android scaffold with the production foundation from Phase 1.
+2. Implement region selection -> current event -> ranking border/detail -> offline cached reopen.
+3. Add one catalog flow: song list -> song detail -> real chart preview.
+4. Add login/refresh/logout and favorites using the current `/api/auth/*` and `/api/me/favorites` routes.
+5. Verify the slice on `jp`, `en`, `tw`, `kr`, and `cn`, including at least one unavailable/not-released fixture.
+
+This slice exercises navigation, contracts, images, cache, auth, region isolation, lifecycle, and testing before the app accumulates broad feature surface.
 
 ## Reference Projects
 
@@ -20,7 +191,7 @@ Android is currently roadmap-only. Do not modify Android source unless explicitl
 - moe-sekai/Moesekai
   - Reference for real SUS charts, music_meta, chart previews, request/cache design, deck recommend, score-control, prediction, sekai-calculator data model, DFS/GA deck search, MySekai, and future chart player direction.
 
-When data fields, asset paths, chart rendering, calculations, or cross-region differences are unclear, check sekai-viewer and Moesekai first. Do not copy large code or assets directly. This project is a player assistant, not an entertainment site; ignore Moesekai entertainment pages such as guess-jacket, guess-who, and sticker-maker when planning future features.
+When data fields, asset paths, chart rendering, calculations, or cross-region differences are unclear, check sekai-viewer and Moesekai first. This project follows the AGPL compliance route for any copied, modified, or derived GPL/AGPL code: preserve upstream notices, record the source revision/path in `THIRD_PARTY_NOTICES.md`, and make corresponding source public before a public deployment. This project is a player assistant, not an entertainment site; ignore Moesekai entertainment pages such as guess-jacket, guess-who, and sticker-maker when planning future features.
 
 Local audit note, 2026-07-10:
 
@@ -114,10 +285,10 @@ Reference gap index for future implementation:
 
 - apps/api: Fastify + TypeScript backend.
 - apps/web: React + Vite + TypeScript web frontend.
-- android: Kotlin + Jetpack Compose Android frontend; not modified in current backend iterations.
+- android: clean Kotlin + Jetpack Compose production scaffold; feature implementation has not started.
 - apps/api/data/master-cache: region master cache.
 - apps/api/src/db/migrations: PostgreSQL manual migrations.
-- docs/android-roadmap.md: Android integration roadmap.
+- agent.md: authoritative Android implementation plan and API mapping.
 
 ## Backend Capabilities
 
@@ -620,6 +791,7 @@ Deployment was intentionally paused on 2026-07-12. This section tracks services,
 
 ### Accounts, authorization, and approvals to obtain
 
+- **Open-source release compliance:** before public availability, publish the exact deployed source revision under `AGPL-3.0-or-later`, retain `LICENSE` and `THIRD_PARTY_NOTICES.md`, publish a stable source link in the web/API legal information, and tag the deployed commit. See `OPEN_SOURCE_COMPLIANCE.md`.
 - **GitHub hosting authorization:** authorize the selected API/frontend deployment providers to read the `lwh-440/pjsktools` repository and deploy the selected branch. Keep permissions repository-scoped where possible.
 - **QQ Connect approval:** complete the QQ website application review before enabling QQ login. Obtain the production App ID and App Key, register the exact HTTPS callback URL, and set the approved domain. Until approval is complete, QQ login stays disabled.
 - **Email delivery account:** prepare a production SMTP account or transactional email provider for verification codes. For QQ Mail, obtain and safely store an SMTP authorization code; alternatively select Resend, Postmark, Mailgun, Amazon SES, or another provider and verify its sending domain.
