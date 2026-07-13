@@ -1,20 +1,127 @@
 import type { RegionId } from "./config.js";
 
 const TOOLBOX_API_BASE = "https://toolbox-api-direct.haruki.seiunx.com";
-const top100Ranks = Array.from({ length: 50 }, (_, index) => index * 2 + 1);
 const commonBorderRanks = [500, 1000, 2000, 5000];
 
-export type HarukiProfileFailureKind = "not-found" | "rate-limited" | "upstream-error" | "network-error";
+export type HarukiFailureKind = "not-found" | "rate-limited" | "upstream-error" | "network-error";
+export type HarukiProfileFailureKind = HarukiFailureKind;
 
-export class HarukiProfileRequestError extends Error {
+type HarukiRequestErrorOptions = {
+  cause?: unknown;
+  operation?: string;
+  retryAfterMs?: number;
+};
+
+export class HarukiRequestError extends Error {
+  public readonly operation: string;
+  public readonly retryAfterMs?: number;
+
+  constructor(
+    public readonly kind: HarukiFailureKind,
+    public readonly status?: number,
+    options?: HarukiRequestErrorOptions
+  ) {
+    const operation = options?.operation ?? "request";
+    super(status ? `Haruki ${operation} failed: ${status}` : `Haruki ${operation} failed: network error`, { cause: options?.cause });
+    this.name = "HarukiRequestError";
+    this.operation = operation;
+    this.retryAfterMs = options?.retryAfterMs;
+  }
+}
+
+export class HarukiProfileRequestError extends HarukiRequestError {
   constructor(
     public readonly kind: HarukiProfileFailureKind,
     public readonly status?: number,
-    options?: { cause?: unknown }
+    options?: HarukiRequestErrorOptions
   ) {
-    super(status ? `Haruki profile request failed: ${status}` : "Haruki profile request failed: network error", options);
+    super(kind, status, { ...options, operation: "profile" });
     this.name = "HarukiProfileRequestError";
   }
+}
+
+const inFlightRequests = new Map<string, Promise<unknown>>();
+let requestTail: Promise<unknown> = Promise.resolve();
+let nextRequestAt = 0;
+let rateLimitedUntil = 0;
+
+function numericEnvironmentValue(name: string, fallback: number) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function retryAfterMs(response: Response) {
+  const value = response.headers.get("retry-after");
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+}
+
+function wait(milliseconds: number) {
+  return milliseconds > 0 ? new Promise((resolve) => setTimeout(resolve, milliseconds)) : Promise.resolve();
+}
+
+function requestError(kind: HarukiFailureKind, status: number | undefined, options: HarukiRequestErrorOptions) {
+  return new HarukiRequestError(kind, status, options);
+}
+
+async function fetchHarukiJson<T>(
+  url: string,
+  operation: string,
+  createError: (kind: HarukiFailureKind, status: number | undefined, options: HarukiRequestErrorOptions) => HarukiRequestError = requestError
+): Promise<T> {
+  const existing = inFlightRequests.get(url) as Promise<T> | undefined;
+  if (existing) return existing;
+
+  const execute = requestTail.then(async () => {
+    const blockedFor = rateLimitedUntil - Date.now();
+    if (blockedFor > 0) throw createError("rate-limited", 429, { operation, retryAfterMs: blockedFor });
+
+    await wait(nextRequestAt - Date.now());
+    const intervalMs = numericEnvironmentValue("HARUKI_REQUEST_INTERVAL_MS", 750);
+    nextRequestAt = Date.now() + intervalMs;
+
+    let response: Response;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+    } catch (error) {
+      throw createError("network-error", undefined, { cause: error, operation });
+    }
+
+    if (!response.ok) {
+      const kind: HarukiFailureKind = response.status === 404
+        ? "not-found"
+        : response.status === 429
+          ? "rate-limited"
+          : "upstream-error";
+      const upstreamRetryAfterMs = retryAfterMs(response);
+      if (kind === "rate-limited") {
+        const cooldownMs = upstreamRetryAfterMs ?? numericEnvironmentValue("HARUKI_RATE_LIMIT_COOLDOWN_MS", 15 * 60_000);
+        rateLimitedUntil = Math.max(rateLimitedUntil, Date.now() + cooldownMs);
+      }
+      throw createError(kind, response.status, { operation, retryAfterMs: upstreamRetryAfterMs });
+    }
+
+    try {
+      return await response.json() as T;
+    } catch (error) {
+      throw createError("upstream-error", response.status, { cause: error, operation });
+    }
+  });
+
+  requestTail = execute.then(() => undefined, () => undefined);
+  inFlightRequests.set(url, execute);
+  execute.finally(() => inFlightRequests.delete(url)).catch(() => undefined);
+  return execute;
+}
+
+export function resetHarukiRequestStateForTests() {
+  inFlightRequests.clear();
+  requestTail = Promise.resolve();
+  nextRequestAt = 0;
+  rateLimitedUntil = 0;
 }
 
 async function fetchToolboxLeaderboard(
@@ -33,20 +140,12 @@ async function fetchToolboxLeaderboard(
   });
   if (intervalSeconds) params.set("interval", String(intervalSeconds));
   const url = `${TOOLBOX_API_BASE}/event-tracker/api/v2/web/events/${region}/${eventId}/leaderboards/total/details/rank/${rank}?${params}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Haruki ranking request failed: ${response.status}`);
-  }
-  return response.json();
+  return fetchHarukiJson<any>(url, "ranking request");
 }
 
 async function fetchToolboxOverview(region: RegionId, eventId: string, intervalSeconds = 3600) {
   const url = `${TOOLBOX_API_BASE}/event-tracker/api/v2/web/events/${region}/${eventId}/leaderboards/total/overview?interval=${intervalSeconds}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Haruki overview request failed: ${response.status}`);
-  }
-  return response.json();
+  return fetchHarukiJson<any>(url, "ranking overview");
 }
 
 function flattenLeaderboardItems(json: any) {
@@ -98,23 +197,11 @@ function normalizeGrowth(item: any) {
 
 export class HarukiClient {
   async getPlayerProfile(region: RegionId, userId: string) {
-    let response: Response;
-    try {
-      response = await fetch(`${TOOLBOX_API_BASE}/event-tracker/api/v2/web/players/${region}/${userId}/profile`, {
-        signal: AbortSignal.timeout(12_000)
-      });
-    } catch (error) {
-      throw new HarukiProfileRequestError("network-error", undefined, { cause: error });
-    }
-    if (!response.ok) {
-      const kind: HarukiProfileFailureKind = response.status === 404
-        ? "not-found"
-        : response.status === 429
-          ? "rate-limited"
-          : "upstream-error";
-      throw new HarukiProfileRequestError(kind, response.status);
-    }
-    return response.json();
+    return fetchHarukiJson<any>(
+      `${TOOLBOX_API_BASE}/event-tracker/api/v2/web/players/${region}/${userId}/profile`,
+      "profile",
+      (kind, status, options) => new HarukiProfileRequestError(kind, status, options)
+    );
   }
 
   async getRankingTop100(region: RegionId, eventId: string) {
@@ -130,36 +217,23 @@ export class HarukiClient {
         const growth = normalizeGrowth(growthByUser.get(entry.userId) ?? growthByRank.get(entry.rank));
         entriesByRank.set(entry.rank, { ...entry, ...growth });
       }
-    } catch {
-      const results = await Promise.allSettled(top100Ranks.map((rank) => fetchToolboxLeaderboard(region, eventId, rank, 2)));
-      for (const result of results) {
-        if (result.status !== "fulfilled") continue;
-        for (const item of flattenLeaderboardItems(result.value)) {
-          if (!item?.rankData) continue;
-          const rd = item.rankData;
-          if (rd.rank < 1 || rd.rank > 100 || entriesByRank.has(rd.rank)) continue;
-          const entry = normalizePlayerItem(item, region, eventId, updatedAt);
-          if (entry) entriesByRank.set(rd.rank, entry);
-        }
+    } catch (overviewError) {
+      if (overviewError instanceof HarukiRequestError && overviewError.kind === "rate-limited") throw overviewError;
+      const fallback = await fetchToolboxLeaderboard(region, eventId, 1, 100).catch((error) => {
+        throw error instanceof HarukiRequestError ? error : overviewError;
+      });
+      for (const item of flattenLeaderboardItems(fallback)) {
+        if (!item?.rankData) continue;
+        const rd = item.rankData;
+        if (rd.rank < 1 || rd.rank > 100 || entriesByRank.has(rd.rank)) continue;
+        const entry = normalizePlayerItem(item, region, eventId, updatedAt);
+        if (entry) entriesByRank.set(rd.rank, entry);
       }
     }
 
     const entries = Array.from(entriesByRank.values()).sort((a, b) => a.rank - b.rank);
-    return entries.length > 0
-      ? entries
-      : [
-          {
-            rank: 1,
-            userId: "unknown",
-            name: "Unknown",
-            playerName: "Unknown",
-            score: 0,
-            region,
-            eventId,
-            updatedAt,
-            source: "toolbox-api"
-          }
-        ];
+    if (!entries.length) throw new HarukiRequestError("upstream-error", 502, { operation: "ranking top 100" });
+    return entries;
   }
 
   async getRankingPlayerDetail(region: RegionId, eventId: string, rank: number) {
@@ -210,10 +284,17 @@ export class HarukiClient {
       source: string;
     }> = [];
 
-    const results = await Promise.allSettled(commonBorderRanks.map((rank) => fetchToolboxLeaderboard(region, eventId, rank, 1)));
-    for (const result of results) {
-      if (result.status !== "fulfilled") continue;
-      const item = result.value.current;
+    let firstError: unknown;
+    for (const rank of commonBorderRanks) {
+      let json: any;
+      try {
+        json = await fetchToolboxLeaderboard(region, eventId, rank, 1);
+      } catch (error) {
+        firstError ??= error;
+        if (error instanceof HarukiRequestError && error.kind === "rate-limited") break;
+        continue;
+      }
+      const item = json.current;
       if (!item?.rankData) continue;
       const rd = item.rankData;
       if (entries.some((entry) => entry.rank === rd.rank)) continue;
@@ -228,6 +309,7 @@ export class HarukiClient {
       });
     }
 
+    if (!entries.length && firstError) throw firstError;
     return entries.sort((a, b) => a.rank - b.rank);
   }
 }

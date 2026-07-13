@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
-import { HarukiProfileRequestError, harukiClient } from "./harukiClient.js";
+import { HarukiProfileRequestError, HarukiRequestError, harukiClient } from "./harukiClient.js";
 import { store } from "./store.js";
 
 const createdEmails: string[] = [];
@@ -94,6 +94,48 @@ describe("public player profile failures", () => {
       expect(cached.statusCode).toBe(200);
       expect(cached.json().nickname).toBe("jp-player");
       expect(profile).toHaveBeenCalledTimes(3);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("ranking player failures", () => {
+  it("maps Haruki rate limits to 503 instead of an internal error", async () => {
+    vi.spyOn(harukiClient, "getRankingPlayerDetail").mockRejectedValue(new HarukiRequestError("rate-limited", 429, { operation: "ranking request" }));
+    const app = await buildApp();
+    try {
+      const response = await app.inject({ method: "GET", url: "/api/events/jp/210/ranking-player/1" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().message).toContain("rate-limited");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("maps Top 100 and border rate limits to 503", async () => {
+    vi.spyOn(harukiClient, "getRankingTop100").mockRejectedValue(new HarukiRequestError("rate-limited", 429, { operation: "ranking overview" }));
+    vi.spyOn(harukiClient, "getRankingBorder").mockRejectedValue(new HarukiRequestError("rate-limited", 429, { operation: "ranking request" }));
+    const app = await buildApp();
+    try {
+      const eventId = `rate-limit-${Date.now()}`;
+      const top100 = await app.inject({ method: "GET", url: `/api/events/jp/${eventId}/ranking-top100` });
+      const border = await app.inject({ method: "GET", url: `/api/events/jp/${eventId}/ranking-border` });
+      expect(top100.statusCode).toBe(503);
+      expect(border.statusCode).toBe(503);
+      expect(top100.json().message).toContain("rate-limited");
+      expect(border.json().message).toContain("rate-limited");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps missing ranking details distinct from upstream failures", async () => {
+    vi.spyOn(harukiClient, "getRankingPlayerDetail").mockRejectedValue(new HarukiRequestError("not-found", 404, { operation: "ranking request" }));
+    const app = await buildApp();
+    try {
+      const response = await app.inject({ method: "GET", url: "/api/events/jp/210/ranking-player/1" });
+      expect(response.statusCode).toBe(404);
     } finally {
       await app.close();
     }

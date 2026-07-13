@@ -14,7 +14,7 @@ import { estimateEventPoint, getCalculationContext, getCalculationSchema, getDec
 import { sendVerificationEmail, smtpConfigured } from "./emailService.js";
 import { getExternalContext, getLive2dModel3Proxy, getLive2dModelDetail, getLive2dModels, getMysekaiFullContext, getStoriesContext, getStoryCatalog, getStoryFullContext, getStoryPlaybackContext, getVirtualLivePlaybackContext, getVirtualLiveStepContext, informationCollection, isAllowedExternalAssetUrl } from "./externalData.js";
 import { harukiClient } from "./harukiClient.js";
-import { playerProfileFailure, playerUidPattern } from "./playerProfileHttp.js";
+import { playerProfileFailure, playerUidPattern, rankingDataFailure, rankingPlayerFailure } from "./playerProfileHttp.js";
 import {
   getCardDetail,
   getCardFullDetail,
@@ -1203,14 +1203,22 @@ export async function buildApp() {
     const { region, eventId } = request.params as { region: string; eventId: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     if (eventId === "none") return paginatedList(request, []);
-    return paginatedList(request, await getRankingTop100Cached(region, eventId), 100);
+    try {
+      return paginatedList(request, await getRankingTop100Cached(region, eventId), 100);
+    } catch (error) {
+      return rankingDataFailure(reply, error, "Top 100 ranking");
+    }
   });
 
   app.get("/api/events/:region/:eventId/ranking-border", async (request, reply) => {
     const { region, eventId } = request.params as { region: string; eventId: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     if (eventId === "none") return paginatedList(request, []);
-    return paginatedList(request, await getRankingBorderCached(region, eventId), 100);
+    try {
+      return paginatedList(request, await getRankingBorderCached(region, eventId), 100);
+    } catch (error) {
+      return rankingDataFailure(reply, error, "Ranking border data");
+    }
   });
 
   app.get("/api/events/:region/:eventId/ranking-churn", async (request, reply) => {
@@ -1340,7 +1348,11 @@ export async function buildApp() {
     const boardType = query.boardType === "worldlink" ? "worldlink" : "overall";
     const gameCharacterId = query.gameCharacterId ? Number(query.gameCharacterId) : undefined;
     if (query.gameCharacterId && !Number.isInteger(gameCharacterId)) return reply.badRequest("Unsupported gameCharacterId");
-    return getRankingPlayerDetail(region, eventId, numericRank, { boardType, gameCharacterId });
+    try {
+      return await getRankingPlayerDetail(region, eventId, numericRank, { boardType, gameCharacterId });
+    } catch (error) {
+      return rankingPlayerFailure(reply, error);
+    }
   });
 
   app.post("/api/events/:region/:eventId/refresh", async (request, reply) => {
