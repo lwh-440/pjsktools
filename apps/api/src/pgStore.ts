@@ -10,6 +10,7 @@ import type {
   EmailVerificationCode,
   EmailVerificationPurpose,
   Favorite,
+  IdempotencyRecord,
   OAuthAccount,
   OAuthProvider,
   PlayerDataKind,
@@ -680,6 +681,57 @@ export class PgStore implements AuthStore {
       ]
     );
     return result.rows.map(rowToRankingHistory);
+  }
+
+  async getIdempotencyRecord(scope: string, key: string) {
+    const result = await this.pool.query(
+      `select * from api_idempotency_records where scope = $1 and idempotency_key = $2 and expires_at > now()`,
+      [scope, key]
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      scope: row.scope,
+      key: row.idempotency_key,
+      requestHash: row.request_hash,
+      statusCode: Number(row.status_code),
+      responseBody: row.response_body,
+      createdAt: new Date(row.created_at).toISOString(),
+      expiresAt: new Date(row.expires_at).toISOString()
+    } satisfies IdempotencyRecord;
+  }
+
+  async saveIdempotencyRecord(record: IdempotencyRecord) {
+    await this.pool.query(
+      `insert into api_idempotency_records
+        (scope, idempotency_key, request_hash, status_code, response_body, created_at, expires_at)
+       values ($1, $2, $3, $4, $5, $6, $7)
+       on conflict (scope, idempotency_key) do update set
+        status_code = excluded.status_code,
+        response_body = excluded.response_body,
+        expires_at = excluded.expires_at
+       where api_idempotency_records.request_hash = excluded.request_hash`,
+      [record.scope, record.key, record.requestHash, record.statusCode, JSON.stringify(record.responseBody), record.createdAt, record.expiresAt]
+    );
+  }
+
+  async reserveIdempotencyRecord(record: IdempotencyRecord) {
+    const reserved = await this.pool.query(
+      `insert into api_idempotency_records
+        (scope, idempotency_key, request_hash, status_code, response_body, created_at, expires_at)
+       values ($1, $2, $3, 0, '{}'::jsonb, $4, $5)
+       on conflict (scope, idempotency_key) do update set
+        request_hash = excluded.request_hash,
+        status_code = 0,
+        response_body = '{}'::jsonb,
+        created_at = excluded.created_at,
+        expires_at = excluded.expires_at
+       where api_idempotency_records.expires_at <= now()
+       returning scope`,
+      [record.scope, record.key, record.requestHash, record.createdAt, record.expiresAt]
+    );
+    if (reserved.rows[0]) return "reserved" as const;
+    return (await this.getIdempotencyRecord(record.scope, record.key)) ?? "reserved";
   }
 
 }

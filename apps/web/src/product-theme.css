@@ -171,3 +171,31 @@ input:hover, select:hover, textarea:hover { border-color: #7f939f; }
   .mysekai-catalog-card .art-image, .mysekai-catalog-card .art-fallback { height: 96px; }
   .mysekai-catalog-card > span, .mysekai-catalog-card > strong, .mysekai-catalog-card > small { grid-column: 2; }
 }
+
+.share-card-result {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  gap: 24px;
+  align-items: center;
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--sekai-line);
+}
+
+.share-card-result img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 40 / 21;
+  object-fit: contain;
+  border: 1px solid var(--sekai-line);
+  border-radius: 8px;
+  background: #f7fbfc;
+}
+
+.share-card-result > div { display: grid; gap: 10px; align-content: center; }
+.share-card-result strong { font-size: 20px; color: #17262c; }
+.share-card-result .button { width: fit-content; text-decoration: none; }
+
+@media (max-width: 760px) {
+  .share-card-result { grid-template-columns: 1fr; }
+}

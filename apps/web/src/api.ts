@@ -9,6 +9,8 @@ type RequestOptions = {
   token?: string;
   body?: unknown;
   signal?: AbortSignal;
+  idempotencyKey?: string;
+  ifMatch?: string;
 };
 
 export class ApiError extends Error {
@@ -25,7 +27,9 @@ async function request<T>(method: string, path: string, options: RequestOptions 
     method,
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
+      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+      ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
+      ...(options.ifMatch ? { "If-Match": options.ifMatch } : {})
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal: options.signal
@@ -47,18 +51,24 @@ export function apiGetWithSignal<T>(path: string, signal: AbortSignal, token?: s
   return request<T>("GET", path, { token, signal });
 }
 
-export function apiPost<T>(path: string, body: unknown, token?: string): Promise<T> {
-  return request<T>("POST", path, { body, token });
+function mutationKey() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function apiPut<T>(path: string, body: unknown, token?: string): Promise<T> {
-  return request<T>("PUT", path, { body, token });
+type MutationControls = { idempotencyKey?: string; ifMatch?: string };
+
+export function apiPost<T>(path: string, body: unknown, token?: string, controls: MutationControls = {}): Promise<T> {
+  return request<T>("POST", path, { body, token, idempotencyKey: controls.idempotencyKey ?? mutationKey(), ifMatch: controls.ifMatch });
 }
 
-export function apiPatch<T>(path: string, body: unknown, token?: string): Promise<T> {
-  return request<T>("PATCH", path, { body, token });
+export function apiPut<T>(path: string, body: unknown, token?: string, controls: MutationControls = {}): Promise<T> {
+  return request<T>("PUT", path, { body, token, idempotencyKey: controls.idempotencyKey ?? mutationKey(), ifMatch: controls.ifMatch });
 }
 
-export function apiDelete<T>(path: string, token?: string): Promise<T> {
-  return request<T>("DELETE", path, { token });
+export function apiPatch<T>(path: string, body: unknown, token?: string, controls: MutationControls = {}): Promise<T> {
+  return request<T>("PATCH", path, { body, token, idempotencyKey: controls.idempotencyKey ?? mutationKey(), ifMatch: controls.ifMatch });
+}
+
+export function apiDelete<T>(path: string, token?: string, controls: MutationControls = {}): Promise<T> {
+  return request<T>("DELETE", path, { token, idempotencyKey: controls.idempotencyKey ?? mutationKey(), ifMatch: controls.ifMatch });
 }

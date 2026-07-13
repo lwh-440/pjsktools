@@ -157,6 +157,16 @@ export interface PlayerDataRecord {
   updatedAt: string;
 }
 
+export interface IdempotencyRecord {
+  scope: string;
+  key: string;
+  requestHash: string;
+  statusCode: number;
+  responseBody: unknown;
+  createdAt: string;
+  expiresAt: string;
+}
+
 export type RankingSampleType = "border" | "top100";
 
 export interface RankingHistorySample {

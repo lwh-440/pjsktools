@@ -55,6 +55,10 @@ import { calculateNormalEventPlan, calculateScoreControl, forecastRanking, recom
 import { buildAssetReadiness, sharedFormulaVersion } from "./normalEventFormula.js";
 import { buildProfileAnalysis } from "./profileAnalysis.js";
 import { compareDecks } from "./deckComparator.js";
+import { installOpenApi } from "./openApi.js";
+import { paginate, withPaginationFlags } from "./pagination.js";
+import { renderShareCardPng, shareCardMetadata, type ShareCardData } from "./shareCard.js";
+import { assertIfMatch, createWriteControls, setEntityTag, withEntityVersion } from "./writeControls.js";
 import {
   getContentStatus,
   getExchangeCatalog,
@@ -159,11 +163,42 @@ const catalogQuerySchema = z.object({
 });
 
 function catalogResponse(reply: any, request: any, payload: unknown) {
+  if (payload && typeof payload === "object" && "items" in payload && "page" in payload && "pageSize" in payload && "total" in payload && "totalPages" in payload) {
+    payload = withPaginationFlags(payload as any);
+  }
   const etag = `W/\"${createHash("sha1").update(JSON.stringify(payload)).digest("base64url")}\"`;
   reply.header("etag", etag);
   reply.header("cache-control", "public, max-age=60, stale-while-revalidate=600");
   if (request.headers["if-none-match"] === etag) return reply.code(304).send();
   return payload;
+}
+
+function paginatedList<T>(request: any, items: T[], defaultPageSize = 24) {
+  const query = request.query as { page?: unknown; pageSize?: unknown };
+  if (query.page == null && query.pageSize == null) return items;
+  return paginate(items, query, { page: 1, pageSize: defaultPageSize, maxPageSize: 100 });
+}
+
+async function resolveShareCardData(typeValue: string, id: string, region: RegionId): Promise<ShareCardData | null> {
+  const type = typeValue as ShareCardData["type"];
+  if (!["profile", "score", "event", "card", "song"].includes(type)) return null;
+  if (type === "event") {
+    const event = await getEventDetail(region, id).catch(() => null) as any;
+    return { type, id, region, title: event?.name ?? `活动 ${id}`, subtitle: event?.storyOutline ?? "Project Sekai 活动资料", detail: event?.startAt && event?.endAt ? `${event.startAt} - ${event.endAt}` : `活动 ID ${id}` };
+  }
+  if (type === "card") {
+    const card = await getCardDetail(region, id).catch(() => null) as any;
+    return { type, id, region, title: card?.title ?? card?.name ?? `卡牌 ${id}`, subtitle: [card?.character, card?.attribute, card?.rarity ? `星级 ${card.rarity}` : undefined].filter(Boolean).join(" · ") || "Project Sekai 卡牌资料", detail: `卡牌 ID ${id}` };
+  }
+  if (type === "song") {
+    const song = await getSongDetail(region, id).catch(() => null) as any;
+    return { type, id, region, title: song?.title ?? song?.name ?? `歌曲 ${id}`, subtitle: song?.unit ?? "Project Sekai 歌曲资料", detail: song?.durationSeconds ? `${song.durationSeconds} 秒 · 歌曲 ID ${id}` : `歌曲 ID ${id}` };
+  }
+  if (type === "profile") {
+    const profile = await getPlayerProfileCached(region, id).catch(() => null) as any;
+    return { type, id, region, title: profile?.nickname ?? profile?.name ?? `玩家 ${id}`, subtitle: profile?.rank ? `玩家等级 ${profile.rank}` : "Project Sekai 玩家档案", detail: `UID ${id}` };
+  }
+  return { type, id, region, title: `歌曲成绩 ${id}`, subtitle: "Project Sekai 成绩分享", detail: `成绩记录 ${id}` };
 }
 
 const informationDocumentStyles = `html{color:#232833;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif}body{margin:0;padding:20px;line-height:1.75}img{display:block;max-width:100%;height:auto;margin:0 auto 18px}a{color:#26708f;overflow-wrap:anywhere}.information-pre,.information-body-element{font-size:15px}.information-body-heading{margin:28px 0 14px;padding:10px 14px;border-radius:6px;background:#eef2f5;font-size:20px}.information-body-element-heading{font-size:17px}.btn{display:inline-block;padding:10px 16px;border:1px solid #26708f;border-radius:6px;text-decoration:none}@media(max-width:480px){body{padding:14px}.information-body-heading{font-size:18px}}`;
@@ -654,14 +689,18 @@ export async function buildApp() {
     logger: process.env.PJSKTOOLS_SILENT_APP_LOGS === "true" ? false : true,
     bodyLimit: 8 * 1024 * 1024
   });
+  const buildOpenApiDocument = installOpenApi(app);
+  const writeControls = createWriteControls(store);
   await app.register(cors, { origin: true });
   await app.register(compress, { global: true, threshold: 1024 });
   await app.register(sensible);
   await app.register(jwt, { secret: config.jwtSecret });
 
-  app.decorate("authenticate", async (request: any) => {
+  app.decorate("authenticate", async (request: any, reply: any) => {
     await request.jwtVerify();
+    return writeControls.before(request, reply, request.user.sub);
   });
+  app.addHook("onSend", (request, reply, payload) => writeControls.after(request, reply, payload));
 
   app.get("/health", async () => ({
     status: "ok",
@@ -965,7 +1004,7 @@ export async function buildApp() {
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     const query = request.query as Record<string, string | undefined>;
     const hasCatalogQuery = ["page", "pageSize", "q", "characterId", "costumeType", "availability"].some((key) => query[key] != null);
-    return getLive2dModels(region, hasCatalogQuery ? {
+    const payload = await getLive2dModels(region, hasCatalogQuery ? {
       page: Number(query.page ?? 1),
       pageSize: Number(query.pageSize ?? 24),
       q: query.q,
@@ -973,6 +1012,7 @@ export async function buildApp() {
       costumeType: query.costumeType,
       availability: query.availability as "verified-playable" | "region-referenced" | "global-only" | "unavailable" | "all" | undefined
     } : {});
+    return payload && "items" in payload ? withPaginationFlags(payload as any) : payload;
   });
 
   app.get("/api/master/:region/live2d/models/:modelId/full", async (request, reply) => {
@@ -1017,7 +1057,9 @@ export async function buildApp() {
   app.get("/api/master/:region/virtual-lives/context", async (request, reply) => {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    return getVirtualLiveCatalog(region);
+    const catalog = await getVirtualLiveCatalog(region);
+    const query = request.query as { page?: unknown; pageSize?: unknown };
+    return query.page == null && query.pageSize == null ? catalog : { ...catalog, ...paginate(catalog.items, query) };
   });
 
   app.get("/api/master/:region/virtual-lives/:virtualLiveId/full", async (request, reply) => {
@@ -1093,7 +1135,7 @@ export async function buildApp() {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     const query = request.query as Record<string, string | undefined>;
-    return getStoryCatalog(region, { storyType: query.storyType, page: Number(query.page ?? 1), pageSize: Number(query.pageSize ?? 24), q: query.q, unit: query.unit, characterId: query.characterId, relatedId: query.relatedId, sort: query.sort });
+    return withPaginationFlags(await getStoryCatalog(region, { storyType: query.storyType, page: Number(query.page ?? 1), pageSize: Number(query.pageSize ?? 24), q: query.q, unit: query.unit, characterId: query.characterId, relatedId: query.relatedId, sort: query.sort }));
   });
 
   app.get("/api/master/:region/stories/context", async (request, reply) => {
@@ -1160,15 +1202,15 @@ export async function buildApp() {
   app.get("/api/events/:region/:eventId/ranking-top100", async (request, reply) => {
     const { region, eventId } = request.params as { region: string; eventId: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    if (eventId === "none") return [];
-    return getRankingTop100Cached(region, eventId);
+    if (eventId === "none") return paginatedList(request, []);
+    return paginatedList(request, await getRankingTop100Cached(region, eventId), 100);
   });
 
   app.get("/api/events/:region/:eventId/ranking-border", async (request, reply) => {
     const { region, eventId } = request.params as { region: string; eventId: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    if (eventId === "none") return [];
-    return getRankingBorderCached(region, eventId);
+    if (eventId === "none") return paginatedList(request, []);
+    return paginatedList(request, await getRankingBorderCached(region, eventId), 100);
   });
 
   app.get("/api/events/:region/:eventId/ranking-churn", async (request, reply) => {
@@ -1448,7 +1490,14 @@ export async function buildApp() {
 
   app.get("/api/me/profile", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const profile = await buildMeProfile(request.user.sub);
-    return profile ?? reply.unauthorized("User not found");
+    if (!profile) return reply.unauthorized("User not found");
+    return {
+      ...profile,
+      bindings: profile.bindings.map(withEntityVersion),
+      favorites: profile.favorites.map(withEntityVersion),
+      scores: profile.scores.map(withEntityVersion),
+      deckConfigs: profile.deckConfigs.map(withEntityVersion)
+    };
   });
 
   app.post("/api/auth/refresh", async (request, reply) => {
@@ -1519,46 +1568,55 @@ export async function buildApp() {
   });
 
   app.get("/api/me/favorites", { preHandler: (app as any).authenticate }, async (request: any) => {
-    return store.listFavorites(request.user.sub);
+    return paginatedList(request, (await store.listFavorites(request.user.sub)).map(withEntityVersion));
   });
 
-  app.post("/api/me/favorites", { preHandler: (app as any).authenticate }, async (request: any) => {
+  app.post("/api/me/favorites", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const body = favoriteSchema.parse(request.body);
-    return store.addFavorite({ ...body, region: body.region as RegionId, userId: request.user.sub });
+    return setEntityTag(reply, await store.addFavorite({ ...body, region: body.region as RegionId, userId: request.user.sub }));
   });
 
   app.delete("/api/me/favorites/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const current = (await store.listFavorites(request.user.sub)).find((item) => item.id === request.params.id);
+    if (!current) return reply.notFound("Favorite not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
     const deleted = await store.deleteFavorite(request.user.sub, request.params.id);
     return deleted ? { ok: true } : reply.notFound("Favorite not found");
   });
 
   app.get("/api/me/scores", { preHandler: (app as any).authenticate }, async (request: any) => {
-    return store.listScores(request.user.sub);
+    return paginatedList(request, (await store.listScores(request.user.sub)).map(withEntityVersion));
   });
 
-  app.post("/api/me/scores", { preHandler: (app as any).authenticate }, async (request: any) => {
+  app.post("/api/me/scores", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const body = scoreSchema.parse(request.body);
-    return store.upsertScore({ ...body, region: body.region as RegionId, userId: request.user.sub });
+    return setEntityTag(reply, await store.upsertScore({ ...body, region: body.region as RegionId, userId: request.user.sub }));
   });
 
-  app.patch("/api/me/scores/:id", { preHandler: (app as any).authenticate }, async (request: any) => {
+  app.patch("/api/me/scores/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const current = (await store.listScores(request.user.sub)).find((item) => item.id === request.params.id);
+    if (!current) return reply.notFound("Score not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
     const body = scoreSchema.parse({ ...request.body, id: request.params.id });
-    return store.upsertScore({ ...body, region: body.region as RegionId, userId: request.user.sub });
+    return setEntityTag(reply, await store.upsertScore({ ...body, region: body.region as RegionId, userId: request.user.sub }));
   });
 
   app.delete("/api/me/scores/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const current = (await store.listScores(request.user.sub)).find((item) => item.id === request.params.id);
+    if (!current) return reply.notFound("Score not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
     const deleted = await store.deleteScore(request.user.sub, request.params.id);
     return deleted ? { ok: true } : reply.notFound("Score not found");
   });
 
   app.get("/api/me/player-bindings", { preHandler: (app as any).authenticate }, async (request: any) => {
-    return store.listPlayerBindings(request.user.sub);
+    return paginatedList(request, (await store.listPlayerBindings(request.user.sub)).map(withEntityVersion));
   });
 
   app.post("/api/me/player-bindings", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const body = playerBindingSchema.parse(request.body);
     try {
-      return await store.addPlayerBinding({ ...body, region: body.region as RegionId, userId: request.user.sub });
+      return setEntityTag(reply, await store.addPlayerBinding({ ...body, region: body.region as RegionId, userId: request.user.sub }));
     } catch (error) {
       if ((error as Error).message === "PLAYER_BINDING_EXISTS") return reply.conflict("Player UID already bound to this account");
       throw error;
@@ -1566,12 +1624,18 @@ export async function buildApp() {
   });
 
   app.patch("/api/me/player-bindings/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const current = (await store.listPlayerBindings(request.user.sub)).find((item) => item.id === request.params.id);
+    if (!current) return reply.notFound("Player binding not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
     const body = playerBindingPatchSchema.parse(request.body);
     const updated = await store.updatePlayerBinding(request.user.sub, request.params.id, body);
-    return updated ?? reply.notFound("Player binding not found");
+    return updated ? setEntityTag(reply, updated) : reply.notFound("Player binding not found");
   });
 
   app.delete("/api/me/player-bindings/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const current = (await store.listPlayerBindings(request.user.sub)).find((item) => item.id === request.params.id);
+    if (!current) return reply.notFound("Player binding not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
     const deleted = await store.deletePlayerBinding(request.user.sub, request.params.id);
     return deleted ? { ok: true } : reply.notFound("Player binding not found");
   });
@@ -1611,14 +1675,16 @@ export async function buildApp() {
   });
 
   app.get("/api/me/player-data/:bindingId/cards", { preHandler: (app as any).authenticate }, async (request: any) => {
-    return store.listInventory(request.user.sub, request.params.bindingId);
+    return paginatedList(request, (await store.listInventory(request.user.sub, request.params.bindingId)).map(withEntityVersion), 48);
   });
 
   app.put("/api/me/player-data/:bindingId/cards", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const binding = (await store.listPlayerBindings(request.user.sub)).find((item) => item.id === request.params.bindingId);
     if (!binding) return reply.notFound("Player binding not found");
     const body = inventoryBulkSchema.parse(request.body);
-    return store.upsertInventory(body.cards.map((card) => ({ ...card, userId: request.user.sub, bindingId: binding.id, region: body.region as RegionId })));
+    const current = await store.listInventory(request.user.sub, binding.id);
+    if (current.length && !assertIfMatch(request, reply, current)) return reply;
+    return setEntityTag(reply, await store.upsertInventory(body.cards.map((card) => ({ ...card, userId: request.user.sub, bindingId: binding.id, region: body.region as RegionId }))));
   });
 
   app.post("/api/me/player-data/import", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
@@ -1659,6 +1725,9 @@ export async function buildApp() {
   app.delete("/api/me/player-data/:bindingId/cards/:cardId", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const binding = (await store.listPlayerBindings(request.user.sub)).find((item) => item.id === request.params.bindingId);
     if (!binding) return reply.notFound("Player binding not found");
+    const current = (await store.listInventory(request.user.sub, binding.id)).find((item) => item.cardId === String(request.params.cardId));
+    if (!current) return reply.notFound("Inventory card not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
     const deleted = await store.deleteInventoryCard(request.user.sub, binding.id, String(request.params.cardId));
     return deleted ? { deleted: true, cardId: String(request.params.cardId) } : reply.notFound("Inventory card not found");
   });
@@ -1760,7 +1829,7 @@ export async function buildApp() {
     const binding = await requireBinding(request.user.sub, bindingId);
     if (!binding) return reply.notFound("Player binding not found");
     const record = await store.getPlayerData(request.user.sub, binding.id, kind as PlayerDataKind);
-    return record ?? {
+    return record ? setEntityTag(reply, record) : {
       userId: request.user.sub,
       bindingId: binding.id,
       region: binding.region,
@@ -1778,30 +1847,38 @@ export async function buildApp() {
     if (!binding) return reply.notFound("Player binding not found");
     const body = playerDataSchema.parse(request.body);
     if (body.region && body.region !== binding.region) return reply.badRequest("Player data region must match the binding region");
-    return store.upsertPlayerData({
+    const current = await store.getPlayerData(request.user.sub, binding.id, kind as PlayerDataKind);
+    if (current && !assertIfMatch(request, reply, current)) return reply;
+    return setEntityTag(reply, await store.upsertPlayerData({
       userId: request.user.sub,
       bindingId: binding.id,
       region: binding.region,
       kind: kind as PlayerDataKind,
       data: body.data
-    });
+    }));
   });
 
   app.get("/api/me/deck-configs", { preHandler: (app as any).authenticate }, async (request: any) => {
-    return store.listDeckConfigs(request.user.sub);
+    return paginatedList(request, (await store.listDeckConfigs(request.user.sub)).map(withEntityVersion));
   });
 
-  app.post("/api/me/deck-configs", { preHandler: (app as any).authenticate }, async (request: any) => {
+  app.post("/api/me/deck-configs", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const body = deckConfigSchema.parse(request.body);
-    return store.upsertDeckConfig({ ...body, region: body.region as RegionId, userId: request.user.sub });
+    return setEntityTag(reply, await store.upsertDeckConfig({ ...body, region: body.region as RegionId, userId: request.user.sub }));
   });
 
-  app.patch("/api/me/deck-configs/:id", { preHandler: (app as any).authenticate }, async (request: any) => {
+  app.patch("/api/me/deck-configs/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const current = (await store.listDeckConfigs(request.user.sub)).find((item) => item.id === request.params.id);
+    if (!current) return reply.notFound("Deck config not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
     const body = deckConfigSchema.parse({ ...request.body, id: request.params.id });
-    return store.upsertDeckConfig({ ...body, region: body.region as RegionId, userId: request.user.sub });
+    return setEntityTag(reply, await store.upsertDeckConfig({ ...body, region: body.region as RegionId, userId: request.user.sub }));
   });
 
   app.delete("/api/me/deck-configs/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const current = (await store.listDeckConfigs(request.user.sub)).find((item) => item.id === request.params.id);
+    if (!current) return reply.notFound("Deck config not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
     const deleted = await store.deleteDeckConfig(request.user.sub, request.params.id);
     return deleted ? { ok: true } : reply.notFound("Deck config not found");
   });
@@ -1952,15 +2029,40 @@ export async function buildApp() {
   });
 
 
-  app.get("/api/share/cards/:type/:id", async (request) => {
+  app.get("/api/share/cards/:type/:id.png", async (request, reply) => {
     const { type, id } = request.params as { type: string; id: string };
-    return {
-      type,
-      id,
-      title: "Project Sekai 玩家助手分享卡",
-      imageUrl: `/api/share/cards/${type}/${id}.png`,
-      summary: "分享卡渲染接口已预留，后续可接入服务端图片生成。"
-    };
+    const query = request.query as { region?: string };
+    const region = query.region && isRegion(query.region) ? query.region : "jp";
+    const data = await resolveShareCardData(type, id, region);
+    if (!data) return reply.badRequest("Unsupported share card type");
+    const image = await renderShareCardPng(data);
+    const etag = `"${createHash("sha256").update(image).digest("base64url")}"`;
+    if (request.headers["if-none-match"] === etag) return reply.code(304).send();
+    reply.header("content-type", "image/png");
+    reply.header("content-length", image.length);
+    reply.header("cache-control", "public, max-age=3600, stale-while-revalidate=86400");
+    reply.header("etag", etag);
+    reply.header("content-disposition", `inline; filename="pjsktools-${type}-${id}.png"`);
+    return reply.send(image);
+  });
+
+  app.get("/api/share/cards/:type/:id", async (request, reply) => {
+    const { type, id } = request.params as { type: string; id: string };
+    const query = request.query as { region?: string };
+    const region = query.region && isRegion(query.region) ? query.region : "jp";
+    const data = await resolveShareCardData(type, id, region);
+    if (!data) return reply.badRequest("Unsupported share card type");
+    return shareCardMetadata(data, `/api/share/cards/${encodeURIComponent(type)}/${encodeURIComponent(id)}.png?region=${region}`);
+  });
+
+  app.get("/openapi.json", async (_request, reply) => {
+    reply.header("cache-control", "public, max-age=300");
+    return buildOpenApiDocument();
+  });
+
+  app.get("/api/docs", async (_request, reply) => {
+    reply.type("text/html; charset=utf-8");
+    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>pjsktools API</title><style>body{max-width:760px;margin:48px auto;padding:0 20px;font:16px/1.7 system-ui;color:#1d2a30}a{color:#168b88}.box{padding:20px;border:1px solid #cddde2;border-radius:8px;background:#f7fbfc}</style></head><body><h1>pjsktools API</h1><div class="box"><p>OpenAPI 3.1 规范已随服务发布，可用于生成 Android 与第三方客户端。</p><p><a href="/openapi.json">查看 OpenAPI JSON</a></p><p>账号写接口支持 <code>Idempotency-Key</code>，更新与删除支持 <code>If-Match</code>。</p></div></body></html>`;
   });
 
   return app;
