@@ -10,6 +10,7 @@ import type {
   EmailVerificationCode,
   EmailVerificationPurpose,
   Favorite,
+  IdempotencyRecord,
   OAuthAccount,
   OAuthProvider,
   PlayerDataKind,
@@ -73,6 +74,9 @@ export type AuthStore = {
   listPlayerData(userId: string, bindingId: string): Promise<PlayerDataRecord[]>;
   saveRankingHistorySamples(input: RankingHistoryInput[]): Promise<RankingHistorySample[]>;
   listRankingHistory(query: RankingHistoryQuery): Promise<RankingHistorySample[]>;
+  getIdempotencyRecord(scope: string, key: string): Promise<IdempotencyRecord | null>;
+  reserveIdempotencyRecord(record: IdempotencyRecord): Promise<"reserved" | IdempotencyRecord>;
+  saveIdempotencyRecord(record: IdempotencyRecord): Promise<void>;
 };
 
 export function toPublicUser(user: UserAccount): PublicUser {
@@ -110,6 +114,7 @@ export class MemoryStore implements AuthStore {
   private deckConfigs = new Map<string, DeckConfig>();
   private playerData = new Map<string, PlayerDataRecord>();
   private rankingHistory = new Map<string, RankingHistorySample>();
+  private idempotencyRecords = new Map<string, IdempotencyRecord>();
 
   async createUser(email: string, password: string, profile: { nickname?: string; avatarUrl?: string } = {}) {
     const normalizedEmail = normalizeEmail(email);
@@ -466,6 +471,27 @@ export class MemoryStore implements AuthStore {
       .filter((item) => toTime == null || Date.parse(item.sampledAt) <= toTime)
       .sort((a, b) => Date.parse(b.sampledAt) - Date.parse(a.sampledAt));
     return rows.slice(0, query.limit ?? 1000);
+  }
+
+  async getIdempotencyRecord(scope: string, key: string) {
+    const record = this.idempotencyRecords.get(`${scope}:${key}`) ?? null;
+    if (record && Date.parse(record.expiresAt) <= Date.now()) {
+      this.idempotencyRecords.delete(`${scope}:${key}`);
+      return null;
+    }
+    return record;
+  }
+
+  async saveIdempotencyRecord(record: IdempotencyRecord) {
+    this.idempotencyRecords.set(`${record.scope}:${record.key}`, record);
+  }
+
+  async reserveIdempotencyRecord(record: IdempotencyRecord) {
+    const storageKey = `${record.scope}:${record.key}`;
+    const existing = this.idempotencyRecords.get(storageKey);
+    if (existing && Date.parse(existing.expiresAt) > Date.now()) return existing;
+    this.idempotencyRecords.set(storageKey, record);
+    return "reserved" as const;
   }
 }
 

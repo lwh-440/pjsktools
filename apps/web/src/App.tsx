@@ -64,7 +64,7 @@ type SkillInfo = { id: string; name?: string; description?: string; formattedDes
 type FullCard = { card: Card & { skill?: SkillInfo; specialTrainingSkill?: SkillInfo }; assets: AssetInfo; relations: { relatedEvents: EventInfo[]; relatedGachas: CollectionItem[] } };
 type FullEvent = { event: EventInfo; assets: AssetInfo; relations: { relatedSongs: Song[]; relatedCards: Card[]; relatedGachas: CollectionItem[] } };
 type CollectionResponse = { source?: string; unavailableReason?: string; sourceMetadata?: unknown; items: CollectionItem[] };
-type CatalogResponse<T> = { items: T[]; page: number; pageSize: number; total: number; totalPages: number; masterVersion?: string; sourceHealth?: Record<string, unknown>; source?: string };
+type CatalogResponse<T> = { items: T[]; page: number; pageSize: number; total: number; totalPages: number; hasNextPage?: boolean; hasPreviousPage?: boolean; masterVersion?: string; sourceHealth?: Record<string, unknown>; source?: string };
 type ContentPreviewItem = { id: string; name: string; category?: string; description?: string; storyType?: string; raw?: any };
 type ContentDisplayGroup = { key: string; label?: string; count?: number; previewItems?: ContentPreviewItem[] };
 type SourceMetadata = { sourceType?: string; primaryUrl?: string; fallbackUrl?: string; sourceProject?: string; fetchedAt?: string; unavailableReason?: string };
@@ -861,7 +861,7 @@ export function App() {
   }
 
   async function loadShareCard() {
-    setShareCard(await apiGet<ShareCard>(`/api/share/cards/${shareType}/${shareId}`));
+    setShareCard(await apiGet<ShareCard>(`/api/share/cards/${shareType}/${encodeURIComponent(shareId)}?region=${region}`));
   }
 
   async function calculateControl() {
@@ -2420,7 +2420,7 @@ export function App() {
   }
 
   function SharePage() {
-    return <section className="panel wide"><h2>分享卡</h2><div className="inline-form"><select value={shareType} onChange={(event) => setShareType(event.target.value)}><option value="profile">玩家档案</option><option value="score">成绩</option><option value="event">活动</option></select><input value={shareId} onChange={(event) => setShareId(event.target.value)} placeholder="分享对象 ID" /><button type="button" onClick={loadShareCard}><Share2 size={16} />生成</button></div>{shareCard && <div className="profile"><strong>{shareCard.title}</strong><span>{shareCard.summary}</span><code>{shareCard.imageUrl}</code></div>}</section>;
+    return <section className="panel wide share-page"><div className="panel-heading"><div><h2>分享卡</h2><p>生成适合社交平台展示的 1200 × 630 图片。</p></div></div><div className="inline-form"><select value={shareType} onChange={(event) => setShareType(event.target.value)}><option value="profile">玩家档案</option><option value="score">成绩</option><option value="event">活动</option><option value="card">卡牌</option><option value="song">歌曲</option></select><input value={shareId} onChange={(event) => setShareId(event.target.value)} placeholder="分享对象 ID" /><button type="button" onClick={loadShareCard} disabled={!shareId.trim()}><Share2 size={16} />生成</button></div>{shareCard && <div className="share-card-result"><img src={apiResourceUrl(shareCard.imageUrl)} alt={shareCard.title} /><div><strong>{shareCard.title}</strong><span>{shareCard.summary}</span><a className="button secondary" href={apiResourceUrl(shareCard.imageUrl)} download={`pjsktools-${shareCard.type}-${shareCard.id}.png`}>保存 PNG</a></div></div>}</section>;
   }
 
   function AboutPage() {

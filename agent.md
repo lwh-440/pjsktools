@@ -31,7 +31,7 @@ Android v1 must make the common player-assistant workflows fast and dependable:
 5. Account: email code/register/login, refresh/logout, QQ login/link when configured, multiple player bindings, default binding, synchronized favorites and scores, and saved deck configurations.
 6. Player assets: card inventory first, then the other structured asset kinds already supported by `/api/me/player-data`. Editing must show server validation, missing fields, import diff, and sync state. Screenshot import stays local to the device until the user confirms structured rows.
 7. Tools: event point, score control, deck recommend, deck compare, music recommend, normal event plan, area item recommend, and MySekai calculation. Android sends inputs to the backend and renders traces, estimates, missing fields, and unavailable reasons; it never ports the private formula implementation into Kotlin.
-8. Sharing: v1 can share text/deep links assembled from real detail data. Image sharing remains blocked because the current share-card endpoint exposes placeholder metadata and points at an unimplemented PNG route.
+8. Sharing: text/deep links and server-rendered PNG share cards are available. `GET /api/share/cards/:type/:id` returns metadata and `GET /api/share/cards/:type/:id.png?region=jp|en|tw|kr|cn` returns a cacheable 1200 x 630 PNG.
 
 The following are post-v1 unless a later request promotes them:
 
@@ -70,20 +70,21 @@ The following are post-v1 unless a later request promotes them:
 - Account data: `GET /api/me/profile`; favorites list/create/delete; scores list/create/update/delete; player binding list/create/update/delete, summary, tool context, profile analysis, and public-profile refresh.
 - Player assets: card inventory list/bulk upsert/delete; import, import review, export, completeness, validation; and generic `GET/PUT /api/me/player-data/:bindingId/:kind`. Use server validation before writes and keep the binding region authoritative.
 - Decks and authenticated tools: deck-config list/create/update/delete and all `/api/me/tools/*` variants. Prefer these variants when a selected binding should supply inventory/player assets.
-- Sharing: `GET /api/share/cards/:type/:id` currently returns placeholder metadata only. Do not request `imageUrl` as a working bitmap until the backend implements and tests the referenced PNG route.
+- Sharing: `GET /api/share/cards/:type/:id` returns resolved metadata for profile, score, event, card, and song cards. Its `imageUrl` is a working PNG endpoint with ETag and cache headers; clients should preserve the selected region query.
 
-### Known API constraints and pre-implementation decisions
+### API contracts and remaining constraints
 
-These are gaps in the current API contract, not assumed existing capabilities. Resolve or deliberately design around them before the affected Android phase:
+These are the remaining constraints and implemented client contracts. Do not regress the completed contracts when adding Android or third-party clients:
 
-- There is no checked-in OpenAPI specification. Phase 0 must either add one or create hand-maintained typed DTOs from route schemas and lock them with backend JSON fixtures. Android must never infer DTOs from React types.
+- OpenAPI 3.1 is generated from the registered Fastify route inventory at `GET /openapi.json`, with a human entry page at `GET /api/docs`. Pagination, authentication, idempotency, optimistic concurrency, and common errors are reusable components. Treat the checked-in `openApi.ts` generator and contract tests as the source of truth; Android must never infer DTOs from React types.
 - Error responses are primarily HTTP status plus human-readable messages. Add stable error codes, request IDs, field errors, and retryability before relying on fine-grained client recovery; until then, branch only on HTTP status and documented response fields.
-- Large catalog/ranking endpoints do not expose a uniform pagination contract. v1 may cache/filter returned lists locally where payloads are proven acceptable; add server pagination before shipping any screen whose measured payload/startup cost exceeds the agreed budget.
+- Paginated endpoints use `{ items, page, pageSize, total, totalPages, hasNextPage, hasPreviousPage }`, with a maximum page size of 100. Catalog, Story, Live2D, Virtual Live, ranking list, and authenticated account list routes support this contract. Legacy account/ranking callers that omit both pagination parameters may still receive an array; all new clients must send `page` and `pageSize`.
 - Cache validators and mobile compatibility fields are not uniformly exposed. Use response/source timestamps already returned where present, and add dataset versions/ETag plus minimum-supported-app/maintenance flags before public release.
 - Auth refresh rotation exists, but Android must verify access-token expiry behavior and concurrent 401 handling against fixtures before implementing an OkHttp authenticator.
 - Production asset URLs must be audited for HTTPS, expiry, proxy requirements, content type, and cacheability. Debug builds may use emulator cleartext through a debug-only network security config; release builds must not enable global cleartext traffic.
-- Write endpoints do not currently advertise idempotency keys or optimistic concurrency versions. Do not silently replay non-idempotent writes. Initial offline mode should queue only operations proven idempotent or require user confirmation after reconnect; add server support before automatic outbox replay.
-- Account deletion, push subscriptions, binary share-card rendering, and native app-link/OAuth callback contracts are not current API capabilities. Keep them blocked or use a documented web fallback until backend support exists.
+- Authenticated account-data mutations support `Idempotency-Key` values of 8-128 URL-safe characters. Results are reserved before execution, persisted for 24 hours in `api_idempotency_records`, replayed with `Idempotency-Replayed: true`, and reject reuse with a different payload. Apply migration `009_api_idempotency.sql` before serving writes; the Render candidate runs migrations before API startup.
+- Mutable account resources expose ETag values and accept `If-Match`. Stale updates/deletes return `412 VERSION_CONFLICT` with the current version. New clients should store the latest ETag and send it for edits; `If-Match: *` explicitly opts into last-write-wins behavior.
+- Account deletion, push subscriptions, and native app-link/OAuth callback contracts are not current API capabilities. Keep them blocked or use a documented web fallback until backend support exists.
 - Add deterministic contract fixtures for all five regions and representative states: matched, not released, missing data, stale cache, source unavailable, unauthenticated, validation failure, and rate limited.
 
 ### Data, offline, and synchronization rules
@@ -91,7 +92,7 @@ These are gaps in the current API contract, not assumed existing capabilities. R
 - Use network-bound repositories: emit cached data immediately, refresh when stale, then update Room transactionally. The UI always labels stale or incomplete data and shows the last successful refresh time.
 - Cache catalogs/details by `(region, stableId, datasetVersion)`. Switching region must never briefly display another region's cached content as if it belongs to the new region.
 - Public data is read-through cached. Sensitive player data is cached only when needed for offline editing, encrypted where practical, and removed on logout/account removal according to an explicit retention choice.
-- User edits use immediate online writes first. Introduce an automatic outbox only after the backend supports idempotency/concurrency for that operation; until then, offline drafts remain local and require explicit confirmation after reconnect.
+- User edits use immediate online writes first. An automatic outbox may replay authenticated account-data mutations only when it preserves the original `Idempotency-Key` and `If-Match`; operations without both protections remain explicit user-confirmed retries.
 - Screenshot import pipeline: Storage Access Framework/Photo Picker -> local decode/downsample -> local crop/grid detection -> local hash/OCR -> ambiguity review -> structured diff -> confirmed API upload. Delete temporary images after completion/cancel unless the user explicitly keeps them. Never upload raw screenshots for matching.
 - Bound disk usage for images, audio, chart previews, and Room data. Expose cache size and clear-cache actions. Low-storage failure must degrade to online-only behavior without corrupting user data.
 
@@ -128,7 +129,7 @@ These are gaps in the current API contract, not assumed existing capabilities. R
 #### Phase 3 - Account and synchronized data
 
 - Implement email auth/session lifecycle, player bindings/default binding, favorites/scores, deck configs, card inventory, structured asset editors, import/export/review, and logout/local-data cleanup.
-- Add local drafts and local-only screenshot recognition with manual review. Add automatic queued sync only for endpoints that have gained idempotency/concurrency support.
+- Add local drafts and local-only screenshot recognition with manual review. Automatic queued sync may target the protected account-data endpoints, preserving the original idempotency key and optimistic-concurrency ETag across every retry.
 - Exit gate: drafts survive restart, confirmed online writes synchronize once, server validation is recoverable, and no raw screenshot or secret appears in logs/network captures.
 
 #### Phase 4 - Calculation tools
@@ -152,7 +153,7 @@ These are gaps in the current API contract, not assumed existing capabilities. R
 ### Test and CI matrix
 
 - Unit tests: serializers, mappers, reducers/ViewModels, validators, cache freshness, region isolation, token refresh single-flight, retry policy, conflict resolution, and tool-result formatting.
-- Database tests: migrations, transactional replacement, local drafts, logout cleanup, and five-region key isolation. Add outbox replay/idempotency tests only when backend support exists.
+- Database tests: migrations, transactional replacement, local drafts, logout cleanup, five-region key isolation, idempotency reservation/replay, key-payload conflicts, and optimistic-concurrency failures. Outbox tests must exercise retries with the same key and stale ETags.
 - API contract tests: recorded deterministic fixtures plus staging smoke tests; never make ordinary unit tests depend on live upstream providers.
 - Compose tests: navigation, search/filter, forms, offline/stale/partial states, accessibility labels, large font, dark theme, and screenshot-import review.
 - End-to-end tests: fresh install, upgrade, login/refresh/logout, region switch, UID binding, offline edit/reconnect, calculation, sharing, deep link, media interruption, and low-storage behavior.

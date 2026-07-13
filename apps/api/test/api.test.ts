@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { classifyInformationDetail } from "../src/contentData.js";
+import { store } from "../src/store.js";
+
+async function createRegistrationCode(email: string) {
+  const code = "123456";
+  await store.createEmailVerificationCode({ email, purpose: "register", code, expiresAt: new Date(Date.now() + 300_000).toISOString() });
+  return code;
+}
 
 describe("pjsktools api", () => {
   it("lists supported regions", async () => {
@@ -70,10 +77,11 @@ describe("pjsktools api", () => {
   it("registers, reads me, refreshes and logs out", async () => {
     const app = await buildApp();
     const email = `user-${Date.now()}@example.com`;
+    const code = await createRegistrationCode(email);
     const register = await app.inject({
       method: "POST",
       url: "/api/auth/register",
-      payload: { email, password: "password123" }
+      payload: { email, password: "Password123!", code }
     });
     expect(register.statusCode).toBe(201);
     const auth = register.json();
@@ -110,16 +118,20 @@ describe("pjsktools api", () => {
       payload: { refreshToken: refresh.json().refreshToken }
     });
     expect(logout.statusCode).toBe(200);
+    await store.deleteUserByEmail(email);
   });
 
   it("rejects duplicate registration and invalid login", async () => {
     const app = await buildApp();
     const email = `dup-${Date.now()}@example.com`;
-    await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "password123" } });
-    const duplicate = await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "password123" } });
+    const firstCode = await createRegistrationCode(email);
+    await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "Password123!", code: firstCode } });
+    const secondCode = await createRegistrationCode(email);
+    const duplicate = await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "Password123!", code: secondCode } });
     expect(duplicate.statusCode).toBe(409);
     const badLogin = await app.inject({ method: "POST", url: "/api/auth/login", payload: { email, password: "wrongpass" } });
     expect(badLogin.statusCode).toBe(401);
+    await store.deleteUserByEmail(email);
   });
 
   it("returns a clear error when QQ login is not configured", async () => {

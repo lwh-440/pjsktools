@@ -512,11 +512,12 @@ export function BindingsPage() {
     await reloadProfile();
   }
   async function setDefaultBinding(binding: PlayerBinding) {
-    await apiPatch<PlayerBinding>(`/api/me/player-bindings/${binding.id}`, { isDefault: true }, token);
+    await apiPatch<PlayerBinding>(`/api/me/player-bindings/${binding.id}`, { isDefault: true }, token, { ifMatch: binding.version });
     await reloadProfile();
   }
   async function deleteBinding(bindingId: string) {
-    await apiDelete(`/api/me/player-bindings/${bindingId}`, token);
+    const binding = meProfile?.bindings.find((item) => item.id === bindingId);
+    await apiDelete(`/api/me/player-bindings/${bindingId}`, token, { ifMatch: binding?.version });
     await reloadProfile();
   }
   return (
@@ -794,19 +795,19 @@ export function ScoresPage({ songs, region }: { songs: Array<{ id: string; title
     await apiPost<ScoreRecord>("/api/me/scores", { region, songId: scoreSongId, difficulty: scoreDifficulty, clearStatus: scoreStatus, score: Number(scoreValue), targetScore: Number(targetScore), note: scoreNote }, token);
     await reloadProfile();
   }
-  async function deleteFavorite(id: string) {
-    await apiDelete(`/api/me/favorites/${id}`, token);
+  async function deleteFavorite(item: Favorite) {
+    await apiDelete(`/api/me/favorites/${item.id}`, token, { ifMatch: item.version });
     await reloadProfile();
   }
-  async function deleteScore(id: string) {
-    await apiDelete(`/api/me/scores/${id}`, token);
+  async function deleteScore(item: ScoreRecord) {
+    await apiDelete(`/api/me/scores/${item.id}`, token, { ifMatch: item.version });
     await reloadProfile();
   }
   return (
     <section className="account-workspace">
-      <article className="panel"><h2>收藏</h2><div className="compact-list">{(meProfile?.favorites ?? []).map((item: Favorite) => <div key={item.id}><span>{item.label}</span><button type="button" onClick={() => deleteFavorite(item.id)}>删除</button></div>)}{!meProfile?.favorites.length && <p className="empty-state">暂无收藏。</p>}</div></article>
+      <article className="panel"><h2>收藏</h2><div className="compact-list">{(meProfile?.favorites ?? []).map((item: Favorite) => <div key={item.id}><span>{item.label}</span><button type="button" onClick={() => deleteFavorite(item)}>删除</button></div>)}{!meProfile?.favorites.length && <p className="empty-state">暂无收藏。</p>}</div></article>
       <article className="panel"><h2>成绩记录</h2><select value={scoreSongId} onChange={(event) => setScoreSongId(event.target.value)}>{songs.slice(0, 200).map((song) => <option key={song.id} value={song.id}>{song.title}</option>)}</select><input value={scoreDifficulty} onChange={(event) => setScoreDifficulty(event.target.value)} placeholder="难度" /><input value={scoreValue} onChange={(event) => setScoreValue(event.target.value)} placeholder="当前分数" /><input value={targetScore} onChange={(event) => setTargetScore(event.target.value)} placeholder="目标分数" /><textarea value={scoreNote} onChange={(event) => setScoreNote(event.target.value)} /><select value={scoreStatus} onChange={(event) => setScoreStatus(event.target.value as ScoreRecord["clearStatus"])}><option value="clear">Clear</option><option value="fc">FC</option><option value="ap">AP</option><option value="not_clear">Not Clear</option></select><button type="button" onClick={saveScore}>保存成绩</button></article>
-      <article className="panel wide"><h2>已保存成绩</h2><div className="compact-list">{(meProfile?.scores ?? []).map((item) => <div key={item.id}><span>{item.songId} / {item.difficulty} / {item.clearStatus}</span><button type="button" onClick={() => deleteScore(item.id)}>删除</button></div>)}{!meProfile?.scores.length && <p className="empty-state">暂无成绩记录。</p>}</div></article>
+      <article className="panel wide"><h2>已保存成绩</h2><div className="compact-list">{(meProfile?.scores ?? []).map((item) => <div key={item.id}><span>{item.songId} / {item.difficulty} / {item.clearStatus}</span><button type="button" onClick={() => deleteScore(item)}>删除</button></div>)}{!meProfile?.scores.length && <p className="empty-state">暂无成绩记录。</p>}</div></article>
     </section>
   );
 }
