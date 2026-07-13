@@ -16,6 +16,9 @@ const region = args.get("region") ?? "cn";
 const uid = args.get("uid") ?? "7485929717040896807";
 const suiteBase = args.get("suite-base") ?? "https://suite-api.haruki.seiunx.com/public";
 const toolboxBase = args.get("toolbox-base") ?? "https://toolbox-api-direct.haruki.seiunx.com";
+const trace = args.get("trace") === "true";
+const runProfileAnalysis = args.get("profile-analysis") === "run";
+const mark = (label) => { if (trace) console.error(`[verify-real-uid] ${label}`); };
 
 process.env.PJSKTOOLS_FORCE_MEMORY_STORE = "true";
 process.env.PJSKTOOLS_FAST_MASTER_REFRESH = "true";
@@ -79,6 +82,37 @@ async function injectJson(app, method, url, payload, token) {
   return json;
 }
 
+async function injectStatus(app, method, url, payload, token, headers = {}) {
+  const startedAt = Date.now();
+  const response = await app.inject({
+    method,
+    url,
+    payload,
+    headers: {
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...headers
+    }
+  });
+  let json;
+  try {
+    json = response.json();
+  } catch {
+    json = undefined;
+  }
+  const contentType = response.headers["content-type"];
+  const pngDimensions = contentType === "image/png" && response.rawPayload.length >= 24
+    ? { width: response.rawPayload.readUInt32BE(16), height: response.rawPayload.readUInt32BE(20) }
+    : undefined;
+  return {
+    status: response.statusCode,
+    durationMs: Date.now() - startedAt,
+    headers: response.headers,
+    json,
+    bodyBytes: response.rawPayload.length,
+    pngDimensions
+  };
+}
+
 const suiteUrl = `${suiteBase}/${region}/suite/${encodeURIComponent(uid)}?key=${encodeURIComponent(suiteUserDataKeys.join(","))}`;
 const toolboxProfileUrl = `${toolboxBase}/event-tracker/api/v2/web/players/${region}/${encodeURIComponent(uid)}/profile`;
 
@@ -98,12 +132,19 @@ if (!suiteResponse.ok) {
   process.exit();
 }
 
-const suitePayload = JSON.parse(suiteResponse.text);
-const normalized = normalizeSuitePlayerDataImport(region, suitePayload);
-const normalizedImportBody = {
+let suitePayload = JSON.parse(suiteResponse.text);
+let normalized = normalizeSuitePlayerDataImport(region, suitePayload);
+let normalizedImportBody = {
   cards: normalized.cards,
   playerData: normalized.playerData
 };
+const player = normalized.sourceSummary;
+const normalizedImportPreview = {
+  cardCount: normalized.cards.length,
+  playerData: normalized.normalizedPreview.playerData,
+  unmappedKeys: Object.keys(normalized.normalizedPreview.unmapped)
+};
+const fallbackCardIds = normalized.cards.slice(0, 10).map((item) => String(item.cardId));
 const suiteAssetCounts = Object.fromEntries(Object.entries(suitePayload).map(([key, value]) => [key, summarizeObject(value)]));
 const sourceDiagnostics = {
   suitePublic: { ok: true, status: suiteResponse.status, url: suiteUrl.replace(uid, "{uid}") },
@@ -119,27 +160,203 @@ let imported;
 let review;
 let toolContext;
 let completeness;
+let bindingSummary;
+let profileAnalysis;
+let exportSummary;
+let interfaceChecks;
 const toolRunResults = {};
 
 try {
+  mark("registering temporary account");
   const code = await injectJson(app, "POST", "/api/auth/email-code/start", { email, purpose: "register" });
   const auth = await injectJson(app, "POST", "/api/auth/register", { email, password: "RealUidSmoke123!", code: code.devCode });
   token = auth.accessToken;
   binding = await injectJson(app, "POST", "/api/me/player-bindings", {
     region,
     playerUid: uid,
-    displayName: normalized.sourceSummary.name,
+    displayName: player.name,
     isDefault: true,
     note: "verify-real-uid temporary binding"
   }, token);
 
-  review = await injectJson(app, "POST", `/api/me/player-data/${binding.id}/import/review`, suitePayload, token);
-  imported = await injectJson(app, "POST", `/api/me/player-data/${binding.id}/import`, normalizedImportBody, token);
-  toolContext = await injectJson(app, "GET", `/api/me/player-bindings/${binding.id}/tool-context`, undefined, token);
+  mark("reviewing Suite import");
+  const reviewResponse = await injectJson(app, "POST", `/api/me/player-data/${binding.id}/import/review`, suitePayload, token);
+  review = {
+    valid: reviewResponse.valid,
+    summary: reviewResponse.summary,
+    sourceType: reviewResponse.importReview?.sourceType,
+    cardLookup: reviewResponse.importReview?.cards ? {
+      count: reviewResponse.importReview.cards.count,
+      unknownLookupCount: reviewResponse.importReview.cards.unknownLookupCount,
+      sampleLookupResults: Array.isArray(reviewResponse.importReview.cards.lookupResults)
+        ? reviewResponse.importReview.cards.lookupResults.slice(0, 5)
+        : []
+    } : undefined,
+    playerDataGroups: reviewResponse.importReview?.playerDataGroups?.map((group) => ({
+      kind: group.kind,
+      itemCount: group.itemCount,
+      warningCount: group.validation?.warnings?.length ?? 0,
+      errorCount: group.validation?.errors?.length ?? 0
+    }))
+  };
+  mark("importing Suite data");
+  const importedResponse = await injectJson(app, "POST", `/api/me/player-data/${binding.id}/import`, normalizedImportBody, token);
+  imported = {
+    cards: importedResponse.imported,
+    playerDataKinds: importedResponse.importedPlayerData,
+    formulaReadiness: importedResponse.formulaReadiness
+  };
+  mark("reading tool context and completeness");
+  const toolContextResponse = await injectJson(app, "GET", `/api/me/player-bindings/${binding.id}/tool-context`, undefined, token);
+  toolContext = {
+    binding: toolContextResponse.binding,
+    formulaReadiness: toolContextResponse.formulaReadiness,
+    toolAvailability: toolContextResponse.toolAvailability,
+    warnings: toolContextResponse.toolContextWarnings
+  };
   completeness = await injectJson(app, "GET", `/api/me/player-data/${binding.id}/completeness/full`, undefined, token);
+  mark("reading binding summary");
+  const bindingSummaryResponse = await injectJson(app, "GET", `/api/me/player-bindings/${binding.id}/summary`, undefined, token);
+  bindingSummary = {
+    inventoryCount: bindingSummaryResponse.inventoryCount,
+    playerDataKinds: Array.isArray(bindingSummaryResponse.playerData) ? bindingSummaryResponse.playerData.map((item) => item.kind) : [],
+    includesPublicProfileSnapshot: Boolean(bindingSummaryResponse.publicProfileSnapshot)
+  };
+  if (runProfileAnalysis) {
+    mark("running profile analysis");
+    const profileAnalysisResponse = await injectJson(app, "GET", `/api/me/player-bindings/${binding.id}/profile-analysis`, undefined, token);
+    profileAnalysis = {
+      status: "completed",
+      sourceDiagnostics: profileAnalysisResponse.sourceDiagnostics,
+      missingFields: profileAnalysisResponse.missingFields,
+      sectionKeys: profileAnalysisResponse.sections ? Object.keys(profileAnalysisResponse.sections) : []
+    };
+  } else {
+    profileAnalysis = {
+      status: "isolated-probe-required",
+      reason: "Run with --profile-analysis run; the batch verifier executes this memory-intensive endpoint in a separate process."
+    };
+  }
 
+  mark("checking pagination, export, validation, access control, and sharing");
+  const bindingsPage = await injectJson(app, "GET", "/api/me/player-bindings?page=1&pageSize=1", undefined, token);
+  const cardsPage = await injectJson(app, "GET", `/api/me/player-data/${binding.id}/cards?page=1&pageSize=5`, undefined, token);
+  const exported = await injectJson(app, "GET", `/api/me/player-data/${binding.id}/export`, undefined, token);
+  exportSummary = {
+    schemaVersion: exported.schemaVersion,
+    cardCount: Array.isArray(exported.cards) ? exported.cards.length : 0,
+    playerDataKinds: Array.isArray(exported.playerData) ? exported.playerData.map((item) => item.kind) : [],
+    includesPublicProfileSnapshot: Boolean(exported.publicProfileSnapshot)
+  };
+
+  let firstPlayerData = normalizedImportBody.playerData[0];
+  const validatedPlayerDataKind = firstPlayerData?.kind;
+  const validation = firstPlayerData
+    ? await injectStatus(app, "POST", `/api/me/player-data/${binding.id}/validate`, {
+        kind: firstPlayerData.kind,
+        region,
+        data: firstPlayerData.data
+      }, token)
+    : { status: 204, durationMs: 0 };
+  const playerDataRead = firstPlayerData
+    ? await injectStatus(app, "GET", `/api/me/player-data/${binding.id}/${firstPlayerData.kind}`, undefined, token)
+    : { status: 204, durationMs: 0, headers: {} };
+  const playerDataWrite = firstPlayerData
+    ? await injectStatus(app, "PUT", `/api/me/player-data/${binding.id}/${firstPlayerData.kind}`, {
+        region,
+        data: firstPlayerData.data
+      }, token, { "if-match": playerDataRead.headers?.etag })
+    : { status: 204, durationMs: 0, headers: {} };
+  const stalePlayerDataWrite = firstPlayerData
+    ? await injectStatus(app, "PUT", `/api/me/player-data/${binding.id}/${firstPlayerData.kind}`, {
+        region,
+        data: firstPlayerData.data
+      }, token, { "if-match": playerDataRead.headers?.etag })
+    : { status: 204, durationMs: 0 };
+  const unauthorized = await injectStatus(app, "GET", `/api/me/player-bindings/${binding.id}/summary`);
+  const missingBinding = await injectStatus(app, "GET", "/api/me/player-bindings/missing-binding/summary", undefined, token);
+  const wrongRegion = await injectStatus(app, "POST", "/api/me/tools/deck-recommend", {
+    region: region === "jp" ? "en" : "jp",
+    bindingId: binding.id,
+    limit: 1
+  }, token);
+  const duplicateBinding = await injectStatus(app, "POST", "/api/me/player-bindings", {
+    region,
+    playerUid: uid,
+    displayName: player.name
+  }, token);
+  const shareMetadata = await injectStatus(app, "GET", `/api/share/cards/profile/${encodeURIComponent(uid)}?region=${region}`);
+  const sharePng = await injectStatus(app, "GET", `/api/share/cards/profile/${encodeURIComponent(uid)}.png?region=${region}`);
+  const shareNotModified = sharePng.headers?.etag
+    ? await injectStatus(app, "GET", `/api/share/cards/profile/${encodeURIComponent(uid)}.png?region=${region}`, undefined, undefined, { "if-none-match": sharePng.headers.etag })
+    : { status: 0, durationMs: 0 };
+  interfaceChecks = {
+    bindingsPagination: { status: 200, total: bindingsPage.total, returned: bindingsPage.items?.length },
+    cardsPagination: { status: 200, total: cardsPage.total, returned: cardsPage.items?.length },
+    validation: { status: validation.status, kind: validatedPlayerDataKind },
+    playerDataConcurrency: {
+      readStatus: playerDataRead.status,
+      etagPresent: Boolean(playerDataRead.headers?.etag),
+      updateStatus: playerDataWrite.status,
+      staleUpdateStatus: stalePlayerDataWrite.status,
+      expectedStaleStatus: 412
+    },
+    unauthorizedSummary: { status: unauthorized.status, expected: 401 },
+    missingBinding: { status: missingBinding.status, expected: 404 },
+    wrongRegion: { status: wrongRegion.status, expected: 400 },
+    duplicateBinding: { status: duplicateBinding.status, expected: 409 },
+    profileShare: {
+      metadataStatus: shareMetadata.status,
+      pngStatus: sharePng.status,
+      contentType: sharePng.headers?.["content-type"],
+      cacheControl: sharePng.headers?.["cache-control"],
+      etagPresent: Boolean(sharePng.headers?.etag),
+      notModifiedStatus: shareNotModified.status,
+      bodyBytes: sharePng.bodyBytes,
+      dimensions: sharePng.pngDimensions
+    }
+  };
+
+  suitePayload = null;
+  normalizedImportBody = null;
+  normalized = null;
+  firstPlayerData = null;
+  if (global.gc) global.gc();
+
+  mark("running authenticated tools");
   const deck = await injectJson(app, "POST", "/api/me/tools/deck-recommend", { region, bindingId: binding.id, limit: 1, timeoutMs: 3000 }, token);
   toolRunResults.deckRecommend = summarizeTool(deck);
+  const recommendedCardIds = (deck.recommendedDecks?.[0]?.cards ?? deck.recommendedCards ?? [])
+    .map((item) => String(item.cardId ?? item.id ?? item))
+    .filter(Boolean)
+    .slice(0, 5);
+  const firstDeckIds = recommendedCardIds.length >= 5 ? recommendedCardIds : fallbackCardIds.slice(0, 5);
+  const secondDeckIds = fallbackCardIds.filter((id) => !firstDeckIds.includes(id)).slice(0, 5);
+  if (firstDeckIds.length === 5 && secondDeckIds.length === 5) {
+    const compared = await injectJson(app, "POST", "/api/me/tools/deck-compare", {
+      region,
+      bindingId: binding.id,
+      musicId: "1",
+      difficulty: "easy",
+      candidates: [
+        { id: "real-a", name: "Real inventory A", cardIds: firstDeckIds },
+        { id: "real-b", name: "Real inventory B", cardIds: secondDeckIds }
+      ]
+    }, token);
+    toolRunResults.deckCompare = summarizeTool(compared);
+  }
+  const scoreControl = await injectJson(app, "POST", "/api/me/tools/score-control", {
+    region,
+    bindingId: binding.id,
+    currentPt: 0,
+    targetPt: 100000,
+    remainingMinutes: 120,
+    musicId: "1",
+    difficulty: "easy",
+    baseScore: 1000000,
+    boost: 3
+  }, token);
+  toolRunResults.scoreControl = summarizeTool(scoreControl);
   const worldBloomFallback = await injectJson(app, "POST", "/api/me/tools/deck-recommend", {
     region,
     bindingId: binding.id,
@@ -185,41 +402,15 @@ try {
     sourceDiagnostics,
     suiteSourceStatus: { ok: true, status: suiteResponse.status },
     suiteAssetCounts,
-    player: normalized.sourceSummary,
-    normalizedImportPreview: {
-      cardCount: normalized.cards.length,
-      playerData: normalized.normalizedPreview.playerData,
-      unmappedKeys: Object.keys(normalized.normalizedPreview.unmapped)
-    },
-    importReview: {
-      valid: review.valid,
-      summary: review.summary,
-      sourceType: review.importReview?.sourceType,
-      cardLookup: review.importReview?.cards ? {
-        count: review.importReview.cards.count,
-        unknownLookupCount: review.importReview.cards.unknownLookupCount,
-        sampleLookupResults: Array.isArray(review.importReview.cards.lookupResults)
-          ? review.importReview.cards.lookupResults.slice(0, 5)
-          : []
-      } : undefined,
-      playerDataGroups: review.importReview?.playerDataGroups?.map((group) => ({
-        kind: group.kind,
-        itemCount: group.itemCount,
-        warningCount: group.validation?.warnings?.length ?? 0,
-        errorCount: group.validation?.errors?.length ?? 0
-      }))
-    },
-    imported: {
-      cards: imported.imported,
-      playerDataKinds: imported.importedPlayerData,
-      formulaReadiness: imported.formulaReadiness
-    },
-    toolContext: {
-      binding: toolContext.binding,
-      formulaReadiness: toolContext.formulaReadiness,
-      toolAvailability: toolContext.toolAvailability,
-      warnings: toolContext.toolContextWarnings
-    },
+    player,
+    normalizedImportPreview,
+    importReview: review,
+    imported,
+    toolContext,
+    bindingSummary,
+    profileAnalysis,
+    exportSummary,
+    interfaceChecks,
     completeness,
     toolRunResults,
     remainingParityGaps: [

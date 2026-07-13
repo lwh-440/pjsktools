@@ -14,6 +14,16 @@ import { getReferenceMaster } from "./referenceMaster.js";
 type Row = Record<string, unknown>;
 type PlayerAssets = Record<string, unknown>;
 
+export type ExactCardPowerContext = {
+  region: RegionId;
+  cardsById: Map<string, Row>;
+  episodesByCardId: Map<string, Row[]>;
+  lessonsByRarity: Map<string, Row[]>;
+  areaLevelsByItemAndLevel: Map<string, Row>;
+  characterRanksByCharacterAndRank: Map<string, Row>;
+  canvasBonusesByRarity: Map<string, Row>;
+};
+
 export type ExactMysekaiServiceContext = {
   playerAssets: PlayerAssets;
   canvasCardIds: Set<string>;
@@ -66,6 +76,38 @@ function froundRatePower(rate: number, base: number) {
   return Math.fround(Math.fround(Math.fround(rate) * Math.fround(0.01)) * base);
 }
 
+function groupedBy(rows: Row[], key: (row: Row) => string | undefined) {
+  const grouped = new Map<string, Row[]>();
+  for (const row of rows) {
+    const value = key(row);
+    if (!value) continue;
+    const entries = grouped.get(value);
+    if (entries) entries.push(row);
+    else grouped.set(value, [row]);
+  }
+  return grouped;
+}
+
+export async function prepareExactCardPowerContext(region: RegionId): Promise<ExactCardPowerContext> {
+  const [cards, episodes, lessons, areaLevels, characterRanks, canvasBonuses] = await Promise.all([
+    getReferenceMaster<Row>(region, "cards"),
+    getReferenceMaster<Row>(region, "cardEpisodes"),
+    getReferenceMaster<Row>(region, "masterLessons"),
+    getReferenceMaster<Row>(region, "areaItemLevels"),
+    getReferenceMaster<Row>(region, "characterRanks"),
+    getReferenceMaster<Row>(region, "cardMysekaiCanvasBonuses")
+  ]);
+  return {
+    region,
+    cardsById: new Map(cards.map((row) => [string(row.id) ?? "", row])),
+    episodesByCardId: groupedBy(episodes, (row) => string(row.cardId)),
+    lessonsByRarity: groupedBy(lessons, (row) => string(row.cardRarityType)),
+    areaLevelsByItemAndLevel: new Map(areaLevels.map((row) => [`${string(row.areaItemId ?? row.id) ?? ""}:${num(row.level ?? row.areaItemLevel)}`, row])),
+    characterRanksByCharacterAndRank: new Map(characterRanks.map((row) => [`${string(row.characterId) ?? ""}:${num(row.characterRank)}`, row])),
+    canvasBonusesByRarity: new Map(canvasBonuses.map((row) => [string(row.cardRarityType) ?? "", row]))
+  };
+}
+
 export async function calculateExactCardPower(input: {
   region: RegionId;
   card: Card;
@@ -76,16 +118,11 @@ export async function calculateExactCardPower(input: {
   sameAttr: boolean;
   mysekaiFixtureLimit?: number;
   cardUnits?: string[];
+  context?: ExactCardPowerContext;
 }): Promise<{ detail?: DeckCardPowerDetail; trace: Row; missingFields: string[]; estimatedFieldsUsed: string[] }> {
-  const [cards, episodes, lessons, areaLevels, characterRanks, canvasBonuses] = await Promise.all([
-    getReferenceMaster<Row>(input.region, "cards"),
-    getReferenceMaster<Row>(input.region, "cardEpisodes"),
-    getReferenceMaster<Row>(input.region, "masterLessons"),
-    getReferenceMaster<Row>(input.region, "areaItemLevels"),
-    getReferenceMaster<Row>(input.region, "characterRanks"),
-    getReferenceMaster<Row>(input.region, "cardMysekaiCanvasBonuses")
-  ]);
-  const rawCard = cards.find((row) => string(row.id) === input.card.id);
+  const context = input.context ?? await prepareExactCardPowerContext(input.region);
+  if (context.region !== input.region) throw new Error(`Exact card power context region mismatch: expected ${input.region}, got ${context.region}`);
+  const rawCard = context.cardsById.get(input.card.id);
   const level = input.owned?.level ?? 1;
   const masterRank = input.owned?.masterRank ?? 0;
   const base = rawCard ? rawCardParameters(rawCard, level) : undefined;
@@ -102,7 +139,7 @@ export async function calculateExactCardPower(input: {
     vector[2] += num(rawCard?.specialTrainingPower3BonusFixed);
   }
   const episodeState = inventoryEpisodes(input.owned);
-  const cardEpisodes = episodes.filter((row) => string(row.cardId) === input.card.id);
+  const cardEpisodes = context.episodesByCardId.get(input.card.id) ?? [];
   const usedEpisodes = episodeState.ids
     ? cardEpisodes.filter((row) => episodeState.ids?.has(string(row.id) ?? ""))
     : episodeState.estimated ? cardEpisodes : [];
@@ -114,7 +151,7 @@ export async function calculateExactCardPower(input: {
     vector[2] += num(row.power3BonusFixed);
   }
   const rarity = string(rawCard?.cardRarityType ?? input.card.cardRarityType);
-  const usedLessons = lessons.filter((row) => string(row.cardRarityType) === rarity && num(row.masterRank) <= masterRank);
+  const usedLessons = (context.lessonsByRarity.get(rarity ?? "") ?? []).filter((row) => num(row.masterRank) <= masterRank);
   for (const row of usedLessons) {
     vector[0] += num(row.power1BonusFixed);
     vector[1] += num(row.power2BonusFixed);
@@ -122,7 +159,7 @@ export async function calculateExactCardPower(input: {
   }
   const canvas = records(input.playerAssets?.["mysekai-canvas"]).some((row) => string(row.cardId) === input.card.id);
   if (canvas) {
-    const row = canvasBonuses.find((item) => string(item.cardRarityType) === rarity);
+    const row = context.canvasBonusesByRarity.get(rarity ?? "");
     if (!row) missingFields.push(`cardMysekaiCanvasBonuses:${rarity}`);
     vector[0] += num(row?.power1BonusFixed);
     vector[1] += num(row?.power2BonusFixed);
@@ -133,7 +170,7 @@ export async function calculateExactCardPower(input: {
   for (const ownedArea of areaInventory) {
     const areaItemId = string(ownedArea.areaItemId ?? ownedArea.id);
     const levelValue = num(ownedArea.level ?? ownedArea.areaItemLevel);
-    const row = areaLevels.find((item) => string(item.areaItemId ?? item.id) === areaItemId && num(item.level ?? item.areaItemLevel) === levelValue);
+    const row = context.areaLevelsByItemAndLevel.get(`${areaItemId ?? ""}:${levelValue}`);
     if (!row) continue;
     const targetUnit = string(row.targetUnit) ?? "any";
     const targetAttr = string(row.targetCardAttr) ?? "any";
@@ -153,7 +190,7 @@ export async function calculateExactCardPower(input: {
   if (character.row && character.level === 0) {
     character.level = num(character.row.characterRank ?? character.row.rank);
   }
-  const characterRank = characterRanks.find((row) => string(row.characterId) === input.card.characterId && num(row.characterRank) === character.level);
+  const characterRank = context.characterRanksByCharacterAndRank.get(`${input.card.characterId ?? ""}:${character.level}`);
   if (!character.row) missingFields.push(`character-rank:${input.card.characterId}`);
   if (character.row && !characterRank) missingFields.push(`characterRanks:${input.card.characterId}:${character.level}`);
   const characterBonus = characterRank
@@ -261,6 +298,7 @@ export async function buildExactCardDetailLike(input: {
   scoreUpLimit?: number;
   eventBonusDetail?: { fixedBonus: number; cardBonus: number; leaderBonus: number; cardBonusCountLimit?: number };
   supportDeckBonus?: number;
+  powerContext?: ExactCardPowerContext;
 }): Promise<{ detail?: CardDetailLike; trace: Row; missingFields: string[]; estimatedFieldsUsed: string[] }> {
   const unitTrace = getCardUnitsLike(input.card);
   const units = unitTrace.units.length ? unitTrace.units : [];
@@ -282,7 +320,8 @@ export async function buildExactCardDetailLike(input: {
           sameUnit,
           sameAttr,
           cardUnits: units,
-          mysekaiFixtureLimit: input.mysekaiFixtureLimit
+          mysekaiFixtureLimit: input.mysekaiFixtureLimit,
+          context: input.powerContext
         });
         missingFields.push(...result.missingFields);
         estimatedFieldsUsed.push(...result.estimatedFieldsUsed);

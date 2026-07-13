@@ -4,6 +4,19 @@ const TOOLBOX_API_BASE = "https://toolbox-api-direct.haruki.seiunx.com";
 const top100Ranks = Array.from({ length: 50 }, (_, index) => index * 2 + 1);
 const commonBorderRanks = [500, 1000, 2000, 5000];
 
+export type HarukiProfileFailureKind = "not-found" | "rate-limited" | "upstream-error" | "network-error";
+
+export class HarukiProfileRequestError extends Error {
+  constructor(
+    public readonly kind: HarukiProfileFailureKind,
+    public readonly status?: number,
+    options?: { cause?: unknown }
+  ) {
+    super(status ? `Haruki profile request failed: ${status}` : "Haruki profile request failed: network error", options);
+    this.name = "HarukiProfileRequestError";
+  }
+}
+
 async function fetchToolboxLeaderboard(
   region: RegionId,
   eventId: string,
@@ -85,9 +98,21 @@ function normalizeGrowth(item: any) {
 
 export class HarukiClient {
   async getPlayerProfile(region: RegionId, userId: string) {
-    const response = await fetch(`${TOOLBOX_API_BASE}/event-tracker/api/v2/web/players/${region}/${userId}/profile`);
+    let response: Response;
+    try {
+      response = await fetch(`${TOOLBOX_API_BASE}/event-tracker/api/v2/web/players/${region}/${userId}/profile`, {
+        signal: AbortSignal.timeout(12_000)
+      });
+    } catch (error) {
+      throw new HarukiProfileRequestError("network-error", undefined, { cause: error });
+    }
     if (!response.ok) {
-      throw new Error(`Haruki profile request failed: ${response.status}`);
+      const kind: HarukiProfileFailureKind = response.status === 404
+        ? "not-found"
+        : response.status === 429
+          ? "rate-limited"
+          : "upstream-error";
+      throw new HarukiProfileRequestError(kind, response.status);
     }
     return response.json();
   }

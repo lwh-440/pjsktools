@@ -1,7 +1,7 @@
 import type { RegionId } from "./config.js";
 import { buildDeckDetailLike } from "./formulaDetail.js";
 import { getCards, getMasterCollection } from "./masterData.js";
-import { buildExactCardDetailLike, resolveExactMysekaiServiceContext } from "./referenceCalculator.js";
+import { buildExactCardDetailLike, prepareExactCardPowerContext, resolveExactMysekaiServiceContext } from "./referenceCalculator.js";
 import { getReferenceMasterHealth } from "./referenceMaster.js";
 import type { UserCardInventoryItem } from "./types.js";
 
@@ -71,12 +71,15 @@ export async function recommendAreaItemUpgrades(input: AreaItemRecommendInput) {
     getReferenceMasterHealth(input.region)
   ]);
   const cardMap = new Map(cards.map((card) => [card.id, card]));
-  const service = await resolveExactMysekaiServiceContext(input.region, playerAssets);
+  const [service, powerContext] = await Promise.all([
+    resolveExactMysekaiServiceContext(input.region, playerAssets),
+    prepareExactCardPowerContext(input.region)
+  ]);
   const buildDeck = async (assets: Record<string, unknown>) => {
     const exactService = { ...service, playerAssets: assets };
     const results = await Promise.all(inventory.map((owned) => {
       const card = cardMap.get(owned.cardId);
-      return card ? buildExactCardDetailLike({ region: input.region, card, owned, service: exactService }) : Promise.resolve({ detail: undefined, trace: {}, missingFields: [`cards:${owned.cardId}`], estimatedFieldsUsed: [] });
+      return card ? buildExactCardDetailLike({ region: input.region, card, owned, service: exactService, powerContext }) : Promise.resolve({ detail: undefined, trace: {}, missingFields: [`cards:${owned.cardId}`], estimatedFieldsUsed: [] });
     }));
     const details = results.map((item) => item.detail).filter((item): item is NonNullable<typeof item> => Boolean(item));
     const missingFields = [...new Set(results.flatMap((item) => item.missingFields))];

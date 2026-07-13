@@ -1,6 +1,6 @@
 import type { RegionId } from "./config.js";
 import { getCards, getMasterCollection } from "./masterData.js";
-import { calculateExactCardPower } from "./referenceCalculator.js";
+import { calculateExactCardPower, prepareExactCardPowerContext } from "./referenceCalculator.js";
 import { store } from "./store.js";
 import { recommendAreaItemUpgrades } from "./areaItemRecommend.js";
 
@@ -87,6 +87,20 @@ function areaRate(row: Row) {
   );
 }
 
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export async function buildProfileAnalysis(userId: string, bindingId: string) {
   const binding = (await store.listPlayerBindings(userId)).find((item) => item.id === bindingId);
   if (!binding) return null;
@@ -158,7 +172,8 @@ export async function buildProfileAnalysis(userId: string, bindingId: string) {
     };
   }).sort((a, b) => b.rank - a.rank);
 
-  const exactCards = await Promise.all(inventory.map(async (owned) => {
+  const powerContext = await prepareExactCardPowerContext(binding.region as RegionId);
+  const exactCards = await mapWithConcurrency(inventory, 8, async (owned) => {
     const card = cardMaster.get(owned.cardId);
     if (!card) return null;
     const unit = card.characterUnit ?? card.supportUnit ?? "unknown";
@@ -170,10 +185,11 @@ export async function buildProfileAnalysis(userId: string, bindingId: string) {
       unit,
       sameUnit: false,
       sameAttr: false,
-      cardUnits: [card.characterUnit, card.supportUnit].filter((value): value is string => Boolean(value && value !== "none"))
+      cardUnits: [card.characterUnit, card.supportUnit].filter((value): value is string => Boolean(value && value !== "none")),
+      context: powerContext
     });
     return result.detail ? { cardId: card.id, title: card.title, characterId: card.characterId, ...result } : { cardId: card.id, title: card.title, characterId: card.characterId, ...result };
-  }));
+  });
   const completeCards = exactCards.filter((item): item is NonNullable<typeof item> & { detail: NonNullable<NonNullable<typeof item>["detail"]> } => Boolean(item?.detail));
   const powerTotals = completeCards.reduce((totals, item) => ({
     base: totals.base + item.detail.base,
