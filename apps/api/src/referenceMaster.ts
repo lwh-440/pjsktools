@@ -51,6 +51,7 @@ type ReferenceManifest = {
 };
 
 const memory = new Map<string, unknown[]>();
+const pendingLoads = new Map<string, Promise<unknown[]>>();
 const manifestMemory = new Map<RegionId, ReferenceManifest>();
 const metadataBase = "https://metadata.exmeaning.com";
 const fastRefresh = process.env.PJSKTOOLS_FAST_MASTER_REFRESH === "true";
@@ -184,10 +185,17 @@ export async function getReferenceMaster<T extends Record<string, unknown>>(regi
   const cacheKey = `${region}:${key}`;
   const cached = memory.get(cacheKey);
   if (cached) return cached as T[];
-  const local = await readCachedArray(region, key);
-  if (!local) return [];
-  memory.set(cacheKey, local.rows);
-  return local.rows as T[];
+  const pending = pendingLoads.get(cacheKey);
+  if (pending) return pending as Promise<T[]>;
+  const load = readCachedArray(region, key)
+    .then((local) => {
+      const rows = local?.rows ?? [];
+      memory.set(cacheKey, rows);
+      return rows;
+    })
+    .finally(() => pendingLoads.delete(cacheKey));
+  pendingLoads.set(cacheKey, load);
+  return load as Promise<T[]>;
 }
 
 export function isFormulaMasterKey(value: string): value is FormulaMasterKey {

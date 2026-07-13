@@ -14,6 +14,7 @@ import { estimateEventPoint, getCalculationContext, getCalculationSchema, getDec
 import { sendVerificationEmail, smtpConfigured } from "./emailService.js";
 import { getExternalContext, getLive2dModel3Proxy, getLive2dModelDetail, getLive2dModels, getMysekaiFullContext, getStoriesContext, getStoryCatalog, getStoryFullContext, getStoryPlaybackContext, getVirtualLivePlaybackContext, getVirtualLiveStepContext, informationCollection, isAllowedExternalAssetUrl } from "./externalData.js";
 import { harukiClient } from "./harukiClient.js";
+import { playerProfileFailure, playerUidPattern } from "./playerProfileHttp.js";
 import {
   getCardDetail,
   getCardFullDetail,
@@ -1312,13 +1313,23 @@ export async function buildApp() {
   app.get("/api/players/:region/:userId/profile", async (request, reply) => {
     const { region, userId } = request.params as { region: string; userId: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    return getPlayerProfileCached(region, userId);
+    if (!playerUidPattern.test(userId)) return reply.badRequest("Unsupported player UID");
+    try {
+      return await getPlayerProfileCached(region, userId);
+    } catch (error) {
+      return playerProfileFailure(reply, error);
+    }
   });
 
   app.post("/api/players/:region/:userId/refresh", async (request, reply) => {
     const { region, userId } = request.params as { region: string; userId: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    return getPlayerProfileCached(region, userId, true);
+    if (!playerUidPattern.test(userId)) return reply.badRequest("Unsupported player UID");
+    try {
+      return await getPlayerProfileCached(region, userId, true);
+    } catch (error) {
+      return playerProfileFailure(reply, error);
+    }
   });
 
   app.post("/api/tools/score-control", async (request, reply) => {
@@ -1595,7 +1606,7 @@ export async function buildApp() {
         refreshedAt: new Date().toISOString()
       });
     } catch (error) {
-      return reply.serviceUnavailable(`Public profile refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+      return playerProfileFailure(reply, error);
     }
   });
 
