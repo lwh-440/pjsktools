@@ -257,6 +257,9 @@ const failedAutoSyncUntil = new Map<RegionId, number>();
 const failedAutoSyncCooldownMs = 1000 * 60 * 10;
 const runningSyncs = new Map<RegionId, Promise<MasterCache>>();
 const runningEventSyncs = new Map<RegionId, Promise<MasterCache | null>>();
+const runningRankingAssetSyncs = new Map<RegionId, Promise<MasterCache>>();
+const lastRankingAssetSyncAt = new Map<RegionId, number>();
+const rankingAssetSyncIntervalMs = 1000 * 60 * 5;
 const fastMasterRefresh = process.env.PJSKTOOLS_FAST_MASTER_REFRESH === "true";
 const collectionCacheKeys = [
   "eventCards",
@@ -1496,15 +1499,55 @@ export async function syncEventMasterRegion(region: RegionId) {
   return updated;
 }
 
-export function requestMasterRegionSync(region: RegionId) {
+export async function syncRankingAssetMasterRegion(region: RegionId): Promise<MasterCache> {
+  const fullSync = runningSyncs.get(region);
+  if (fullSync) return fullSync;
+  const running = runningRankingAssetSyncs.get(region);
+  if (running) return running;
+
+  const sync = (async () => {
+    const eventSync = runningEventSyncs.get(region);
+    if (eventSync) await eventSync;
+    const existing = await readMasterCache(region);
+    if (!existing) return syncMasterRegion(region);
+
+    const regionConfig = getRegionConfig(region);
+    const [cards, gameCharacters, skills, events, eventCards, eventStories] = await Promise.all([
+      fetchMetadataFirst<RawCard[]>(region, "cards", regionConfig.repository, masterFiles.cards),
+      fetchMetadataFirst<RawCharacter[]>(region, "gameCharacters", regionConfig.repository, masterFiles.gameCharacters),
+      fetchMoesekaiMaster<RawSkill[]>(region, "skills")
+        .catch(() => fetchFirstAvailableJson<RawSkill[]>(regionConfig.repository, masterFiles.skills, [])),
+      fetchMetadataFirst<RawEvent[]>(region, "events", regionConfig.repository, masterFiles.events),
+      fetchMetadataFirst<RawEventCard[]>(region, "eventCards", regionConfig.repository, masterFiles.eventCards),
+      fetchMetadataFirst<RawEventStory[]>(region, "eventStories", regionConfig.repository, masterFiles.eventStories)
+    ]);
+    const transformedCards = transformCards(cards, gameCharacters, skills);
+    const updated: MasterCache = {
+      ...existing,
+      syncedAt: new Date().toISOString(),
+      source: `${moesekaiMetadataBase[region]} (Team-Haruki same-region fallback)`,
+      cards: transformedCards,
+      events: transformEvents(events, eventCards, eventStories, transformedCards)
+    };
+    await atomicWriteJson(getCachePath(region), updated);
+    lastRankingAssetSyncAt.set(region, Date.now());
+    return updated;
+  })().finally(() => runningRankingAssetSyncs.delete(region));
+
+  runningRankingAssetSyncs.set(region, sync);
+  return sync;
+}
+
+export function requestRankingAssetMasterSync(region: RegionId) {
   if ((failedAutoSyncUntil.get(region) ?? 0) > Date.now()) return;
-  if (runningEventSyncs.has(region)) return;
-  const sync = syncEventMasterRegion(region)
-    .catch((error) => {
-      failedAutoSyncUntil.set(region, Date.now() + failedAutoSyncCooldownMs);
-      throw error;
-    })
-    .finally(() => runningEventSyncs.delete(region));
-  runningEventSyncs.set(region, sync);
-  sync.catch(() => undefined);
+  if ((lastRankingAssetSyncAt.get(region) ?? 0) + rankingAssetSyncIntervalMs > Date.now()) return;
+  if (runningRankingAssetSyncs.has(region)) return;
+  syncRankingAssetMasterRegion(region).catch((error) => {
+    failedAutoSyncUntil.set(region, Date.now() + failedAutoSyncCooldownMs);
+    if (!fastMasterRefresh) console.warn(`Ranking asset master sync failed for ${region}:`, error);
+  });
+}
+
+export function requestMasterRegionSync(region: RegionId) {
+  requestRankingAssetMasterSync(region);
 }
