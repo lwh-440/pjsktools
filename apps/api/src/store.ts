@@ -10,6 +10,7 @@ import type {
   EmailVerificationCode,
   EmailVerificationPurpose,
   Favorite,
+  FavoriteFolder,
   IdempotencyRecord,
   OAuthAccount,
   OAuthProvider,
@@ -53,8 +54,14 @@ export type AuthStore = {
   revokeSession(id: string): Promise<boolean>;
   createAuthState(provider: OAuthProvider, state: string, redirectTo: string, expiresAt: string): Promise<AuthState>;
   consumeAuthState(provider: OAuthProvider, state: string): Promise<AuthState | null>;
+  listFavoriteFolders(userId: string): Promise<FavoriteFolder[]>;
+  createFavoriteFolder(input: Omit<FavoriteFolder, "id" | "createdAt" | "updatedAt">): Promise<FavoriteFolder>;
+  updateFavoriteFolder(userId: string, id: string, patch: Pick<FavoriteFolder, "name"> & { description?: string }): Promise<FavoriteFolder | null>;
+  deleteFavoriteFolder(userId: string, id: string): Promise<boolean>;
   listFavorites(userId: string): Promise<Favorite[]>;
-  addFavorite(input: Omit<Favorite, "id" | "createdAt">): Promise<Favorite>;
+  addFavorite(input: Omit<Favorite, "id" | "createdAt" | "updatedAt" | "target">): Promise<Favorite>;
+  updateFavoriteFolders(userId: string, id: string, folderIds: string[]): Promise<Favorite | null>;
+  bulkUpdateFavoriteFolders(userId: string, ids: string[], folderIds: string[], mode: "add" | "remove" | "replace"): Promise<Favorite[]>;
   deleteFavorite(userId: string, id: string): Promise<boolean>;
   listScores(userId: string): Promise<ScoreRecord[]>;
   upsertScore(input: Omit<ScoreRecord, "id" | "updatedAt"> & { id?: string }): Promise<ScoreRecord>;
@@ -107,6 +114,7 @@ export class MemoryStore implements AuthStore {
   private sessionsByHash = new Map<string, string>();
   private authStates = new Map<string, AuthState>();
   private emailCodes = new Map<string, EmailVerificationCode>();
+  private favoriteFolders = new Map<string, FavoriteFolder>();
   private favorites = new Map<string, Favorite>();
   private scores = new Map<string, ScoreRecord>();
   private playerBindings = new Map<string, PlayerBinding>();
@@ -201,6 +209,7 @@ export class MemoryStore implements AuthStore {
     this.usersByEmail.delete(normalized);
     for (const [key, value] of [...this.oauthAccounts]) if (value.userId === id) this.oauthAccounts.delete(key);
     for (const [key, value] of [...this.sessions]) if (value.userId === id) this.sessions.delete(key);
+    for (const [key, value] of [...this.favoriteFolders]) if (value.userId === id) this.favoriteFolders.delete(key);
     for (const [key, value] of [...this.favorites]) if (value.userId === id) this.favorites.delete(key);
     for (const [key, value] of [...this.scores]) if (value.userId === id) this.scores.delete(key);
     for (const [key, value] of [...this.playerBindings]) if (value.userId === id) this.playerBindings.delete(key);
@@ -300,14 +309,132 @@ export class MemoryStore implements AuthStore {
     return authState;
   }
 
-  async listFavorites(userId: string) {
-    return [...this.favorites.values()].filter((favorite) => favorite.userId === userId);
+  async listFavoriteFolders(userId: string) {
+    return [...this.favoriteFolders.values()]
+      .filter((folder) => folder.userId === userId)
+      .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
   }
 
-  async addFavorite(input: Omit<Favorite, "id" | "createdAt">) {
-    const favorite: Favorite = { ...input, id: randomUUID(), createdAt: nowIso() };
+  async createFavoriteFolder(input: Omit<FavoriteFolder, "id" | "createdAt" | "updatedAt">) {
+    const normalizedName = input.name.trim().toLowerCase();
+    if ([...this.favoriteFolders.values()].some((folder) => folder.userId === input.userId && folder.name.trim().toLowerCase() === normalizedName)) {
+      throw new Error("FOLDER_EXISTS");
+    }
+    const timestamp = nowIso();
+    const folder: FavoriteFolder = {
+      ...input,
+      name: input.name.trim(),
+      id: randomUUID(),
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    this.favoriteFolders.set(folder.id, folder);
+    return folder;
+  }
+
+  async updateFavoriteFolder(userId: string, id: string, patch: Pick<FavoriteFolder, "name"> & { description?: string }) {
+    const folder = this.favoriteFolders.get(id);
+    if (!folder || folder.userId !== userId) return null;
+    const normalizedName = patch.name.trim().toLowerCase();
+    if ([...this.favoriteFolders.values()].some((item) => item.id !== id && item.userId === userId && item.name.trim().toLowerCase() === normalizedName)) {
+      throw new Error("FOLDER_EXISTS");
+    }
+    const updated: FavoriteFolder = {
+      ...folder,
+      name: patch.name.trim(),
+      description: patch.description,
+      updatedAt: nowIso()
+    };
+    this.favoriteFolders.set(id, updated);
+    return updated;
+  }
+
+  async deleteFavoriteFolder(userId: string, id: string) {
+    const folder = this.favoriteFolders.get(id);
+    if (!folder || folder.userId !== userId) return false;
+    this.favoriteFolders.delete(id);
+    for (const [favoriteId, favorite] of this.favorites) {
+      if (!favorite.folderIds.includes(id)) continue;
+      this.favorites.set(favoriteId, {
+        ...favorite,
+        folderIds: favorite.folderIds.filter((folderId) => folderId !== id),
+        updatedAt: nowIso()
+      });
+    }
+    return true;
+  }
+
+  async listFavorites(userId: string) {
+    return [...this.favorites.values()]
+      .filter((favorite) => favorite.userId === userId)
+      .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+  }
+
+  private assertFavoriteFolders(userId: string, folderIds: string[]) {
+    const unique = [...new Set(folderIds)];
+    if (unique.some((id) => this.favoriteFolders.get(id)?.userId !== userId)) throw new Error("FOLDER_NOT_FOUND");
+    return unique;
+  }
+
+  async addFavorite(input: Omit<Favorite, "id" | "createdAt" | "updatedAt" | "target">) {
+    const folderIds = this.assertFavoriteFolders(input.userId, input.folderIds);
+    const existing = [...this.favorites.values()].find((favorite) =>
+      favorite.userId === input.userId &&
+      favorite.type === input.type &&
+      favorite.region === input.region &&
+      favorite.targetId === input.targetId
+    );
+    if (existing) {
+      const updated = {
+        ...existing,
+        label: input.label,
+        folderIds: [...new Set([...existing.folderIds, ...folderIds])],
+        updatedAt: nowIso()
+      };
+      this.favorites.set(updated.id, updated);
+      return updated;
+    }
+    const timestamp = nowIso();
+    const favorite: Favorite = {
+      ...input,
+      folderIds,
+      id: randomUUID(),
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
     this.favorites.set(favorite.id, favorite);
     return favorite;
+  }
+
+  async updateFavoriteFolders(userId: string, id: string, folderIds: string[]) {
+    const favorite = this.favorites.get(id);
+    if (!favorite || favorite.userId !== userId) return null;
+    const updated = {
+      ...favorite,
+      folderIds: this.assertFavoriteFolders(userId, folderIds),
+      updatedAt: nowIso()
+    };
+    this.favorites.set(id, updated);
+    return updated;
+  }
+
+  async bulkUpdateFavoriteFolders(userId: string, ids: string[], folderIds: string[], mode: "add" | "remove" | "replace") {
+    const checkedFolderIds = this.assertFavoriteFolders(userId, folderIds);
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.some((id) => this.favorites.get(id)?.userId !== userId)) throw new Error("FAVORITE_NOT_FOUND");
+    const updated: Favorite[] = [];
+    for (const id of uniqueIds) {
+      const favorite = this.favorites.get(id)!;
+      const nextFolderIds = mode === "replace"
+        ? checkedFolderIds
+        : mode === "add"
+          ? [...new Set([...favorite.folderIds, ...checkedFolderIds])]
+          : favorite.folderIds.filter((folderId) => !checkedFolderIds.includes(folderId));
+      const next = { ...favorite, folderIds: nextFolderIds, updatedAt: nowIso() };
+      this.favorites.set(id, next);
+      updated.push(next);
+    }
+    return updated;
   }
 
   async deleteFavorite(userId: string, id: string) {

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { encryptSecret } from "./authCrypto.js";
 import { getCardImportManifest } from "./cardImportManifest.js";
 import { getAssetConfig, getCardAssetDetail, getChartAssetDetail, getEventAssetDetail, getMusicAssetDetail } from "./assets.js";
+import { AssetResolveError, AssetResolver } from "./assetResolver.js";
 import { config, isRegion, regions, type RegionId } from "./config.js";
 import { estimateEventPoint, getCalculationContext, getCalculationSchema, getDeckRecommendSchema, getEventBonusConfig } from "./calcData.js";
 import { sendVerificationEmail, smtpConfigured } from "./emailService.js";
@@ -16,6 +17,8 @@ import { getExternalContext, getLive2dModel3Proxy, getLive2dModelDetail, getLive
 import { harukiClient } from "./harukiClient.js";
 import { playerProfileFailure, playerUidPattern, rankingDataFailure, rankingPlayerFailure } from "./playerProfileHttp.js";
 import {
+  getAndroidCatalog,
+  getAndroidCatalogDetail,
   getCardDetail,
   getCardFullDetail,
   getCards,
@@ -48,7 +51,7 @@ import {
 import { getLatestLiveRankingCached, getLiveRankingCached, getPlayerProfileCached, getRankingBorderCached, getRankingChurnCached, getRankingHistory, getRankingHistorySummary, getRankingPlayerDetail, getRankingTop100Cached, getRuntimeStatus } from "./runtimeData.js";
 import { calculateMysekai } from "./mysekaiCalc.js";
 import { store, toPublicUser } from "./store.js";
-import type { PlayerDataKind } from "./types.js";
+import type { Favorite, FavoriteTargetSummary, FavoriteType, PlayerDataKind } from "./types.js";
 import { validatePasswordStrength } from "./passwordPolicy.js";
 import { buildBindingCompleteness, buildBindingSummary, buildMeProfile, isPlayerDataKind, normalizeSuitePlayerDataImport, playerDataKinds, reviewPlayerDataImport, validatePlayerDataRecord } from "./playerSummary.js";
 import { calculateNormalEventPlan, calculateScoreControl, forecastRanking, recommendAreaItems, recommendDeck, recommendMusic } from "./tools.js";
@@ -99,10 +102,26 @@ const qqCallbackSchema = z.object({
 });
 
 const favoriteSchema = z.object({
-  type: z.enum(["player", "event", "song", "card"]),
+  type: z.enum(["player", "event", "song", "card", "gacha", "honor", "material", "costume", "stamp", "comic"]),
   region: z.string().refine(isRegion),
   targetId: z.string().min(1),
-  label: z.string().min(1)
+  label: z.string().trim().min(1).max(200).optional(),
+  folderIds: z.array(z.string().uuid()).max(100).default([])
+});
+
+const favoriteFolderSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  description: z.string().trim().max(200).optional()
+});
+const favoriteFolderPatchSchema = favoriteFolderSchema.partial().refine((value) => Object.keys(value).length > 0);
+
+const favoriteFoldersPatchSchema = z.object({
+  folderIds: z.array(z.string().uuid()).max(100)
+});
+
+const favoriteBulkPatchSchema = favoriteFoldersPatchSchema.extend({
+  favoriteIds: z.array(z.string().uuid()).min(1).max(200),
+  mode: z.enum(["add", "remove", "replace"])
 });
 
 const scoreSchema = z.object({
@@ -148,11 +167,26 @@ const scoreControlSchema = z.object({
   ,skill6Mode: z.enum(["team-average", "highest-power"]).optional()
 });
 
+const commaValues = (value: unknown) => {
+  const values = Array.isArray(value) ? value : value == null ? [] : [value];
+  return [...new Set(values.flatMap((item) => String(item).split(",")).map((item) => item.trim()).filter(Boolean))];
+};
+
+const stringValuesSchema = z.preprocess(commaValues, z.array(z.string().max(100)).max(100));
+const numberValuesSchema = z.preprocess(
+  (value) => commaValues(value).map(Number),
+  z.array(z.number().int().positive()).max(100)
+);
+const booleanQuerySchema = z.preprocess(
+  (value) => value === true || value === "true" || value === "1",
+  z.boolean()
+);
+
 const catalogQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
   q: z.string().max(100).optional(),
-  sort: z.enum(["id-asc", "id-desc", "name-asc", "name-desc"]).optional(),
+  sort: z.enum(["id-asc", "id-desc", "name-asc", "name-desc", "start-asc", "start-desc"]).optional(),
   partType: z.string().optional(),
   source: z.string().optional(),
   rarity: z.string().optional(),
@@ -160,6 +194,33 @@ const catalogQuerySchema = z.object({
   characterId: z.coerce.number().int().positive().optional()
   ,category: z.string().max(100).optional()
   ,tag: z.string().max(100).optional()
+  ,unit: z.string().max(100).optional()
+  ,attribute: z.string().max(100).optional()
+  ,eventTypes: stringValuesSchema.default([])
+  ,eventUnits: stringValuesSchema.default([])
+  ,bonusCharacterIds: numberValuesSchema.default([])
+  ,bannerCharacterIds: numberValuesSchema.default([])
+  ,bonusAttributes: stringValuesSchema.default([])
+  ,musicTags: stringValuesSchema.default([])
+  ,categories: stringValuesSchema.default([])
+  ,characterIds: numberValuesSchema.default([])
+  ,units: stringValuesSchema.default([])
+  ,supportUnits: stringValuesSchema.default([])
+  ,attributes: stringValuesSchema.default([])
+  ,rarities: stringValuesSchema.default([])
+  ,supplyTypes: stringValuesSchema.default([])
+  ,skillTypes: stringValuesSchema.default([])
+  ,gachaTypes: stringValuesSchema.default([])
+  ,honorTypes: stringValuesSchema.default([])
+  ,groupOnce: booleanQuerySchema.default(false)
+  ,materialTypes: stringValuesSchema.default([])
+  ,usableOnly: booleanQuerySchema.default(false)
+  ,partTypes: stringValuesSchema.default([])
+  ,sources: stringValuesSchema.default([])
+  ,genders: stringValuesSchema.default([])
+  ,relatedOnly: booleanQuerySchema.default(false)
+  ,stampTypes: stringValuesSchema.default([])
+  ,comicTypes: stringValuesSchema.default([])
 });
 
 function catalogResponse(reply: any, request: any, payload: unknown) {
@@ -177,6 +238,89 @@ function paginatedList<T>(request: any, items: T[], defaultPageSize = 24) {
   const query = request.query as { page?: unknown; pageSize?: unknown };
   if (query.page == null && query.pageSize == null) return items;
   return paginate(items, query, { page: 1, pageSize: defaultPageSize, maxPageSize: 100 });
+}
+
+const favoriteCollectionTypes: Partial<Record<FavoriteType, string>> = {
+  gacha: "gachas",
+  honor: "honors",
+  material: "materials",
+  costume: "costumes",
+  stamp: "stamps",
+  comic: "comics"
+};
+
+function stringList(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
+
+async function resolveFavoriteTarget(type: FavoriteType, region: RegionId, targetId: string, fallbackLabel = targetId): Promise<FavoriteTargetSummary> {
+  try {
+    if (type === "player") {
+      return { id: targetId, type, displayName: fallbackLabel, secondaryText: `${region.toUpperCase()} · UID ${targetId}`, imageCandidates: [], available: true };
+    }
+    if (type === "song") {
+      const song = await getSongDetail(region, targetId);
+      if (!song) throw new Error("TARGET_NOT_FOUND");
+      const assets = getMusicAssetDetail(region, song);
+      return {
+        id: targetId,
+        type,
+        displayName: song.title,
+        secondaryText: song.categories?.join(" / ") || song.unit,
+        imageCandidates: stringList((assets as any).imageCandidates),
+        available: true
+      };
+    }
+    if (type === "card") {
+      const card = await getCardDetail(region, targetId);
+      if (!card) throw new Error("TARGET_NOT_FOUND");
+      const assets = getCardAssetDetail(region, card) as any;
+      return {
+        id: targetId,
+        type,
+        displayName: card.title,
+        secondaryText: `${card.character} · ${card.rarity}★ · ${card.attribute}`,
+        imageCandidates: stringList(assets.normalThumbnailCandidates).length
+          ? stringList(assets.normalThumbnailCandidates)
+          : stringList(assets.imageCandidates),
+        available: true
+      };
+    }
+    if (type === "event") {
+      const event = await getEventDetail(region, targetId);
+      if (!event) throw new Error("TARGET_NOT_FOUND");
+      const assets = getEventAssetDetail(region, event) as any;
+      return {
+        id: targetId,
+        type,
+        displayName: event.name,
+        secondaryText: event.eventType,
+        imageCandidates: stringList(assets.imageCandidates),
+        available: true
+      };
+    }
+    const collectionType = favoriteCollectionTypes[type];
+    if (!collectionType) throw new Error("TARGET_NOT_FOUND");
+    const detail = await getCollectionFullDetail(region, collectionType, targetId);
+    if (!detail) throw new Error("TARGET_NOT_FOUND");
+    const item = detail.item as any;
+    const assets = detail.assets as any;
+    return {
+      id: targetId,
+      type,
+      displayName: item.name ?? item.title ?? fallbackLabel,
+      secondaryText: item.category ?? item.rarity ?? item.type,
+      imageCandidates: stringList(assets.imageCandidates),
+      available: true
+    };
+  } catch {
+    return { id: targetId, type, displayName: fallbackLabel, imageCandidates: [], available: false };
+  }
+}
+
+async function hydrateFavorite(favorite: Favorite) {
+  const target = await resolveFavoriteTarget(favorite.type, favorite.region, favorite.targetId, favorite.label);
+  return { ...favorite, label: target.available ? target.displayName : favorite.label, target };
 }
 
 async function resolveShareCardData(typeValue: string, id: string, region: RegionId): Promise<ShareCardData | null> {
@@ -227,6 +371,7 @@ function sanitizeInformationDocument(source: string, sourceUrl: string, language
 }
 
 const assetProxyFailures = new Map<string, number>();
+const assetResolver = new AssetResolver();
 
 const multiLiveFields = {
   teammates: z.array(z.object({ power: z.number().positive(), effectiveness: z.number().nonnegative(), label: z.string().optional() })).length(4).optional(),
@@ -777,6 +922,28 @@ export async function buildApp() {
     }
   });
 
+  app.get("/api/assets/resolve", async (request, reply) => {
+    const query = request.query as { url?: string | string[] };
+    const urls = (Array.isArray(query.url) ? query.url : query.url ? [query.url] : []).slice(0, 3);
+    if (!urls.length || urls.some((url) => !isAllowedExternalAssetUrl(url))) {
+      return reply.badRequest("Unsupported asset resolve URL");
+    }
+    try {
+      const asset = await assetResolver.resolve(urls);
+      reply.header("content-type", asset.contentType);
+      reply.header("content-length", String(asset.size));
+      reply.header("cache-control", "public, max-age=31536000, immutable");
+      reply.header("x-asset-cache", asset.cacheHit ? "hit" : "miss");
+      if (asset.etag) reply.header("etag", asset.etag);
+      if (asset.lastModified) reply.header("last-modified", asset.lastModified);
+      return reply.send(asset.body);
+    } catch (error) {
+      reply.header("cache-control", "no-store");
+      const status = error instanceof AssetResolveError && error.status >= 400 && error.status < 500 ? error.status : 503;
+      return reply.code(status).send(error instanceof Error ? error.message : "Asset resolution failed");
+    }
+  });
+
   app.get("/api/master/:region/songs", async (request, reply) => {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
@@ -896,6 +1063,32 @@ export async function buildApp() {
     const payload = await getMasterCatalog(region, catalogType, parsed.data);
     return catalogResponse(reply, request, payload);
   });
+
+  for (const catalogType of ["events", "songs", "cards"] as const) {
+    app.get(`/api/master/:region/catalogs/${catalogType}`, async (request, reply) => {
+      const { region } = request.params as { region: string };
+      if (!isRegion(region)) return reply.badRequest("Unsupported region");
+      const parsed = catalogQuerySchema.safeParse(request.query);
+      if (!parsed.success) return reply.badRequest(parsed.error.message);
+      return catalogResponse(reply, request, await getMasterCatalog(region, catalogType, parsed.data));
+    });
+  }
+
+  for (const catalogType of ["gachas", "honors", "materials", "costumes", "stamps", "comics"] as const) {
+    app.get(`/api/master/:region/catalogs/${catalogType}`, async (request, reply) => {
+      const { region } = request.params as { region: string };
+      if (!isRegion(region)) return reply.badRequest("Unsupported region");
+      const parsed = catalogQuerySchema.safeParse(request.query);
+      if (!parsed.success) return reply.badRequest(parsed.error.message);
+      return catalogResponse(reply, request, await getAndroidCatalog(region, catalogType, parsed.data));
+    });
+    app.get(`/api/master/:region/catalogs/${catalogType}/:itemId`, async (request, reply) => {
+      const { region, itemId } = request.params as { region: string; itemId: string };
+      if (!isRegion(region)) return reply.badRequest("Unsupported region");
+      const detail = await getAndroidCatalogDetail(region, catalogType, itemId);
+      return detail ?? reply.notFound("Master item not found");
+    });
+  }
 
   app.get("/api/master/:region/cards/import-manifest", async (request, reply) => {
     const { region } = request.params as { region: string };
@@ -1503,10 +1696,16 @@ export async function buildApp() {
   app.get("/api/me/profile", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const profile = await buildMeProfile(request.user.sub);
     if (!profile) return reply.unauthorized("User not found");
+    const hydratedFavorites = await Promise.all(profile.favorites.map(hydrateFavorite));
+    const favoriteFolders = await store.listFavoriteFolders(request.user.sub);
     return {
       ...profile,
       bindings: profile.bindings.map(withEntityVersion),
-      favorites: profile.favorites.map(withEntityVersion),
+      favorites: hydratedFavorites.map(withEntityVersion),
+      favoriteFolders: favoriteFolders.map((folder) => ({
+        ...withEntityVersion(folder),
+        itemCount: profile.favorites.filter((favorite) => favorite.folderIds.includes(folder.id)).length
+      })),
       scores: profile.scores.map(withEntityVersion),
       deckConfigs: profile.deckConfigs.map(withEntityVersion)
     };
@@ -1579,13 +1778,117 @@ export async function buildApp() {
     }
   });
 
+  app.get("/api/me/favorite-folders", { preHandler: (app as any).authenticate }, async (request: any) => {
+    const [folders, favorites] = await Promise.all([
+      store.listFavoriteFolders(request.user.sub),
+      store.listFavorites(request.user.sub)
+    ]);
+    return folders.map((folder) => ({
+      ...withEntityVersion(folder),
+      itemCount: favorites.filter((favorite) => favorite.folderIds.includes(folder.id)).length
+    }));
+  });
+
+  app.post("/api/me/favorite-folders", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const body = favoriteFolderSchema.parse(request.body);
+    try {
+      return setEntityTag(reply, await store.createFavoriteFolder({ ...body, userId: request.user.sub }));
+    } catch (error) {
+      if ((error as Error).message === "FOLDER_EXISTS") return reply.conflict("Favorite folder name already exists");
+      throw error;
+    }
+  });
+
+  app.patch("/api/me/favorite-folders/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const current = (await store.listFavoriteFolders(request.user.sub)).find((item) => item.id === request.params.id);
+    if (!current) return reply.notFound("Favorite folder not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
+    const body = favoriteFolderPatchSchema.parse(request.body);
+    try {
+      const updated = await store.updateFavoriteFolder(request.user.sub, request.params.id, {
+        name: body.name ?? current.name,
+        description: body.description ?? current.description
+      });
+      return updated ? setEntityTag(reply, updated) : reply.notFound("Favorite folder not found");
+    } catch (error) {
+      if ((error as Error).message === "FOLDER_EXISTS") return reply.conflict("Favorite folder name already exists");
+      throw error;
+    }
+  });
+
+  app.delete("/api/me/favorite-folders/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const current = (await store.listFavoriteFolders(request.user.sub)).find((item) => item.id === request.params.id);
+    if (!current) return reply.notFound("Favorite folder not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
+    return await store.deleteFavoriteFolder(request.user.sub, request.params.id)
+      ? { ok: true }
+      : reply.notFound("Favorite folder not found");
+  });
+
   app.get("/api/me/favorites", { preHandler: (app as any).authenticate }, async (request: any) => {
-    return paginatedList(request, (await store.listFavorites(request.user.sub)).map(withEntityVersion));
+    const query = request.query as {
+      folderId?: string;
+      unfiled?: string;
+      type?: string;
+      region?: string;
+      q?: string;
+    };
+    let favorites = await Promise.all((await store.listFavorites(request.user.sub)).map(hydrateFavorite));
+    if (query.folderId) favorites = favorites.filter((favorite) => favorite.folderIds.includes(query.folderId!));
+    if (query.unfiled === "true") favorites = favorites.filter((favorite) => favorite.folderIds.length === 0);
+    if (query.type) favorites = favorites.filter((favorite) => favorite.type === query.type);
+    if (query.region) favorites = favorites.filter((favorite) => favorite.region === query.region);
+    if (query.q?.trim()) {
+      const keyword = query.q.trim().toLowerCase();
+      favorites = favorites.filter((favorite) =>
+        `${favorite.label} ${favorite.targetId} ${favorite.target?.secondaryText ?? ""}`.toLowerCase().includes(keyword)
+      );
+    }
+    return paginatedList(request, favorites.map(withEntityVersion));
   });
 
   app.post("/api/me/favorites", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const body = favoriteSchema.parse(request.body);
-    return setEntityTag(reply, await store.addFavorite({ ...body, region: body.region as RegionId, userId: request.user.sub }));
+    const target = await resolveFavoriteTarget(body.type, body.region as RegionId, body.targetId, body.label);
+    if (!target.available) return reply.notFound("Favorite target not found");
+    try {
+      const favorite = await store.addFavorite({
+        ...body,
+        label: target.displayName,
+        region: body.region as RegionId,
+        userId: request.user.sub
+      });
+      return setEntityTag(reply, { ...favorite, target });
+    } catch (error) {
+      if ((error as Error).message === "FOLDER_NOT_FOUND") return reply.notFound("Favorite folder not found");
+      throw error;
+    }
+  });
+
+  app.patch("/api/me/favorites/bulk", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const body = favoriteBulkPatchSchema.parse(request.body);
+    try {
+      const updated = await store.bulkUpdateFavoriteFolders(request.user.sub, body.favoriteIds, body.folderIds, body.mode);
+      return Promise.all(updated.map(async (favorite) => withEntityVersion(await hydrateFavorite(favorite))));
+    } catch (error) {
+      if ((error as Error).message === "FOLDER_NOT_FOUND") return reply.notFound("Favorite folder not found");
+      if ((error as Error).message === "FAVORITE_NOT_FOUND") return reply.notFound("Favorite not found");
+      throw error;
+    }
+  });
+
+  app.patch("/api/me/favorites/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const current = (await store.listFavorites(request.user.sub)).find((item) => item.id === request.params.id);
+    if (!current) return reply.notFound("Favorite not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
+    const body = favoriteFoldersPatchSchema.parse(request.body);
+    try {
+      const updated = await store.updateFavoriteFolders(request.user.sub, request.params.id, body.folderIds);
+      return updated ? setEntityTag(reply, await hydrateFavorite(updated)) : reply.notFound("Favorite not found");
+    } catch (error) {
+      if ((error as Error).message === "FOLDER_NOT_FOUND") return reply.notFound("Favorite folder not found");
+      throw error;
+    }
   });
 
   app.delete("/api/me/favorites/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {

@@ -1,4 +1,4 @@
-import type { Favorite, ScoreRecord } from "./sharedTypes";
+import type { Favorite, FavoriteFolder, ScoreRecord } from "./sharedTypes";
 
 export type AuthUser = { id: string; email?: string; nickname?: string; avatarUrl?: string; createdAt?: string };
 export type OAuthAccount = { id: string; provider: string; nickname?: string; avatarUrl?: string; createdAt?: string };
@@ -41,6 +41,7 @@ export type MeProfile = {
   bindings: PlayerBinding[];
   bindingSummaries: BindingSummary[];
   favorites: Favorite[];
+  favoriteFolders: FavoriteFolder[];
   scores: ScoreRecord[];
   deckConfigs: DeckConfig[];
 };
