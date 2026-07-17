@@ -49,11 +49,15 @@ describe.sequential("public API contracts", () => {
     expect(document.components.schemas.AssetCandidates.properties.normalThumbnailCandidates.items.type).toBe("string");
     expect(document.components.schemas.AssetCandidates.properties.afterTrainingThumbnailCandidates.items.type).toBe("string");
     expect(document.components.schemas.LiveRanking.properties.worldLinkCharacters.items.$ref).toContain("WorldLinkCharacter");
-    expect(document.components.schemas.RankingEntry.properties.leaderCharacterId.type).toBe("integer");
-    expect(document.components.schemas.RankingPlayerDetail.properties.profileHonors.items.$ref).toContain("RankingProfileHonor");
-    expect(document.components.schemas.RankingPlayerDetail.properties.hourlyChurn.items.additionalProperties).toBeUndefined();
-    expect(document.components.schemas.RankingPlayerDetail.properties.recentScoreChanges.items.additionalProperties).toBeUndefined();
-    expect(document.components.schemas.RankingPlayerDetail.properties.parkingPeriods.items.additionalProperties).toBeUndefined();
+    expect(document.components.schemas.RankingEntry.properties.leaderCharacterId.anyOf).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "integer" }),
+      expect.objectContaining({ type: "null" })
+    ]));
+    const rankingPlayerDetailProperties = document.components.schemas.RankingPlayerDetail.allOf[1].properties;
+    expect(rankingPlayerDetailProperties.profileHonors.items.$ref).toContain("RankingProfileHonor");
+    expect(rankingPlayerDetailProperties.hourlyChurn.items.additionalProperties).toBe(false);
+    expect(rankingPlayerDetailProperties.recentScoreChanges.items.additionalProperties).toBe(false);
+    expect(rankingPlayerDetailProperties.parkingPeriods.items.additionalProperties).toBe(false);
     expect(document.components.schemas.Forecast.properties.sourceHealth.$ref).toContain("SourceHealth");
     expect(JSON.stringify(document.components.schemas.SongSummary.properties.publishedAt)).toContain("date-time");
     expect(JSON.stringify(document.components.schemas.ChartDetail.properties.sekaiViewerChartSvgUrl)).toContain("string");
