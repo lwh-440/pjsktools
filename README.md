@@ -94,7 +94,7 @@ npm run verify:local             # 构建、编码检查和本地 smoke
 
 ## 开源许可与参考项目
 
-本项目选择对包含或改写自 GPL/AGPL 参考项目的部分按 `AGPL-3.0-or-later` 提供对应源代码。
+本项目选择对包含或改写自 GPL/AGPL 参考项目的部分按 `AGPL-3.0-or-later` 提供对应源代码。正式公开运行前，本仓库会公开，并在网页/API 的关于页面提供运行版本对应源码的稳定链接。
 
 - `Sekai-World/sekai-viewer`（GPL-3.0）：资源路径、内容播放和部分工具实现的参考来源。
 - `moe-sekai/Moesekai`（AGPL-3.0）：计算逻辑、数据模型和工具流程的参考来源。
