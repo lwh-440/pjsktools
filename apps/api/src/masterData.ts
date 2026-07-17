@@ -1111,6 +1111,13 @@ function typedCollectionItem(type: string, value: unknown) {
   const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const raw = item.raw && typeof item.raw === "object" ? item.raw as Record<string, unknown> : {};
   const strings = (key: string) => Array.isArray(item[key]) ? (item[key] as unknown[]).map(String) : [];
+  const facets = Array.isArray(item.facets) ? item.facets.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const facet = value as Record<string, unknown>;
+    return typeof facet.key === "string" && Array.isArray(facet.values)
+      ? [{ key: facet.key, values: facet.values.map(String) }]
+      : [];
+  }) : [];
   const common = {
     id: String(item.id ?? ""), type,
     name: String(item.name ?? item.title ?? `${type} ${item.id ?? ""}`),
@@ -1122,7 +1129,8 @@ function typedCollectionItem(type: string, value: unknown) {
     startAt: typeof item.startAt === "string" ? item.startAt : undefined,
     endAt: typeof item.endAt === "string" ? item.endAt : undefined,
     relatedCardIds: strings("relatedCardIds"),
-    assets: typedCatalogAssets(item.assets)
+    assets: typedCatalogAssets(item.assets),
+    facets
   };
   if (type === "gachas") return { ...common, gachaType: typeof raw.gachaType === "string" ? raw.gachaType : common.category };
   if (type === "honors") return { ...common, honorRarity: typeof raw.honorRarity === "string" ? raw.honorRarity : common.rarity, groupId: typeof raw.groupId === "number" ? raw.groupId : undefined };
@@ -1598,7 +1606,10 @@ function catalogFilters<T>(
     }).filter((group) => group.options.length > 0)
   };
   const appliedFilters = Object.fromEntries(groups.filter((group) => group.selected.length).map((group) => [group.key, group.selected]));
-  return { filtered, filterMeta, appliedFilters };
+  const facets = (item: T) => groups
+    .map((group) => ({ key: group.key, values: [...new Set(group.values(item))] }))
+    .filter((facet) => facet.values.length > 0);
+  return { filtered, filterMeta, appliedFilters, facets };
 }
 
 function catalogPage<T extends { id: string; startAt?: string }>(items: T[], query: MasterCatalogQuery, textOf: (item: T) => string) {
@@ -1685,7 +1696,7 @@ export async function getMasterCatalog(region: RegionId, type: string, query: Ma
         characterUnit: card.characterUnit, supportUnit: card.supportUnit, rarity: card.rarity,
         cardRarityType: card.cardRarityType, attribute: card.attribute, cardSupplyType: card.cardSupplyType,
         skillTypes: [...new Set([card.skill?.skillType, ...(card.skill?.effects?.map((effect) => effect.type) ?? [])].filter(Boolean))],
-        assetbundleName: card.assetbundleName, assets: card.assets
+        assetbundleName: card.assetbundleName, assets: card.assets, facets: filtered.facets(card)
       })),
       filterMeta: filtered.filterMeta,
       appliedFilters: filtered.appliedFilters,
@@ -1712,7 +1723,7 @@ export async function getMasterCatalog(region: RegionId, type: string, query: Ma
     const page = catalogPage(filtered.filtered, query, (song) => `${song.id} ${song.title}`);
     return {
       ...page,
-      items: page.items.map((song) => ({ id: song.id, title: song.title, unit: song.unit, musicTags: song.musicTags, durationSeconds: song.durationSeconds, categories: song.categories, publishedAt: song.publishedAt, assetbundleName: song.assetbundleName, jacketAssetbundleName: song.jacketAssetbundleName, assets: song.assets })),
+      items: page.items.map((song) => ({ id: song.id, title: song.title, unit: song.unit, musicTags: song.musicTags, durationSeconds: song.durationSeconds, categories: song.categories, publishedAt: song.publishedAt, assetbundleName: song.assetbundleName, jacketAssetbundleName: song.jacketAssetbundleName, assets: song.assets, facets: filtered.facets(song) })),
       filterMeta: filtered.filterMeta,
       appliedFilters: filtered.appliedFilters,
       region, type, masterVersion, sourceHealth: { status: cache ? "fresh" : "missing-data", syncedAt: cache?.syncedAt ?? null }
@@ -1765,6 +1776,7 @@ export async function getMasterCatalog(region: RegionId, type: string, query: Ma
     const page = catalogPage(filtered.filtered, query, (event) => `${event.id} ${event.name}`);
     return {
       ...page,
+      items: page.items.map((event) => ({ ...event, facets: filtered.facets(event) })),
       filterMeta: filtered.filterMeta,
       appliedFilters: filtered.appliedFilters,
       region, type, masterVersion,
@@ -1858,7 +1870,7 @@ export async function getMasterCatalog(region: RegionId, type: string, query: Ma
   const page = catalogPage(filteredItems, query, collectionText);
   return {
     ...page,
-    items: page.items.map((item) => getDisplayCollectionItem(region, type, item)),
+    items: page.items.map((item) => ({ ...getDisplayCollectionItem(region, type, item), facets: filtered.facets(item) })),
     filterMeta: {
       ...filtered.filterMeta,
       toggles: [

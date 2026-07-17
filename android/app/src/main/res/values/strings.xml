@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PJSK Tools</string>
+    <string name="catalog_song">&#x6B4C;&#x66F2;</string>
+    <string name="catalog_card">&#x5361;&#x724C;</string>
+    <string name="catalog_gacha">&#x5361;&#x6C60;</string>
+    <string name="catalog_honor">&#x79F0;&#x53F7;</string>
+    <string name="catalog_material">&#x7D20;&#x6750;</string>
+    <string name="catalog_costume">&#x670D;&#x88C5;</string>
+    <string name="catalog_stamp_comic">&#x8D34;&#x56FE;/&#x6F2B;&#x753B;</string>
+    <string name="catalog_stamp">&#x8D34;&#x56FE;</string>
+    <string name="catalog_comic">&#x6F2B;&#x753B;</string>
+    <string name="catalog_title">&#x56FE;&#x9274;</string>
+    <string name="catalog_favorites">&#x6211;&#x7684;&#x6536;&#x85CF;</string>
+</resources>

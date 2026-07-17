@@ -1375,8 +1375,13 @@ export async function buildApp() {
   app.get("/api/events/:region/live-ranking", async (request, reply) => {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    const query = request.query as { boardType?: string; gameCharacterId?: string };
+    const boardType = query.boardType === "worldlink" ? "worldlink" : "overall";
+    const gameCharacterId = query.gameCharacterId ? Number(query.gameCharacterId) : undefined;
+    if (query.gameCharacterId && (!Number.isInteger(gameCharacterId) || (gameCharacterId ?? 0) < 1)) return reply.badRequest("Unsupported gameCharacterId");
+    if (boardType === "worldlink" && gameCharacterId == null) return reply.badRequest("gameCharacterId is required for World Link");
     const currentEvent = await getCurrentEvent(region);
-    if (currentEvent?.id && currentEvent.id !== "none") return getLiveRankingCached(region, currentEvent.id, currentEvent);
+    if (currentEvent?.id && currentEvent.id !== "none") return getLiveRankingCached(region, currentEvent.id, currentEvent, false, { boardType, gameCharacterId: gameCharacterId as number | undefined });
     const live = await getLatestLiveRankingCached(region, currentEvent ?? { id: "unknown" });
     if (live.eventId && !["none", "unknown"].includes(live.eventId)) {
       requestMasterRegionSync(region);

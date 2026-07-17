@@ -1036,9 +1036,9 @@
     },
     "/api/master/{region}/events/{eventId}/full": {
       "get": {
-        "operationId": "get_api_master_region_events_eventId_full",
+        "operationId": "getFullEventDetail",
         "tags": [
-          "MasterData"
+          "Android"
         ],
         "parameters": [
           {
@@ -1064,7 +1064,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/EventFullDetail"
                 }
               }
             }
@@ -5764,6 +5764,28 @@
             "schema": {
               "$ref": "#/components/schemas/RegionId"
             }
+          },
+          {
+            "name": "boardType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "overall",
+                "worldlink"
+              ],
+              "default": "overall"
+            }
+          },
+          {
+            "name": "gameCharacterId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -6022,9 +6044,9 @@
     },
     "/api/events/{region}/{eventId}/ranking-churn": {
       "get": {
-        "operationId": "get_api_events_region_eventId_ranking_churn",
+        "operationId": "getRankingChurn",
         "tags": [
-          "Events"
+          "Android"
         ],
         "parameters": [
           {
@@ -6042,6 +6064,34 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "boardType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "overall",
+                "worldlink"
+              ]
+            }
+          },
+          {
+            "name": "gameCharacterId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -6050,7 +6100,28 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -6101,6 +6172,64 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "sampleType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "top100",
+                "border"
+              ]
+            }
+          },
+          {
+            "name": "rank",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5000
+            }
+          },
+          {
+            "name": "windowHours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1,
+                3,
+                6
+              ]
+            }
           }
         ],
         "responses": {
@@ -6140,9 +6269,9 @@
     },
     "/api/events/{region}/{eventId}/ranking-history/summary": {
       "get": {
-        "operationId": "get_api_events_region_eventId_ranking_history_summary",
+        "operationId": "getRankingHistorySummary",
         "tags": [
-          "Events"
+          "Android"
         ],
         "parameters": [
           {
@@ -6160,6 +6289,48 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "sampleType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "top100",
+                "border"
+              ]
+            }
+          },
+          {
+            "name": "rank",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5000
+            }
+          },
+          {
+            "name": "windowHours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1,
+                3,
+                6
+              ]
+            }
           }
         ],
         "responses": {
@@ -6168,7 +6339,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/RankingHistorySummary"
                 }
               }
             }
@@ -6219,6 +6390,19 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "windowHours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1,
+                3,
+                6
+              ]
+            }
           }
         ],
         "responses": {
@@ -6258,9 +6442,9 @@
     },
     "/api/events/{region}/{eventId}/ranking-player/{rank}": {
       "get": {
-        "operationId": "get_api_events_region_eventId_ranking_player_rank",
+        "operationId": "getRankingPlayerDetail",
         "tags": [
-          "Events"
+          "Android"
         ],
         "parameters": [
           {
@@ -6286,6 +6470,26 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "boardType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "overall",
+                "worldlink"
+              ]
+            }
+          },
+          {
+            "name": "gameCharacterId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -6294,7 +6498,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/RankingPlayerDetail"
                 }
               }
             }
@@ -6502,18 +6706,28 @@
     },
     "/api/tools/score-control": {
       "post": {
-        "operationId": "post_api_tools_score_control",
+        "operationId": "calculateScoreControl",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoreControlRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ScoreControlResult"
                 }
               }
             }
@@ -6544,18 +6758,28 @@
     },
     "/api/tools/event-point-calc": {
       "post": {
-        "operationId": "post_api_tools_event_point_calc",
+        "operationId": "estimateEventPoint",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventPointEstimateRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/EventPointEstimateResult"
                 }
               }
             }
@@ -7040,18 +7264,28 @@
     },
     "/api/auth/email-code/start": {
       "post": {
-        "operationId": "post_api_auth_email_code_start",
+        "operationId": "startEmailVerification",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCodeRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/EmailCodeResponse"
                 }
               }
             }
@@ -7082,18 +7316,28 @@
     },
     "/api/auth/register": {
       "post": {
-        "operationId": "post_api_auth_register",
+        "operationId": "register",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthResponse"
                 }
               }
             }
@@ -7124,18 +7368,28 @@
     },
     "/api/auth/login": {
       "post": {
-        "operationId": "post_api_auth_login",
+        "operationId": "login",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthResponse"
                 }
               }
             }
@@ -7250,18 +7504,28 @@
     },
     "/api/auth/refresh": {
       "post": {
-        "operationId": "post_api_auth_refresh",
+        "operationId": "refreshSession",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthResponse"
                 }
               }
             }
@@ -7292,18 +7556,28 @@
     },
     "/api/auth/logout": {
       "post": {
-        "operationId": "post_api_auth_logout",
+        "operationId": "logout",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/OkResponse"
                 }
               }
             }
@@ -7505,6 +7779,11 @@
           "Android"
         ],
         "parameters": [],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -7547,7 +7826,26 @@
         "tags": [
           "Android"
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteFolderCreateRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -7597,6 +7895,27 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteFolderPatchRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
           }
         ],
         "responses": {
@@ -7646,6 +7965,17 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
           }
         ],
         "responses": {
@@ -7654,12 +7984,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  }
+                  "$ref": "#/components/schemas/OkResponse"
                 }
               }
             }
@@ -7752,6 +8077,11 @@
             }
           }
         ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -7791,7 +8121,26 @@
         "tags": [
           "Android"
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFavoriteRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -7833,7 +8182,26 @@
         "tags": [
           "Android"
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteBulkPatchRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -7886,6 +8254,27 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteFoldersPatchRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
           }
         ],
         "responses": {
@@ -7935,6 +8324,17 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
           }
         ],
         "responses": {
@@ -7943,12 +8343,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  }
+                  "$ref": "#/components/schemas/OkResponse"
                 }
               }
             }
@@ -8161,18 +8556,40 @@
     },
     "/api/me/player-bindings": {
       "get": {
-        "operationId": "get_api_me_player_bindings",
+        "operationId": "getPlayerBindings",
         "tags": [
-          "System"
+          "Android"
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/PlayerBindingPage"
                 }
               }
             }
@@ -8201,18 +8618,33 @@
         }
       },
       "post": {
-        "operationId": "post_api_me_player_bindings",
+        "operationId": "createPlayerBinding",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerBindingCreateRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/PlayerBinding"
                 }
               }
             }
@@ -8243,9 +8675,9 @@
     },
     "/api/me/player-bindings/{id}": {
       "patch": {
-        "operationId": "patch_api_me_player_bindings_id",
+        "operationId": "updatePlayerBinding",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [
           {
@@ -8255,6 +8687,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerBindingPatchRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
           }
         ],
         "responses": {
@@ -8263,7 +8713,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/PlayerBinding"
                 }
               }
             }
@@ -8292,9 +8742,9 @@
         }
       },
       "delete": {
-        "operationId": "delete_api_me_player_bindings_id",
+        "operationId": "deletePlayerBinding",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [
           {
@@ -8304,6 +8754,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
           }
         ],
         "responses": {
@@ -8312,7 +8770,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/OkResponse"
                 }
               }
             }
@@ -9394,18 +9852,33 @@
     },
     "/api/me/tools/score-control": {
       "post": {
-        "operationId": "post_api_me_tools_score_control",
+        "operationId": "calculateBoundScoreControl",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoreControlRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ScoreControlResult"
                 }
               }
             }
@@ -9478,18 +9951,33 @@
     },
     "/api/me/tools/event-point-calc": {
       "post": {
-        "operationId": "post_api_me_tools_event_point_calc",
+        "operationId": "estimateBoundEventPoint",
         "tags": [
-          "System"
+          "Android"
         ],
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventPointEstimateRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/EventPointEstimateResult"
                 }
               }
             }
@@ -9977,6 +10465,52 @@
             "items": {
               "type": "string"
             }
+          },
+          "primarySource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fallbackLine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latestUpdatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cacheUpdatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -10009,6 +10543,195 @@
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      "PublicUser": {
+        "type": "object",
+        "required": [
+          "id",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "required": [
+          "token",
+          "accessToken",
+          "refreshToken",
+          "expiresIn",
+          "user"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string"
+          },
+          "expiresIn": {
+            "type": "integer"
+          },
+          "user": {
+            "$ref": "#/components/schemas/PublicUser"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password",
+          "code"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 10
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$"
+          }
+        }
+      },
+      "EmailCodeRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "register"
+            ],
+            "default": "register"
+          }
+        }
+      },
+      "EmailCodeResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "sent",
+          "expiresIn"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "sent": {
+            "type": "boolean"
+          },
+          "expiresIn": {
+            "type": "integer"
+          },
+          "devCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "RefreshTokenRequest": {
+        "type": "object",
+        "required": [
+          "refreshToken"
+        ],
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "minLength": 16
+          }
+        }
+      },
+      "OkResponse": {
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
           }
         }
       },
@@ -10253,6 +10976,12 @@
           },
           "assets": {
             "$ref": "#/components/schemas/AssetCandidates"
+          },
+          "facets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItemFacet"
+            }
           }
         }
       },
@@ -10516,6 +11245,12 @@
           },
           "assets": {
             "$ref": "#/components/schemas/AssetCandidates"
+          },
+          "facets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItemFacet"
+            }
           }
         }
       },
@@ -10730,6 +11465,38 @@
               }
             ]
           },
+          "eventUnit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bonusCharacterIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bonusAttributes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bannerCharacterId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "startAt": {
             "type": "string"
           },
@@ -10768,6 +11535,66 @@
           },
           "assets": {
             "$ref": "#/components/schemas/AssetCandidates"
+          },
+          "facets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItemFacet"
+            }
+          }
+        }
+      },
+      "EventRelations": {
+        "type": "object",
+        "required": [
+          "relatedSongs",
+          "relatedCards",
+          "relatedGachas"
+        ],
+        "properties": {
+          "relatedSongs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SongSummary"
+            }
+          },
+          "relatedCards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardSummary"
+            }
+          },
+          "relatedGachas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GachaItem"
+            }
+          }
+        }
+      },
+      "EventFullDetail": {
+        "type": "object",
+        "required": [
+          "region",
+          "event",
+          "assets",
+          "relations"
+        ],
+        "properties": {
+          "region": {
+            "$ref": "#/components/schemas/RegionId"
+          },
+          "event": {
+            "$ref": "#/components/schemas/EventSummary"
+          },
+          "assets": {
+            "$ref": "#/components/schemas/AssetCandidates"
+          },
+          "relations": {
+            "$ref": "#/components/schemas/EventRelations"
+          },
+          "realDataRequired": {
+            "type": "boolean"
           }
         }
       },
@@ -10815,7 +11642,37 @@
               }
             ]
           },
+          "hourlyGrowth": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "leaderCardId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leaderCardLevel": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leaderCardMasterRank": {
             "anyOf": [
               {
                 "type": "integer"
@@ -10834,8 +11691,439 @@
                 "type": "null"
               }
             ]
+          },
+          "leaderCardImageCandidates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "leaderCharacterImageCandidates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "leaderCharacterId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
+      },
+      "RankingTracePoint": {
+        "type": "object",
+        "required": [
+          "score"
+        ],
+        "properties": {
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int64"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sampledAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "score": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "RankingNeighbor": {
+        "type": "object",
+        "required": [
+          "rank",
+          "score"
+        ],
+        "properties": {
+          "rank": {
+            "type": "integer"
+          },
+          "score": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "RankingProfileHonor": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "profileHonorType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "honorId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "honorLevel": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bondsHonorViewType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "WorldLinkCharacter": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "imageCandidates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RankingPlayerDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RankingEntry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "profileWord": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "profileHonors": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RankingProfileHonor"
+                }
+              },
+              "timestamp": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "intervalSeconds": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "growth1h": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "churn1h": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "churn20min": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "churn48h": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rankHourlyGrowth": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "observedPtUpdates": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "churnStatus": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "churnUpdatedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "hourlyChurn": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "hour",
+                    "count"
+                  ],
+                  "properties": {
+                    "hour": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "recentScoreChanges": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "timestamp",
+                    "delta"
+                  ],
+                  "properties": {
+                    "timestamp": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "delta": {
+                      "type": "number"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "parkingPeriods": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "startTime": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sinceMs": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "endTime": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "durationSeconds": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "playerTrace": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RankingTracePoint"
+                }
+              },
+              "lineTrace": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RankingTracePoint"
+                }
+              },
+              "previous": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RankingNeighbor"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "next": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RankingNeighbor"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        ]
       },
       "RankingHistorySample": {
         "type": "object",
@@ -10892,6 +12180,16 @@
           "eventId": {
             "type": "string"
           },
+          "sampleType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "items": {
             "type": "array",
             "items": {
@@ -10900,6 +12198,209 @@
           },
           "sampleCount": {
             "type": "integer"
+          },
+          "firstSampledAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSampledAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceHealth": {
+            "$ref": "#/components/schemas/SourceHealth"
+          },
+          "retentionRecommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RankingHistoryLine": {
+        "type": "object",
+        "required": [
+          "rank",
+          "sampleCount"
+        ],
+        "properties": {
+          "rank": {
+            "type": "integer"
+          },
+          "sampleType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sampleCount": {
+            "type": "integer"
+          },
+          "latestScore": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int64"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latestSampledAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "firstSampledAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sampleSpanHours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speedPerHour": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "predictability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidenceReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "RankingHistorySummary": {
+        "type": "object",
+        "required": [
+          "region",
+          "eventId",
+          "lines"
+        ],
+        "properties": {
+          "region": {
+            "$ref": "#/components/schemas/RegionId"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "sampleType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lineCount": {
+            "type": "integer"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankingHistoryLine"
+            }
+          },
+          "sourceHealth": {
+            "$ref": "#/components/schemas/SourceHealth"
+          },
+          "retentionRecommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "unavailableReason": {
             "anyOf": [
@@ -10939,7 +12440,40 @@
               }
             ]
           },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sampleCount": {
+            "type": "integer"
+          },
+          "sampleSpanHours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "hourlyGrowth": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speedPerHour": {
             "anyOf": [
               {
                 "type": "number"
@@ -10992,6 +12526,16 @@
               }
             ]
           },
+          "confidenceReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "unavailableReason": {
             "anyOf": [
               {
@@ -11001,6 +12545,89 @@
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      "ForecastWindowSummary": {
+        "type": "object",
+        "required": [
+          "lineCount",
+          "maxSampleCount",
+          "maxSampleSpanHours",
+          "confidence"
+        ],
+        "properties": {
+          "lineCount": {
+            "type": "integer"
+          },
+          "maxSampleCount": {
+            "type": "integer"
+          },
+          "maxSampleSpanHours": {
+            "type": "number"
+          },
+          "confidence": {
+            "type": "string"
+          }
+        }
+      },
+      "ForecastWindows": {
+        "type": "object",
+        "required": [
+          "all",
+          "1h",
+          "3h",
+          "6h"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "all": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ForecastLine"
+            }
+          },
+          "1h": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ForecastLine"
+            }
+          },
+          "3h": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ForecastLine"
+            }
+          },
+          "6h": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ForecastLine"
+            }
+          }
+        }
+      },
+      "ForecastWindowSummaries": {
+        "type": "object",
+        "required": [
+          "all",
+          "1h",
+          "3h",
+          "6h"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "all": {
+            "$ref": "#/components/schemas/ForecastWindowSummary"
+          },
+          "1h": {
+            "$ref": "#/components/schemas/ForecastWindowSummary"
+          },
+          "3h": {
+            "$ref": "#/components/schemas/ForecastWindowSummary"
+          },
+          "6h": {
+            "$ref": "#/components/schemas/ForecastWindowSummary"
           }
         }
       },
@@ -11031,11 +12658,63 @@
           "experimental": {
             "type": "boolean"
           },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sampleCount": {
+            "type": "integer"
+          },
+          "windowHours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "lines": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ForecastLine"
             }
+          },
+          "windows": {
+            "$ref": "#/components/schemas/ForecastWindows"
+          },
+          "windowSummaries": {
+            "$ref": "#/components/schemas/ForecastWindowSummaries"
+          },
+          "sourceHealth": {
+            "$ref": "#/components/schemas/SourceHealth"
+          },
+          "retentionRecommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "unavailableReason": {
             "anyOf": [
@@ -11103,11 +12782,570 @@
           "sourceHealth": {
             "$ref": "#/components/schemas/SourceHealth"
           },
+          "boardType": {
+            "type": "string",
+            "enum": [
+              "overall",
+              "worldlink"
+            ]
+          },
+          "gameCharacterId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "worldLinkCharacters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorldLinkCharacter"
+            }
+          },
+          "worldLinkAvailable": {
+            "type": "boolean"
+          },
+          "staleRanks": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
           "warnings": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "ScoreControlRequest": {
+        "type": "object",
+        "required": [
+          "currentPt",
+          "targetPt",
+          "remainingMinutes"
+        ],
+        "properties": {
+          "region": {
+            "$ref": "#/components/schemas/RegionId"
+          },
+          "bindingId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eventId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targetRank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentPt": {
+            "type": "number",
+            "minimum": 0
+          },
+          "targetPt": {
+            "type": "number",
+            "minimum": 0
+          },
+          "remainingMinutes": {
+            "type": "number",
+            "minimum": 0
+          },
+          "ptPerRun": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "availableRuns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "musicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ScoreControlResult": {
+        "type": "object",
+        "required": [
+          "remainingPt",
+          "adjustedPtPerRun",
+          "feasible",
+          "warnings"
+        ],
+        "properties": {
+          "remainingPt": {
+            "type": "number"
+          },
+          "adjustedPtPerRun": {
+            "type": "number"
+          },
+          "requiredRuns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requiredPtPerHour": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requiredRunsPerHour": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "feasible": {
+            "type": "boolean"
+          },
+          "sharedFormulaVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetBorder": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RankingEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "realDataRequired": {
+            "type": "boolean"
+          }
+        }
+      },
+      "EventPointEstimateRequest": {
+        "type": "object",
+        "required": [
+          "region"
+        ],
+        "properties": {
+          "region": {
+            "$ref": "#/components/schemas/RegionId"
+          },
+          "bindingId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eventId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "musicId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentPt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targetPt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eventBonusPercent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "baseScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "boost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "EventPointEstimateResult": {
+        "type": "object",
+        "required": [
+          "estimatedPt",
+          "missingFields",
+          "warnings"
+        ],
+        "properties": {
+          "estimatedPt": {
+            "type": "number"
+          },
+          "remainingPt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estimatedRunsToTarget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sharedFormulaVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "officialFieldsUsed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "estimatedFieldsUsed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missingFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "calculationTrace": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "realDataRequired": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PlayerBinding": {
+        "type": "object",
+        "required": [
+          "id",
+          "region",
+          "playerUid",
+          "isDefault",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "region": {
+            "$ref": "#/components/schemas/RegionId"
+          },
+          "playerUid": {
+            "type": "string"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refreshedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "PlayerBindingPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total",
+          "totalPages"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlayerBinding"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "totalPages": {
+            "type": "integer"
+          },
+          "hasNextPage": {
+            "type": "boolean"
+          },
+          "hasPreviousPage": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PlayerBindingCreateRequest": {
+        "type": "object",
+        "required": [
+          "region",
+          "playerUid"
+        ],
+        "properties": {
+          "region": {
+            "$ref": "#/components/schemas/RegionId"
+          },
+          "playerUid": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "PlayerBindingPatchRequest": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -11282,6 +13520,24 @@
           }
         }
       },
+      "CatalogItemFacet": {
+        "type": "object",
+        "required": [
+          "key",
+          "values"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "CatalogFilterOption": {
         "type": "object",
         "required": [
@@ -11398,6 +13654,153 @@
                 }
               }
             }
+          }
+        }
+      },
+      "AppliedCatalogFilters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "eventTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "eventUnits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bonusCharacterIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bannerCharacterIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bonusAttributes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "musicTags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "characterIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "units": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "supportUnits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rarities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "supplyTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skillTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gachaTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "honorTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "materialTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "partTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "genders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "stampTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "comicTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "groupOnce": {
+            "type": "boolean"
+          },
+          "usableOnly": {
+            "type": "boolean"
+          },
+          "relatedOnly": {
+            "type": "boolean"
           }
         }
       },
@@ -11552,6 +13955,12 @@
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
           },
+          "facets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItemFacet"
+            }
+          },
           "gachaType": {
             "anyOf": [
               {
@@ -11691,6 +14100,12 @@
           },
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
+          },
+          "facets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItemFacet"
+            }
           },
           "honorRarity": {
             "anyOf": [
@@ -11842,6 +14257,12 @@
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
           },
+          "facets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItemFacet"
+            }
+          },
           "materialType": {
             "anyOf": [
               {
@@ -11981,6 +14402,12 @@
           },
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
+          },
+          "facets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItemFacet"
+            }
           },
           "costumeNumber": {
             "anyOf": [
@@ -12180,6 +14607,12 @@
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
           },
+          "facets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItemFacet"
+            }
+          },
           "stampType": {
             "anyOf": [
               {
@@ -12320,6 +14753,12 @@
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
           },
+          "facets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogItemFacet"
+            }
+          },
           "comicType": {
             "anyOf": [
               {
@@ -12448,20 +14887,7 @@
             "$ref": "#/components/schemas/CatalogFilterMeta"
           },
           "appliedFilters": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
+            "$ref": "#/components/schemas/AppliedCatalogFilters"
           }
         }
       },
@@ -12551,20 +14977,7 @@
             "$ref": "#/components/schemas/CatalogFilterMeta"
           },
           "appliedFilters": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
+            "$ref": "#/components/schemas/AppliedCatalogFilters"
           }
         }
       },
@@ -12654,20 +15067,7 @@
             "$ref": "#/components/schemas/CatalogFilterMeta"
           },
           "appliedFilters": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
+            "$ref": "#/components/schemas/AppliedCatalogFilters"
           }
         }
       },
@@ -12757,20 +15157,7 @@
             "$ref": "#/components/schemas/CatalogFilterMeta"
           },
           "appliedFilters": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
+            "$ref": "#/components/schemas/AppliedCatalogFilters"
           }
         }
       },
@@ -12860,20 +15247,7 @@
             "$ref": "#/components/schemas/CatalogFilterMeta"
           },
           "appliedFilters": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
+            "$ref": "#/components/schemas/AppliedCatalogFilters"
           }
         }
       },
@@ -12963,20 +15337,7 @@
             "$ref": "#/components/schemas/CatalogFilterMeta"
           },
           "appliedFilters": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
+            "$ref": "#/components/schemas/AppliedCatalogFilters"
           }
         }
       },
@@ -13066,20 +15427,7 @@
             "$ref": "#/components/schemas/CatalogFilterMeta"
           },
           "appliedFilters": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
+            "$ref": "#/components/schemas/AppliedCatalogFilters"
           }
         }
       },
@@ -13169,20 +15517,7 @@
             "$ref": "#/components/schemas/CatalogFilterMeta"
           },
           "appliedFilters": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
+            "$ref": "#/components/schemas/AppliedCatalogFilters"
           }
         }
       },
@@ -13272,20 +15607,7 @@
             "$ref": "#/components/schemas/CatalogFilterMeta"
           },
           "appliedFilters": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
+            "$ref": "#/components/schemas/AppliedCatalogFilters"
           }
         }
       },
@@ -13375,20 +15697,7 @@
             "$ref": "#/components/schemas/CatalogFilterMeta"
           },
           "appliedFilters": {
-            "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "boolean"
-                }
-              ]
-            }
+            "$ref": "#/components/schemas/AppliedCatalogFilters"
           }
         }
       },
@@ -13600,6 +15909,134 @@
             "type": "boolean"
           }
         }
+      },
+      "FavoriteFolderCreateRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      },
+      "FavoriteFolderPatchRequest": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      },
+      "CreateFavoriteRequest": {
+        "type": "object",
+        "required": [
+          "type",
+          "region",
+          "targetId"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "player",
+              "event",
+              "song",
+              "card",
+              "gacha",
+              "honor",
+              "material",
+              "costume",
+              "stamp",
+              "comic"
+            ]
+          },
+          "region": {
+            "$ref": "#/components/schemas/RegionId"
+          },
+          "targetId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "folderIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FavoriteFoldersPatchRequest": {
+        "type": "object",
+        "required": [
+          "folderIds"
+        ],
+        "properties": {
+          "folderIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FavoriteBulkPatchRequest": {
+        "type": "object",
+        "required": [
+          "favoriteIds",
+          "folderIds",
+          "mode"
+        ],
+        "properties": {
+          "favoriteIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "type": "string"
+            }
+          },
+          "folderIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove",
+              "replace"
+            ]
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     },
     "parameters": {

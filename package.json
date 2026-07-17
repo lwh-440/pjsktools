@@ -21,6 +21,9 @@
     "verify:content": "npm run build -w apps/api && node scripts/verify-content.mjs",
     "verify:card-import": "npm run build -w apps/api && node scripts/verify-card-import.mjs",
     "check:encoding": "node scripts/check-encoding.mjs",
+    "openapi:export": "npm run openapi:export -w apps/api",
+    "openapi:generate": "powershell -ExecutionPolicy Bypass -File scripts/generate-android-api.ps1",
+    "openapi:check": "powershell -ExecutionPolicy Bypass -File scripts/check-android-api.ps1",
     "config:haruki": "node scripts/set-haruki-base-url.mjs"
   },
   "devDependencies": {

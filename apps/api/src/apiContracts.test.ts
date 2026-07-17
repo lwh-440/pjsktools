@@ -39,8 +39,22 @@ describe.sequential("public API contracts", () => {
     expect(document.components.schemas.CardPage.properties.filterMeta.$ref).toContain("CatalogFilterMeta");
     expect(document.paths["/api/me/favorite-folders"].get.operationId).toBe("getFavoriteFolders");
     expect(document.paths["/api/me/favorites"].get.responses["200"].content["application/json"].schema.$ref).toContain("FavoritePage");
+    expect(document.paths["/api/auth/login"].post.requestBody.content["application/json"].schema.$ref).toContain("LoginRequest");
+    expect(document.paths["/api/me/favorites"].post.requestBody.content["application/json"].schema.$ref).toContain("CreateFavoriteRequest");
+    expect(document.paths["/api/me/favorites/{id}"].patch.requestBody.content["application/json"].schema.$ref).toContain("FavoriteFoldersPatchRequest");
+    expect(document.paths["/api/me/favorites"].post.security).toEqual([{ BearerAuth: [] }]);
+    expect(document.components.securitySchemes.BearerAuth.scheme).toBe("bearer");
+    expect(document.components.schemas.CardPage.properties.appliedFilters.$ref).toContain("AppliedCatalogFilters");
+    expect(document.components.schemas.CardSummary.properties.facets.items.$ref).toContain("CatalogItemFacet");
     expect(document.components.schemas.AssetCandidates.properties.normalThumbnailCandidates.items.type).toBe("string");
     expect(document.components.schemas.AssetCandidates.properties.afterTrainingThumbnailCandidates.items.type).toBe("string");
+    expect(document.components.schemas.LiveRanking.properties.worldLinkCharacters.items.$ref).toContain("WorldLinkCharacter");
+    expect(document.components.schemas.RankingEntry.properties.leaderCharacterId.type).toBe("integer");
+    expect(document.components.schemas.RankingPlayerDetail.properties.profileHonors.items.$ref).toContain("RankingProfileHonor");
+    expect(document.components.schemas.RankingPlayerDetail.properties.hourlyChurn.items.additionalProperties).toBeUndefined();
+    expect(document.components.schemas.RankingPlayerDetail.properties.recentScoreChanges.items.additionalProperties).toBeUndefined();
+    expect(document.components.schemas.RankingPlayerDetail.properties.parkingPeriods.items.additionalProperties).toBeUndefined();
+    expect(document.components.schemas.Forecast.properties.sourceHealth.$ref).toContain("SourceHealth");
     expect(JSON.stringify(document.components.schemas.SongSummary.properties.publishedAt)).toContain("date-time");
     expect(JSON.stringify(document.components.schemas.ChartDetail.properties.sekaiViewerChartSvgUrl)).toContain("string");
     expect(document.paths["/api/assets/resolve"].get.operationId).toBe("resolveAsset");
@@ -121,6 +135,7 @@ describe.sequential("public API contracts", () => {
       expect(payload).toMatchObject({ region: "jp", page: 1, pageSize: 1, hasNextPage: expect.any(Boolean), hasPreviousPage: expect.any(Boolean) });
       for (const item of payload.items) {
         expect(item.raw).toBeUndefined();
+        expect(item.facets).toEqual(expect.any(Array));
         expect(item.assets.imageCandidates.every((url: string) => url.startsWith("/api/assets/proxy"))).toBe(true);
       }
     }

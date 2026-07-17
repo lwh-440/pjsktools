@@ -1,0 +1,14 @@
+{
+  "generatorName": "kotlin",
+  "library": "jvm-retrofit2",
+  "packageName": "com.pjsktools.api.generated",
+  "apiPackage": "com.pjsktools.api.generated",
+  "modelPackage": "com.pjsktools.api.generated",
+  "additionalProperties": {
+    "useCoroutines": true,
+    "serializationLibrary": "kotlinx_serialization",
+    "dateLibrary": "string",
+    "enumPropertyNaming": "UPPERCASE",
+    "omitGradleWrapper": true
+  }
+}
