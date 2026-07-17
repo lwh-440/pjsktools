@@ -1,13 +1,15 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   getCardAssetDetail,
   getChartAssetDetail,
+  getCharacterIconCandidates,
   getCollectionItemAssetDetail,
   getDisplayCollectionItem,
   getEventAssetDetail,
-  getMusicAssetDetail
+  getMusicAssetDetail,
+  proxiedAssetUrl
 } from "./assets.js";
 import { config, regions, type RegionId } from "./config.js";
 import { getReferenceMaster, getReferenceMasterHealth, isFormulaMasterKey, syncReferenceMasterRegion } from "./referenceMaster.js";
@@ -67,6 +69,7 @@ type RawCharacter = {
 
 type RawCard = {
   id: number;
+  cardSupplyId?: number;
   characterId?: number;
   skillId?: number;
   cardRarityType?: string;
@@ -210,11 +213,13 @@ export const noCurrentEvent: EventInfo = {
 const schemaVersion = 16;
 const masterFiles = {
   musics: "master/musics.json",
+  musicTags: ["master/musicTags.json", "master/musicTagRelations.json"],
   musicDifficulties: "master/musicDifficulties.json",
   musicMetas: ["master/musicMetas.json", "master/musicMeta.json"],
   musicBpms: ["master/musicBpm.json", "master/musicBpms.json"],
   gameCharacters: "master/gameCharacters.json",
   cards: "master/cards.json",
+  cardSupplies: "master/cardSupplies.json",
   skills: ["master/skills.json", "master/cardSkills.json"],
   events: "master/events.json",
   eventCards: "master/eventCards.json",
@@ -257,6 +262,9 @@ const failedAutoSyncUntil = new Map<RegionId, number>();
 const failedAutoSyncCooldownMs = 1000 * 60 * 10;
 const runningSyncs = new Map<RegionId, Promise<MasterCache>>();
 const runningEventSyncs = new Map<RegionId, Promise<MasterCache | null>>();
+const runningRankingAssetSyncs = new Map<RegionId, Promise<MasterCache>>();
+const lastRankingAssetSyncAt = new Map<RegionId, number>();
+const rankingAssetSyncIntervalMs = 1000 * 60 * 5;
 const fastMasterRefresh = process.env.PJSKTOOLS_FAST_MASTER_REFRESH === "true";
 const collectionCacheKeys = [
   "eventCards",
@@ -651,6 +659,7 @@ function transformCards(cards: RawCard[], characters: RawCharacter[], skills: Ra
           powers.map((power, index) => ({ cardLevel: index + 1, cardParameterType, power })));
     return {
       id: String(card.id),
+      cardSupplyId: card.cardSupplyId == null ? undefined : String(card.cardSupplyId),
       characterId: card.characterId == null ? undefined : String(card.characterId),
       character: characterName(character),
       characterUnit: character?.unit,
@@ -1063,6 +1072,106 @@ export async function getCollectionFullDetail(region: RegionId, type: string, id
   };
 }
 
+const androidCatalogTypes = new Set(["gachas", "honors", "materials", "costumes", "stamps", "comics"]);
+
+function proxyCatalogUrl(value: unknown) {
+  return typeof value === "string" && value.trim() ? proxiedAssetUrl(value) : undefined;
+}
+
+function typedCatalogAssets(value: unknown) {
+  const assets = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const url = (key: string) => proxyCatalogUrl(assets[key]);
+  const imageCandidates = Array.isArray(assets.imageCandidates)
+    ? Array.from(new Set(assets.imageCandidates.map(proxyCatalogUrl).filter((item): item is string => Boolean(item))))
+    : [];
+  return {
+    imageUrl: url("imageUrl"), thumbnailUrl: url("thumbnailUrl"), imageCandidates,
+    logoUrl: url("logoUrl"), bannerUrl: url("bannerUrl"), screenUrl: url("screenUrl"),
+    degreeMainUrl: url("degreeMainUrl"), degreeSubUrl: url("degreeSubUrl"), rankMainUrl: url("rankMainUrl"),
+    scrollUrl: url("scrollUrl"), frameUrl: url("frameUrl"), source: typeof assets.source === "string" ? assets.source : undefined
+  };
+}
+
+function typedCostumeParts(value: unknown) {
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value as Record<string, unknown>).flatMap(([partType, variants]) => Array.isArray(variants) ? [{
+    partType,
+    variants: variants.filter((entry) => entry && typeof entry === "object").map((entry) => {
+      const row = entry as Record<string, unknown>;
+      return {
+        colorId: typeof row.colorId === "number" ? row.colorId : undefined,
+        colorName: typeof row.colorName === "string" ? row.colorName : undefined,
+        assetbundleName: typeof row.assetbundleName === "string" ? row.assetbundleName : undefined
+      };
+    })
+  }] : []);
+}
+
+function typedCollectionItem(type: string, value: unknown) {
+  const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const raw = item.raw && typeof item.raw === "object" ? item.raw as Record<string, unknown> : {};
+  const strings = (key: string) => Array.isArray(item[key]) ? (item[key] as unknown[]).map(String) : [];
+  const facets = Array.isArray(item.facets) ? item.facets.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const facet = value as Record<string, unknown>;
+    return typeof facet.key === "string" && Array.isArray(facet.values)
+      ? [{ key: facet.key, values: facet.values.map(String) }]
+      : [];
+  }) : [];
+  const common = {
+    id: String(item.id ?? ""), type,
+    name: String(item.name ?? item.title ?? `${type} ${item.id ?? ""}`),
+    title: typeof item.title === "string" ? item.title : undefined,
+    description: typeof item.description === "string" ? item.description : undefined,
+    category: typeof item.category === "string" ? item.category : undefined,
+    rarity: typeof item.rarity === "string" ? item.rarity : undefined,
+    characterId: typeof item.characterId === "number" ? item.characterId : undefined,
+    startAt: typeof item.startAt === "string" ? item.startAt : undefined,
+    endAt: typeof item.endAt === "string" ? item.endAt : undefined,
+    relatedCardIds: strings("relatedCardIds"),
+    assets: typedCatalogAssets(item.assets),
+    facets
+  };
+  if (type === "gachas") return { ...common, gachaType: typeof raw.gachaType === "string" ? raw.gachaType : common.category };
+  if (type === "honors") return { ...common, honorRarity: typeof raw.honorRarity === "string" ? raw.honorRarity : common.rarity, groupId: typeof raw.groupId === "number" ? raw.groupId : undefined };
+  if (type === "materials") return { ...common, materialType: typeof raw.materialType === "string" ? raw.materialType : common.category };
+  if (type === "costumes") return {
+    ...common,
+    costumeNumber: typeof item.costumeNumber === "number" ? item.costumeNumber : undefined,
+    designer: typeof item.designer === "string" ? item.designer : undefined,
+    gender: typeof item.gender === "string" ? item.gender : undefined,
+    source: typeof item.source === "string" ? item.source : undefined,
+    partTypes: strings("partTypes"),
+    characterIds: Array.isArray(item.characterIds) ? item.characterIds.filter((id): id is number => typeof id === "number") : [],
+    parts: typedCostumeParts(item.parts),
+    assetStatus: typeof item.assetStatus === "string" ? item.assetStatus : undefined
+  };
+  if (type === "stamps") return { ...common, stampType: typeof raw.stampType === "string" ? raw.stampType : common.category };
+  return { ...common, comicType: typeof raw.comicType === "string" ? raw.comicType : common.category };
+}
+
+export async function getAndroidCatalog(region: RegionId, type: string, query: MasterCatalogQuery = {}) {
+  if (!androidCatalogTypes.has(type)) return null;
+  const page = await getMasterCatalog(region, type, query);
+  return { ...page, items: page.items.map((item) => typedCollectionItem(type, item)) };
+}
+
+export async function getAndroidCatalogDetail(region: RegionId, type: string, id: string) {
+  if (!androidCatalogTypes.has(type)) return null;
+  const detail = await getCollectionFullDetail(region, type, id);
+  if (!detail) return null;
+  return {
+    region, type,
+    item: typedCollectionItem(type, detail.item),
+    assets: typedCatalogAssets(detail.assets),
+    relatedCards: detail.relations.relatedCards.map((card) => ({
+      id: card.id, title: card.title, character: card.character, characterId: card.characterId,
+      rarity: card.rarity, attribute: card.attribute, characterUnit: card.characterUnit,
+      supportUnit: card.supportUnit, assets: card.assets
+    }))
+  };
+}
+
 export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
   const regionConfig = getRegionConfig(region);
   const existingCache = await readMasterCache(region);
@@ -1070,10 +1179,12 @@ export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
   let collectionHealth: Record<string, MasterCollectionHealth> = {};
   let musics: RawMusic[];
   let musicDifficulties: RawMusicDifficulty[];
+  let musicTags: RawMasterItem[];
   let musicMetas: RawMusicMeta[];
   let musicBpms: RawMusicBpm[];
   let gameCharacters: RawCharacter[];
   let cards: RawCard[];
+  let cardSupplies: RawMasterItem[];
   let skills: RawSkill[];
   let events: RawEvent[];
   let eventCards: RawEventCard[];
@@ -1116,10 +1227,12 @@ export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
     const baseResults = await Promise.all([
       fetchJson<RawMusic[]>(regionConfig.repository, masterFiles.musics),
       fetchJson<RawMusicDifficulty[]>(regionConfig.repository, masterFiles.musicDifficulties),
+      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, masterFiles.musicTags, []),
       fetchFirstAvailableJson<RawMusicMeta[]>(regionConfig.repository, masterFiles.musicMetas, []),
       fetchFirstAvailableJson<RawMusicBpm[]>(regionConfig.repository, masterFiles.musicBpms, []),
       fetchJson<RawCharacter[]>(regionConfig.repository, masterFiles.gameCharacters),
       fetchMoesekaiMaster<RawCard[]>(region, "cards"),
+      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.cardSupplies], []),
       fetchFirstAvailableJson<RawSkill[]>(regionConfig.repository, masterFiles.skills, []),
       fetchMetadataFirst<RawEvent[]>(region, "events", regionConfig.repository, masterFiles.events),
       fetchMetadataFirst<RawEventCard[]>(region, "eventCards", regionConfig.repository, masterFiles.eventCards),
@@ -1141,10 +1254,12 @@ export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
     [
       musics,
       musicDifficulties,
+      musicTags,
       musicMetas,
       musicBpms,
       gameCharacters,
       cards,
+      cardSupplies,
       skills,
       events,
       eventCards,
@@ -1251,6 +1366,8 @@ export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
     events: transformEvents(events, eventCards, eventStories, transformedCards),
     collections: {
       gachas: transformCollection(gachas),
+      musicTags: transformCollection(musicTags),
+      cardSupplies: transformCollection(cardSupplies),
       honors: transformCollection(enrichedHonors),
       honorGroups: transformCollection(honorGroups),
       materials: transformCollection(materials),
@@ -1301,20 +1418,214 @@ export type MasterCatalogQuery = {
   page?: number;
   pageSize?: number;
   q?: string;
-  sort?: "id-asc" | "id-desc" | "name-asc" | "name-desc";
+  sort?: "id-asc" | "id-desc" | "name-asc" | "name-desc" | "start-asc" | "start-desc";
   partType?: string;
   source?: string;
   rarity?: string;
   gender?: string;
   characterId?: number;
+  unit?: string;
+  category?: string;
+  attribute?: string;
+  eventTypes?: string[];
+  eventUnits?: string[];
+  bonusCharacterIds?: number[];
+  bannerCharacterIds?: number[];
+  bonusAttributes?: string[];
+  musicTags?: string[];
+  categories?: string[];
+  characterIds?: number[];
+  units?: string[];
+  supportUnits?: string[];
+  attributes?: string[];
+  rarities?: string[];
+  supplyTypes?: string[];
+  skillTypes?: string[];
+  gachaTypes?: string[];
+  honorTypes?: string[];
+  groupOnce?: boolean;
+  materialTypes?: string[];
+  usableOnly?: boolean;
+  partTypes?: string[];
+  sources?: string[];
+  genders?: string[];
+  relatedOnly?: boolean;
+  stampTypes?: string[];
+  comicTypes?: string[];
 };
 
-function catalogPage<T extends { id: string }>(items: T[], query: MasterCatalogQuery, textOf: (item: T) => string) {
+const stableCatalogVersionTypes = new Set(["gachas", "honors", "materials", "costumes", "stamps", "comics"]);
+
+function canonicalizeForDigest(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeForDigest);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalizeForDigest(item)])
+    );
+  }
+  return value;
+}
+
+export function stableCatalogMasterVersion(type: string, items: MasterCollectionItem[], version = schemaVersion) {
+  const payload = JSON.stringify(canonicalizeForDigest({ type, items }));
+  const digest = createHash("sha256").update(payload).digest("hex").slice(0, 24);
+  return `${version}:${digest}`;
+}
+
+function catalogStartTime(item: { startAt?: string }) {
+  const timestamp = Date.parse(item.startAt ?? "");
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+type CatalogFilterGroup<T> = {
+  key: string;
+  label: string;
+  selected: string[];
+  values: (item: T) => string[];
+  match?: "any" | "all";
+  labelOf?: (value: string) => string;
+};
+
+const unitLabels: Record<string, string> = {
+  light_sound: "Leo/need",
+  idol: "MORE MORE JUMP!",
+  street: "Vivid BAD SQUAD",
+  theme_park: "Wonderlands×Showtime",
+  school_refusal: "25时，在Nightcord。",
+  piapro: "Virtual Singer",
+  ln: "Leo/need",
+  mmj: "MORE MORE JUMP!",
+  vbs: "Vivid BAD SQUAD",
+  ws: "Wonderlands×Showtime",
+  "25ji": "25时，在Nightcord。",
+  vs: "Virtual Singer",
+  mixed: "混合"
+};
+
+const valueLabels: Record<string, string> = {
+  cool: "Cool",
+  cute: "Cute",
+  happy: "Happy",
+  mysterious: "Mysterious",
+  pure: "Pure",
+  rarity_1: "1★",
+  rarity_2: "2★",
+  rarity_3: "3★",
+  rarity_4: "4★",
+  rarity_birthday: "生日",
+  marathon: "马拉松",
+  cheerful_carnival: "欢乐嘉年华",
+  world_bloom: "世界绽放",
+  mv: "MV",
+  mv_2d: "2D MV",
+  original: "原创歌曲",
+  image: "静态影像",
+  male: "男性",
+  female: "女性",
+  body: "衣装",
+  hair: "发型",
+  head: "头饰",
+  card: "卡牌",
+  shop: "商店",
+  event: "活动",
+  mission: "任务",
+  distribution: "发放",
+  normal: "常驻",
+  limited: "限定"
+};
+
+const attributeColors: Record<string, string> = {
+  cool: "#4455dd",
+  cute: "#ff6699",
+  happy: "#ffaa00",
+  mysterious: "#bb88ff",
+  pure: "#44dd88"
+};
+
+function defaultFilterLabel(value: string) {
+  return unitLabels[value] ?? valueLabels[value] ?? value.replaceAll("_", " ");
+}
+
+function filterIcon(region: RegionId, key: string, value: string) {
+  if (key.toLowerCase().includes("character")) {
+    return { iconKey: `character:${value}`, iconCandidates: getCharacterIconCandidates(region, value) };
+  }
+  if (key === "units" || key === "eventUnits" || key === "supportUnits" || key === "musicTags") {
+    return { iconKey: `unit:${value}`, iconCandidates: [] };
+  }
+  if (key === "attributes" || key === "bonusAttributes") {
+    return { iconKey: `attribute:${value}`, iconCandidates: [], color: attributeColors[value] };
+  }
+  if (key === "rarities") return { iconKey: `rarity:${value}`, iconCandidates: [] };
+  return { iconCandidates: [] as string[] };
+}
+
+function matchesFilterGroup<T>(item: T, group: CatalogFilterGroup<T>) {
+  if (!group.selected.length) return true;
+  const itemValues = group.values(item);
+  return group.match === "all"
+    ? group.selected.every((value) => itemValues.includes(value))
+    : group.selected.some((value) => itemValues.includes(value));
+}
+
+function catalogFilters<T>(
+  region: RegionId,
+  items: T[],
+  query: MasterCatalogQuery,
+  textOf: (item: T) => string,
+  groups: CatalogFilterGroup<T>[]
+) {
+  const keyword = query.q?.trim().toLowerCase() ?? "";
+  const searched = keyword ? items.filter((item) => textOf(item).toLowerCase().includes(keyword)) : items;
+  const filtered = searched.filter((item) => groups.every((group) => matchesFilterGroup(item, group)));
+  const filterMeta = {
+    groups: groups.map((group) => {
+      const countBase = searched.filter((item) => groups.every((candidate) => candidate.key === group.key || matchesFilterGroup(item, candidate)));
+      const counts = new Map<string, number>();
+      for (const item of countBase) {
+        for (const value of [...new Set(group.values(item))]) counts.set(value, (counts.get(value) ?? 0) + 1);
+      }
+      for (const selected of group.selected) if (!counts.has(selected)) counts.set(selected, 0);
+      return {
+        key: group.key,
+        label: group.label,
+        selection: "multi" as const,
+        match: group.match ?? "any",
+        options: [...counts.entries()]
+          .map(([value, count]) => ({
+            value,
+            label: group.labelOf?.(value) ?? defaultFilterLabel(value),
+            count,
+            ...filterIcon(region, group.key, value)
+          }))
+          .sort((left, right) => left.label.localeCompare(right.label))
+      };
+    }).filter((group) => group.options.length > 0)
+  };
+  const appliedFilters = Object.fromEntries(groups.filter((group) => group.selected.length).map((group) => [group.key, group.selected]));
+  const facets = (item: T) => groups
+    .map((group) => ({ key: group.key, values: [...new Set(group.values(item))] }))
+    .filter((facet) => facet.values.length > 0);
+  return { filtered, filterMeta, appliedFilters, facets };
+}
+
+function catalogPage<T extends { id: string; startAt?: string }>(items: T[], query: MasterCatalogQuery, textOf: (item: T) => string) {
   const pageSize = Math.min(Math.max(Math.trunc(query.pageSize ?? 48), 1), 100);
   const page = Math.max(Math.trunc(query.page ?? 1), 1);
-  const keyword = query.q?.trim().toLowerCase() ?? "";
-  const filtered = keyword ? items.filter((item) => textOf(item).toLowerCase().includes(keyword)) : items;
-  const sorted = [...filtered].sort((left, right) => {
+  const sorted = [...items].sort((left, right) => {
+    if (query.sort === "start-asc" || query.sort === "start-desc") {
+      const leftStart = catalogStartTime(left);
+      const rightStart = catalogStartTime(right);
+      if (leftStart == null && rightStart != null) return 1;
+      if (leftStart != null && rightStart == null) return -1;
+      if (leftStart != null && rightStart != null && leftStart !== rightStart) {
+        return query.sort === "start-desc" ? rightStart - leftStart : leftStart - rightStart;
+      }
+      return query.sort === "start-desc" ? Number(right.id) - Number(left.id) : Number(left.id) - Number(right.id);
+    }
     if (query.sort === "id-desc") return Number(right.id) - Number(left.id);
     if (query.sort === "name-asc") return textOf(left).localeCompare(textOf(right));
     if (query.sort === "name-desc") return textOf(right).localeCompare(textOf(left));
@@ -1326,53 +1637,257 @@ function catalogPage<T extends { id: string }>(items: T[], query: MasterCatalogQ
   return { items: sorted.slice((safePage - 1) * pageSize, safePage * pageSize), page: safePage, pageSize, total, totalPages };
 }
 
+function mergedStringFilters(values?: string[], legacy?: string | number) {
+  return [...new Set([...(values ?? []), ...(legacy == null || legacy === "" ? [] : [String(legacy)])])];
+}
+
+function recordOf(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function recordValues(value: unknown, keys: string[]) {
+  const raw = recordOf(value);
+  return [...new Set(keys.flatMap((key) => {
+    const field = raw[key];
+    if (Array.isArray(field)) return field.map(String);
+    return field == null || field === "" ? [] : [String(field)];
+  }))];
+}
+
+function collectionRaw(item: MasterCollectionItem) {
+  return recordOf(item.raw);
+}
+
+function collectionText(item: MasterCollectionItem) {
+  const raw = collectionRaw(item);
+  return `${item.id} ${item.name ?? ""} ${item.title ?? ""} ${item.assetbundleName ?? ""} ${String(raw.designer ?? "")} ${String(raw.source ?? "")}`;
+}
+
 export async function getMasterCatalog(region: RegionId, type: string, query: MasterCatalogQuery = {}) {
   const cache = await readMasterCache(region);
   const masterVersion = `${cache?.schemaVersion ?? schemaVersion}:${cache?.syncedAt ?? "unavailable"}`;
   if (type === "cards") {
-    const cards = await getCards(region);
-    const page = catalogPage(cards, query, (card) => `${card.id} ${card.title} ${card.character} ${card.attribute} ${card.rarity}`);
+    const baseCards = await getCards(region);
+    const supplyItems = cache?.collections?.cardSupplies ?? [];
+    const supplyTypes = new Map(supplyItems.map((item) => {
+      const raw = collectionRaw(item);
+      return [item.id, String(raw.cardSupplyType ?? raw.supplyType ?? item.name ?? item.title ?? "normal")];
+    }));
+    const cards = baseCards.map((card) => ({
+      ...card,
+      cardSupplyType: card.cardSupplyType ?? (card.cardSupplyId ? supplyTypes.get(card.cardSupplyId) : undefined) ?? "normal"
+    }));
+    const characterLabels = new Map(cards.filter((card) => card.characterId).map((card) => [String(card.characterId), card.character]));
+    const groups: CatalogFilterGroup<(typeof cards)[number]>[] = [
+      { key: "characterIds", label: "角色", selected: mergedStringFilters(query.characterIds?.map(String), query.characterId), values: (card) => card.characterId ? [card.characterId] : [], labelOf: (value) => characterLabels.get(value) ?? `角色 ${value}` },
+      { key: "units", label: "组合", selected: mergedStringFilters(query.units, query.unit), values: (card) => card.characterUnit ? [card.characterUnit] : [] },
+      { key: "supportUnits", label: "支援组合", selected: query.supportUnits ?? [], values: (card) => card.supportUnit ? [card.supportUnit] : [] },
+      { key: "attributes", label: "属性", selected: mergedStringFilters(query.attributes, query.attribute), values: (card) => [card.attribute] },
+      { key: "rarities", label: "稀有度", selected: mergedStringFilters(query.rarities, query.rarity), values: (card) => [card.cardRarityType ?? String(card.rarity)] },
+      { key: "supplyTypes", label: "供给类型", selected: query.supplyTypes ?? [], values: (card) => card.cardSupplyType ? [card.cardSupplyType] : [] },
+      { key: "skillTypes", label: "技能类型", selected: query.skillTypes ?? [], values: (card) => [...new Set([card.skill?.skillType, ...(card.skill?.effects?.map((effect) => effect.type) ?? [])].filter((value): value is string => Boolean(value)))] }
+    ];
+    const filtered = catalogFilters(region, cards, query, (card) => `${card.id} ${card.title} ${card.character} ${card.attribute} ${card.rarity}`, groups);
+    const page = catalogPage(filtered.filtered, query, (card) => `${card.id} ${card.title} ${card.character}`);
     return {
       ...page,
-      items: page.items.map((card) => ({ id: card.id, title: card.title, character: card.character, characterId: card.characterId, rarity: card.rarity, attribute: card.attribute, assetbundleName: card.assetbundleName, assets: card.assets })),
+      items: page.items.map((card) => ({
+        id: card.id, title: card.title, character: card.character, characterId: card.characterId,
+        characterUnit: card.characterUnit, supportUnit: card.supportUnit, rarity: card.rarity,
+        cardRarityType: card.cardRarityType, attribute: card.attribute, cardSupplyType: card.cardSupplyType,
+        skillTypes: [...new Set([card.skill?.skillType, ...(card.skill?.effects?.map((effect) => effect.type) ?? [])].filter(Boolean))],
+        assetbundleName: card.assetbundleName, assets: card.assets, facets: filtered.facets(card)
+      })),
+      filterMeta: filtered.filterMeta,
+      appliedFilters: filtered.appliedFilters,
       region, type, masterVersion, sourceHealth: { status: cache ? "fresh" : "missing-data", syncedAt: cache?.syncedAt ?? null }
     };
   }
   if (type === "songs") {
-    const songs = await getSongs(region);
-    const page = catalogPage(songs, query, (song) => `${song.id} ${song.title} ${song.unit} ${(song.categories ?? []).join(" ")}`);
+    const baseSongs = await getSongs(region);
+    const tagItems = cache?.collections?.musicTags ?? [];
+    const tagsByMusic = new Map<string, string[]>();
+    for (const item of tagItems) {
+      const raw = collectionRaw(item);
+      const musicId = String(raw.musicId ?? raw.id ?? "");
+      if (!musicId) continue;
+      const tags = recordValues(raw, ["musicTag", "musicTagType", "tag", "unit"]);
+      tagsByMusic.set(musicId, [...new Set([...(tagsByMusic.get(musicId) ?? []), ...tags])]);
+    }
+    const songs = baseSongs.map((song) => ({ ...song, musicTags: tagsByMusic.get(song.id) ?? [] }));
+    const groups: CatalogFilterGroup<(typeof songs)[number]>[] = [
+      { key: "musicTags", label: "组合标签", selected: mergedStringFilters(query.musicTags, query.unit), values: (song) => song.musicTags },
+      { key: "categories", label: "MV / 歌曲分类", selected: mergedStringFilters(query.categories, query.category), values: (song) => song.categories ?? [] }
+    ];
+    const filtered = catalogFilters(region, songs, query, (song) => `${song.id} ${song.title} ${song.unit} ${(song.categories ?? []).join(" ")} ${song.musicTags.join(" ")}`, groups);
+    const page = catalogPage(filtered.filtered, query, (song) => `${song.id} ${song.title}`);
     return {
       ...page,
-      items: page.items.map((song) => ({ id: song.id, title: song.title, unit: song.unit, durationSeconds: song.durationSeconds, categories: song.categories, assetbundleName: song.assetbundleName, jacketAssetbundleName: song.jacketAssetbundleName, assets: song.assets })),
+      items: page.items.map((song) => ({ id: song.id, title: song.title, unit: song.unit, musicTags: song.musicTags, durationSeconds: song.durationSeconds, categories: song.categories, publishedAt: song.publishedAt, assetbundleName: song.assetbundleName, jacketAssetbundleName: song.jacketAssetbundleName, assets: song.assets, facets: filtered.facets(song) })),
+      filterMeta: filtered.filterMeta,
+      appliedFilters: filtered.appliedFilters,
       region, type, masterVersion, sourceHealth: { status: cache ? "fresh" : "missing-data", syncedAt: cache?.syncedAt ?? null }
     };
   }
   if (type === "events") {
     const events = await getEvents(region);
-    const enriched = events.map((event) => ({ ...event, assets: getEventAssetDetail(region, event) }));
-    const page = catalogPage(enriched, query, (event) => `${event.id} ${event.name} ${event.eventType}`);
-    return { ...page, region, type, masterVersion, sourceHealth: { status: cache ? "fresh" : "missing-data", syncedAt: cache?.syncedAt ?? null } };
+    const bonusItems = cache?.collections?.eventDeckBonuses ?? [];
+    const characterUnitItems = cache?.collections?.gameCharacterUnits ?? [];
+    const characterUnitById = new Map(characterUnitItems.map((item) => {
+      const raw = collectionRaw(item);
+      return [String(raw.id ?? item.id), { characterId: String(raw.gameCharacterId ?? raw.characterId ?? ""), unit: String(raw.unit ?? "") }];
+    }));
+    const bonusesByEvent = new Map<string, Array<{ characterId?: string; unit?: string; attribute?: string }>>();
+    for (const item of bonusItems) {
+      const raw = collectionRaw(item);
+      const eventId = String(raw.eventId ?? "");
+      if (!eventId) continue;
+      const unit = characterUnitById.get(String(raw.gameCharacterUnitId ?? ""));
+      const list = bonusesByEvent.get(eventId) ?? [];
+      list.push({
+        characterId: unit?.characterId || (raw.gameCharacterId == null ? undefined : String(raw.gameCharacterId)),
+        unit: unit?.unit || (raw.unit == null ? undefined : String(raw.unit)),
+        attribute: raw.cardAttr == null && raw.attribute == null ? undefined : String(raw.cardAttr ?? raw.attribute)
+      });
+      bonusesByEvent.set(eventId, list);
+    }
+    const enriched = events.map((event) => {
+      const bonusRows = bonusesByEvent.get(event.id) ?? [];
+      const relatedUnits = [...new Set((event.relatedCards ?? []).map((card) => card.characterUnit).filter((value): value is string => Boolean(value)))];
+      const bannerCard = [...(event.relatedCards ?? [])].sort((left, right) => right.rarity - left.rarity)[0];
+      return {
+        ...event,
+        eventUnit: relatedUnits.length === 1 ? relatedUnits[0] : relatedUnits.length > 1 ? "mixed" : undefined,
+        bonusCharacterIds: [...new Set(bonusRows.map((row) => row.characterId).filter((value): value is string => Boolean(value)))],
+        bonusAttributes: [...new Set(bonusRows.map((row) => row.attribute).filter((value): value is string => Boolean(value)))],
+        bannerCharacterId: bannerCard?.characterId,
+        assets: getEventAssetDetail(region, event)
+      };
+    });
+    const characterLabels = new Map((await getCards(region)).filter((card) => card.characterId).map((card) => [String(card.characterId), card.character]));
+    const groups: CatalogFilterGroup<(typeof enriched)[number]>[] = [
+      { key: "eventTypes", label: "活动类型", selected: query.eventTypes ?? [], values: (event) => [event.eventType] },
+      { key: "eventUnits", label: "活动组合", selected: query.eventUnits ?? [], values: (event) => event.eventUnit ? [event.eventUnit] : [] },
+      { key: "bonusCharacterIds", label: "加成角色", selected: query.bonusCharacterIds?.map(String) ?? [], values: (event) => event.bonusCharacterIds, match: "all", labelOf: (value) => characterLabels.get(value) ?? `角色 ${value}` },
+      { key: "bannerCharacterIds", label: "看板角色", selected: query.bannerCharacterIds?.map(String) ?? [], values: (event) => event.bannerCharacterId ? [event.bannerCharacterId] : [], labelOf: (value) => characterLabels.get(value) ?? `角色 ${value}` },
+      { key: "bonusAttributes", label: "加成属性", selected: query.bonusAttributes ?? [], values: (event) => event.bonusAttributes }
+    ];
+    const filtered = catalogFilters(region, enriched, query, (event) => `${event.id} ${event.name} ${event.eventType}`, groups);
+    const page = catalogPage(filtered.filtered, query, (event) => `${event.id} ${event.name}`);
+    return {
+      ...page,
+      items: page.items.map((event) => ({ ...event, facets: filtered.facets(event) })),
+      filterMeta: filtered.filterMeta,
+      appliedFilters: filtered.appliedFilters,
+      region, type, masterVersion,
+      sourceHealth: { status: cache ? "fresh" : "missing-data", syncedAt: cache?.syncedAt ?? null }
+    };
   }
   const collection = await getMasterCollection(region, type);
-  const filteredItems = type === "costumes" ? collection.items.filter((item) => {
-    const raw = item.raw as Record<string, unknown>;
-    if (query.partType && (!Array.isArray(raw.partTypes) || !raw.partTypes.map(String).includes(query.partType))) return false;
-    if (query.source && String(raw.source ?? "") !== query.source) return false;
-    if (query.rarity && String(raw.costume3dRarity ?? "") !== query.rarity) return false;
-    if (query.gender && String(raw.gender ?? "") !== query.gender) return false;
-    if (query.characterId && (!Array.isArray(raw.characterIds) || !raw.characterIds.map(Number).includes(query.characterId))) return false;
-    return true;
-  }) : collection.items;
-  const page = catalogPage(filteredItems, query, (item) => {
-    const raw = item.raw as Record<string, unknown>;
-    return `${item.id} ${item.name ?? ""} ${item.title ?? ""} ${item.assetbundleName ?? ""} ${String(raw.designer ?? "")} ${String(raw.source ?? "")}`;
-  });
+  const collectionMasterVersion = stableCatalogVersionTypes.has(type)
+    ? stableCatalogMasterVersion(type, collection.items)
+    : `${schemaVersion}:${collection.syncedAt ?? cache?.syncedAt ?? "unavailable"}`;
+  const cards = ["gachas", "costumes", "stamps"].includes(type) ? await getCards(region) : [];
+  const cardsById = new Map(cards.map((card) => [card.id, card]));
+  const characterLabels = new Map(cards.filter((card) => card.characterId).map((card) => [String(card.characterId), card.character]));
+  const characterUnits = new Map((cache?.collections?.gameCharacterUnits ?? []).map((item) => {
+    const raw = collectionRaw(item);
+    return [String(raw.id ?? item.id), { characterId: String(raw.gameCharacterId ?? raw.characterId ?? ""), unit: String(raw.unit ?? "") }];
+  }));
+  const relatedCards = (item: MasterCollectionItem) => {
+    const raw = collectionRaw(item);
+    const ids = type === "gachas"
+      ? (Array.isArray(raw.gachaPickups)
+          ? raw.gachaPickups.map((detail) => String(recordOf(detail).cardId ?? ""))
+          : Array.isArray(raw.gachaDetails) ? raw.gachaDetails.filter((detail) => recordOf(detail).isWish === true).map((detail) => String(recordOf(detail).cardId ?? "")) : [])
+      : Array.isArray(raw.cardIds) ? raw.cardIds.map(String) : [];
+    return ids.map((id) => cardsById.get(id)).filter((card): card is Card => Boolean(card));
+  };
+  const rawStrings = (item: MasterCollectionItem, keys: string[]) => recordValues(collectionRaw(item), keys);
+  const groups: CatalogFilterGroup<MasterCollectionItem>[] = [];
+  if (type === "gachas") {
+    groups.push(
+      { key: "gachaTypes", label: "卡池类型", selected: query.gachaTypes ?? [], values: (item) => rawStrings(item, ["gachaType"]) },
+      { key: "characterIds", label: "Pickup 角色", selected: mergedStringFilters(query.characterIds?.map(String), query.characterId), values: (item) => [...new Set(relatedCards(item).map((card) => card.characterId).filter((value): value is string => Boolean(value)))], labelOf: (value) => characterLabels.get(value) ?? `角色 ${value}` },
+      { key: "units", label: "组合", selected: mergedStringFilters(query.units, query.unit), values: (item) => [...new Set(relatedCards(item).map((card) => card.characterUnit).filter((value): value is string => Boolean(value)))] }
+    );
+  } else if (type === "honors") {
+    groups.push(
+      { key: "honorTypes", label: "称号类型", selected: query.honorTypes ?? [], values: (item) => {
+        const raw = collectionRaw(item);
+        return recordValues(raw.honorGroup, ["honorType", "groupType"]);
+      } },
+      { key: "rarities", label: "稀有度", selected: mergedStringFilters(query.rarities, query.rarity), values: (item) => rawStrings(item, ["honorRarity"]) }
+    );
+  } else if (type === "materials") {
+    groups.push({ key: "materialTypes", label: "素材类型", selected: query.materialTypes ?? [], values: (item) => rawStrings(item, ["materialType"]) });
+  } else if (type === "costumes") {
+    groups.push(
+      { key: "characterIds", label: "角色", selected: mergedStringFilters(query.characterIds?.map(String), query.characterId), values: (item) => rawStrings(item, ["characterIds", "characterId"]), labelOf: (value) => characterLabels.get(value) ?? `角色 ${value}` },
+      { key: "units", label: "组合", selected: mergedStringFilters(query.units, query.unit), values: (item) => [...new Set(relatedCards(item).map((card) => card.characterUnit).filter((value): value is string => Boolean(value)))] },
+      { key: "partTypes", label: "部件", selected: mergedStringFilters(query.partTypes, query.partType), values: (item) => rawStrings(item, ["partTypes"]) },
+      { key: "sources", label: "来源", selected: mergedStringFilters(query.sources, query.source), values: (item) => rawStrings(item, ["source"]) },
+      { key: "rarities", label: "稀有度", selected: mergedStringFilters(query.rarities, query.rarity), values: (item) => rawStrings(item, ["costume3dRarity"]) },
+      { key: "genders", label: "性别", selected: mergedStringFilters(query.genders, query.gender), values: (item) => rawStrings(item, ["gender"]) }
+    );
+  } else if (type === "stamps") {
+    groups.push(
+      { key: "stampTypes", label: "贴纸类型", selected: query.stampTypes ?? [], values: (item) => rawStrings(item, ["stampType"]) },
+      { key: "characterIds", label: "角色", selected: mergedStringFilters(query.characterIds?.map(String), query.characterId), values: (item) => {
+        const raw = collectionRaw(item);
+        const direct = recordValues(raw, ["characterId", "characterId1", "characterId2", "gameCharacterId"]);
+        const linked = characterUnits.get(String(raw.gameCharacterUnitId ?? ""))?.characterId;
+        return [...new Set([...direct, ...(linked ? [linked] : [])])];
+      }, labelOf: (value) => characterLabels.get(value) ?? `角色 ${value}` },
+      { key: "units", label: "组合", selected: mergedStringFilters(query.units, query.unit), values: (item) => {
+        const raw = collectionRaw(item);
+        const linked = characterUnits.get(String(raw.gameCharacterUnitId ?? ""))?.unit;
+        return [...new Set([...recordValues(raw, ["unit"]), ...(linked ? [linked] : [])])];
+      } }
+    );
+  } else if (type === "comics") {
+    groups.push({ key: "comicTypes", label: "漫画类型", selected: query.comicTypes ?? [], values: (item) => rawStrings(item, ["comicType"]) });
+  }
+  let baseItems = collection.items;
+  if (type === "materials" && query.usableOnly) {
+    baseItems = baseItems.filter((item) => {
+      const raw = collectionRaw(item);
+      return raw.canUse === true || raw.isUsable === true || raw.usable === true || raw.materialUseType != null || raw.useType != null;
+    });
+  }
+  if (type === "costumes" && query.relatedOnly) baseItems = baseItems.filter((item) => relatedCards(item).length > 0);
+  const filtered = catalogFilters(region, baseItems, query, collectionText, groups);
+  let filteredItems = filtered.filtered;
+  if (type === "honors" && query.groupOnce) {
+    const seen = new Set<string>();
+    filteredItems = filteredItems.filter((item) => {
+      const key = String(collectionRaw(item).groupId ?? item.id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  const page = catalogPage(filteredItems, query, collectionText);
   return {
     ...page,
-    items: page.items.map((item) => getDisplayCollectionItem(region, type, item)),
+    items: page.items.map((item) => ({ ...getDisplayCollectionItem(region, type, item), facets: filtered.facets(item) })),
+    filterMeta: {
+      ...filtered.filterMeta,
+      toggles: [
+        ...(type === "honors" ? [{ key: "groupOnce", label: "同组只显示一次", value: Boolean(query.groupOnce) }] : []),
+        ...(type === "materials" ? [{ key: "usableOnly", label: "仅可使用", value: Boolean(query.usableOnly) }] : []),
+        ...(type === "costumes" ? [{ key: "relatedOnly", label: "仅关联卡牌", value: Boolean(query.relatedOnly) }] : [])
+      ]
+    },
+    appliedFilters: {
+      ...filtered.appliedFilters,
+      ...(query.groupOnce ? { groupOnce: true } : {}),
+      ...(query.usableOnly ? { usableOnly: true } : {}),
+      ...(query.relatedOnly ? { relatedOnly: true } : {})
+    },
     region,
     type,
-    masterVersion: `${schemaVersion}:${collection.syncedAt ?? cache?.syncedAt ?? "unavailable"}`,
+    masterVersion: collectionMasterVersion,
     sourceHealth: { status: collection.unavailableReason ? "source-unavailable" : "fresh", syncedAt: collection.syncedAt ?? null, unavailableReason: collection.unavailableReason },
     source: collection.source
   };
@@ -1496,15 +2011,55 @@ export async function syncEventMasterRegion(region: RegionId) {
   return updated;
 }
 
-export function requestMasterRegionSync(region: RegionId) {
+export async function syncRankingAssetMasterRegion(region: RegionId): Promise<MasterCache> {
+  const fullSync = runningSyncs.get(region);
+  if (fullSync) return fullSync;
+  const running = runningRankingAssetSyncs.get(region);
+  if (running) return running;
+
+  const sync = (async () => {
+    const eventSync = runningEventSyncs.get(region);
+    if (eventSync) await eventSync;
+    const existing = await readMasterCache(region);
+    if (!existing) return syncMasterRegion(region);
+
+    const regionConfig = getRegionConfig(region);
+    const [cards, gameCharacters, skills, events, eventCards, eventStories] = await Promise.all([
+      fetchMetadataFirst<RawCard[]>(region, "cards", regionConfig.repository, masterFiles.cards),
+      fetchMetadataFirst<RawCharacter[]>(region, "gameCharacters", regionConfig.repository, masterFiles.gameCharacters),
+      fetchMoesekaiMaster<RawSkill[]>(region, "skills")
+        .catch(() => fetchFirstAvailableJson<RawSkill[]>(regionConfig.repository, masterFiles.skills, [])),
+      fetchMetadataFirst<RawEvent[]>(region, "events", regionConfig.repository, masterFiles.events),
+      fetchMetadataFirst<RawEventCard[]>(region, "eventCards", regionConfig.repository, masterFiles.eventCards),
+      fetchMetadataFirst<RawEventStory[]>(region, "eventStories", regionConfig.repository, masterFiles.eventStories)
+    ]);
+    const transformedCards = transformCards(cards, gameCharacters, skills);
+    const updated: MasterCache = {
+      ...existing,
+      syncedAt: new Date().toISOString(),
+      source: `${moesekaiMetadataBase[region]} (Team-Haruki same-region fallback)`,
+      cards: transformedCards,
+      events: transformEvents(events, eventCards, eventStories, transformedCards)
+    };
+    await atomicWriteJson(getCachePath(region), updated);
+    lastRankingAssetSyncAt.set(region, Date.now());
+    return updated;
+  })().finally(() => runningRankingAssetSyncs.delete(region));
+
+  runningRankingAssetSyncs.set(region, sync);
+  return sync;
+}
+
+export function requestRankingAssetMasterSync(region: RegionId) {
   if ((failedAutoSyncUntil.get(region) ?? 0) > Date.now()) return;
-  if (runningEventSyncs.has(region)) return;
-  const sync = syncEventMasterRegion(region)
-    .catch((error) => {
-      failedAutoSyncUntil.set(region, Date.now() + failedAutoSyncCooldownMs);
-      throw error;
-    })
-    .finally(() => runningEventSyncs.delete(region));
-  runningEventSyncs.set(region, sync);
-  sync.catch(() => undefined);
+  if ((lastRankingAssetSyncAt.get(region) ?? 0) + rankingAssetSyncIntervalMs > Date.now()) return;
+  if (runningRankingAssetSyncs.has(region)) return;
+  syncRankingAssetMasterRegion(region).catch((error) => {
+    failedAutoSyncUntil.set(region, Date.now() + failedAutoSyncCooldownMs);
+    if (!fastMasterRefresh) console.warn(`Ranking asset master sync failed for ${region}:`, error);
+  });
+}
+
+export function requestMasterRegionSync(region: RegionId) {
+  requestRankingAssetMasterSync(region);
 }

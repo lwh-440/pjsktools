@@ -4,7 +4,7 @@ import { config, type RegionId } from "./config.js";
 import { harukiClient } from "./harukiClient.js";
 import { fetchRealtimeChurn, fetchRealtimeLatest, fetchRealtimeTierSeries, fetchRealtimeWorldLinkLatest, type RealtimeChurnSnapshot, type RealtimeRankingEntry } from "./realtimeRankingClient.js";
 import { getCharacterIconCandidates } from "./assets.js";
-import { getCards } from "./masterData.js";
+import { getCards, requestRankingAssetMasterSync } from "./masterData.js";
 import { store } from "./store.js";
 import type { PlayerProfile, RankingHistoryInput, RankingHistoryQuery, RankingSampleType } from "./types.js";
 
@@ -35,6 +35,9 @@ type LiveRankingSnapshot = {
     stale?: boolean;
     errors?: string[];
   };
+  boardType: "overall" | "worldlink";
+  gameCharacterId?: number;
+  worldLinkCharacters: Array<{ id: number; name: string; imageCandidates: string[] }>;
   worldLinkAvailable: boolean;
   staleRanks: number[];
   warnings: string[];
@@ -92,8 +95,8 @@ function playerKey(region: RegionId, userId: string) {
   return `${region}:${userId}`;
 }
 
-function rankingKey(region: RegionId, eventId: string) {
-  return `${region}:${eventId}`;
+function rankingKey(region: RegionId, eventId: string, boardType: "overall" | "worldlink" = "overall", gameCharacterId?: number) {
+  return boardType === "overall" ? `${region}:${eventId}` : `${region}:${eventId}:worldlink:${gameCharacterId ?? "unknown"}`;
 }
 
 function rankingChurnKey(region: RegionId, eventId: string, boardType: "overall" | "worldlink", gameCharacterId?: number) {
@@ -215,9 +218,19 @@ function currentEventSummary(event: unknown, eventId: string, fallback?: { start
   };
 }
 
-async function enrichRankingAssets<T extends RealtimeRankingEntry>(region: RegionId, entries: T[]) {
+async function worldLinkCharacters(region: RegionId, event: unknown) {
+  const item = event as Record<string, any> | undefined;
+  const ids = [...new Set((Array.isArray(item?.bonusCharacterIds) ? item.bonusCharacterIds : []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  const cards = await getCards(region);
+  const labels = new Map(cards.filter((card) => card.characterId).map((card) => [Number(card.characterId), card.character]));
+  return ids.map((id) => ({ id, name: labels.get(id) ?? `角色 ${id}`, imageCandidates: getCharacterIconCandidates(region, id) }));
+}
+
+export async function enrichRankingAssets<T extends RealtimeRankingEntry>(region: RegionId, entries: T[]) {
   const cards = await getCards(region);
   const cardsById = new Map(cards.map((card) => [String(card.id), card]));
+  const missingLeaderCards = entries.some((entry) => entry.leaderCardId != null && !cardsById.has(String(entry.leaderCardId)));
+  if (missingLeaderCards) requestRankingAssetMasterSync(region);
   return entries.map((entry) => {
       const card = entry.leaderCardId == null ? undefined : cardsById.get(String(entry.leaderCardId));
       const trained = (entry.leaderCardDefaultImage ?? entry.cardDefaultImage) === "special_training";
@@ -238,6 +251,13 @@ async function enrichRankingAssets<T extends RealtimeRankingEntry>(region: Regio
 
 async function normalizeTop100(region: RegionId, entries: RealtimeRankingEntry[]) {
   return enrichRankingAssets(region, entries.filter((entry) => entry.rank >= 1 && entry.rank <= 100).sort((a, b) => a.rank - b.rank));
+}
+
+async function rehydrateLiveRankingSnapshot(region: RegionId, snapshot: LiveRankingSnapshot): Promise<LiveRankingSnapshot> {
+  return {
+    ...snapshot,
+    top100: await normalizeTop100(region, snapshot.top100 as RealtimeRankingEntry[])
+  };
 }
 
 async function refreshRankingChurn(region: RegionId, eventId: string, options: { boardType: "overall" | "worldlink"; gameCharacterId?: number; top?: number }): Promise<RankingChurnResult> {
@@ -284,7 +304,7 @@ export async function getRankingChurnCached(region: RegionId, eventId: string, o
 export async function getRankingPlayerDetail(region: RegionId, eventId: string, rank: number, options: { boardType?: "overall" | "worldlink"; gameCharacterId?: number } = {}) {
   const raw = await harukiClient.getRankingPlayerDetail(region, eventId, rank) as Record<string, any>;
   const [live, churn] = await Promise.all([
-    getLiveRankingCached(region, eventId).catch(() => null),
+    getLiveRankingCached(region, eventId, undefined, false, options).catch(() => null),
     getRankingChurnCached(region, eventId, { boardType: options.boardType, gameCharacterId: options.gameCharacterId, top: 100 }).catch(() => null)
   ]);
   const liveEntry = (live?.top100 as RealtimeRankingEntry[] | undefined)?.find((entry) => Number(entry.rank) === rank);
@@ -376,6 +396,8 @@ function unavailableLiveSnapshot(region: RegionId, eventId: string, event: unkno
       primarySource: "rks-n",
       errors
     },
+    boardType: "overall",
+    worldLinkCharacters: [],
     worldLinkAvailable: false,
     staleRanks: [],
     warnings: eventId === "none" ? ["No active event"] : ["Realtime ranking source unavailable and no usable cache exists"]
@@ -394,21 +416,29 @@ async function refreshLiveRanking(
   event?: unknown,
   knownLatest?: Awaited<ReturnType<typeof fetchRealtimeLatest>>,
   knownTierSeries?: Awaited<ReturnType<typeof fetchRealtimeTierSeries>>,
-  knownWorldLink?: Awaited<ReturnType<typeof fetchRealtimeWorldLinkLatest>>
+  knownWorldLink?: Awaited<ReturnType<typeof fetchRealtimeWorldLinkLatest>>,
+  options: { boardType: "overall" | "worldlink"; gameCharacterId?: number } = { boardType: "overall" }
 ): Promise<LiveRankingSnapshot> {
-  const key = rankingKey(region, eventId);
+  const key = rankingKey(region, eventId, options.boardType, options.gameCharacterId);
   const cache = await readRuntimeCache();
   rememberRanking(cache, region, eventId);
-  const latest = knownLatest ?? await fetchRealtimeLatest(region);
+  const latest = options.boardType === "worldlink"
+    ? (knownWorldLink?.snapshot ?? (await fetchRealtimeWorldLinkLatest(region, 30_000, options.gameCharacterId)).snapshot)
+    : (knownLatest ?? await fetchRealtimeLatest(region));
+  if (!latest) throw new Error("World Link ranking unavailable");
   if (latest.eventId !== eventId) {
     throw new Error(`Realtime latest event mismatch: expected ${eventId}, got ${latest.eventId}`);
   }
-  const [worldLink, tierSeries] = await Promise.all([
-    knownWorldLink ? Promise.resolve(knownWorldLink) : fetchRealtimeWorldLinkLatest(region, 2_000).catch((error) => ({ snapshot: null, errors: [error instanceof Error ? error.message : String(error)] })),
-    knownTierSeries ? Promise.resolve(knownTierSeries) : fetchRealtimeTierSeries(region, commonBorderRanks)
-  ]);
+  const [worldLink, tierSeries] = options.boardType === "worldlink"
+    ? [{ snapshot: latest, errors: [] }, { lines: [], errors: [] }]
+    : await Promise.all([
+      knownWorldLink ? Promise.resolve(knownWorldLink) : fetchRealtimeWorldLinkLatest(region, 2_000).catch((error) => ({ snapshot: null, errors: [error instanceof Error ? error.message : String(error)] })),
+      knownTierSeries ? Promise.resolve(knownTierSeries) : fetchRealtimeTierSeries(region, commonBorderRanks)
+    ]);
   const top100 = await normalizeTop100(region, latest.entries);
-  const borderLines = tierSeries.lines.length
+  const borderLines = options.boardType === "worldlink"
+    ? normalizeBorders(latest.entries)
+    : tierSeries.lines.length
     ? tierSeries.lines.map((line) => ({ rank: line.rank, score: line.score, region, eventId, updatedAt: line.updatedAt, source: line.sourceUrl }))
     : normalizeBorders(latest.entries);
   const sampledAt = latest.updatedAt;
@@ -427,7 +457,10 @@ async function refreshLiveRanking(
       cacheUpdatedAt: new Date().toISOString(),
       errors: [...(worldLink.errors ?? []), ...tierSeries.errors].slice(-6)
     },
-    worldLinkAvailable: Boolean(worldLink.snapshot),
+    boardType: options.boardType,
+    gameCharacterId: options.gameCharacterId,
+    worldLinkCharacters: await worldLinkCharacters(region, event),
+    worldLinkAvailable: options.boardType === "worldlink" || Boolean(worldLink.snapshot),
     staleRanks: [],
     warnings: borderLines.length ? [] : ["Realtime ranking tier-series did not include configured border ranks"]
   };
@@ -445,11 +478,12 @@ async function refreshLiveRanking(
   return snapshot;
 }
 
-function triggerLiveRankingRefresh(region: RegionId, eventId: string, event?: unknown) {
-  const key = rankingKey(region, eventId);
+function triggerLiveRankingRefresh(region: RegionId, eventId: string, event?: unknown, options: { boardType?: "overall" | "worldlink"; gameCharacterId?: number } = {}) {
+  const boardType = options.boardType ?? "overall";
+  const key = rankingKey(region, eventId, boardType, options.gameCharacterId);
   const running = liveRankingRefreshes.get(key);
   if (running) return running;
-  const promise = refreshLiveRanking(region, eventId, event)
+  const promise = refreshLiveRanking(region, eventId, event, undefined, undefined, undefined, { boardType, gameCharacterId: options.gameCharacterId })
     .finally(() => liveRankingRefreshes.delete(key));
   liveRankingRefreshes.set(key, promise);
   return promise;
@@ -495,35 +529,42 @@ export async function getPlayerProfileCached(region: RegionId, userId: string, f
   return profile;
 }
 
-export async function getLiveRankingCached(region: RegionId, eventId: string, event?: unknown, force = false): Promise<LiveRankingSnapshot> {
+export async function getLiveRankingCached(region: RegionId, eventId: string, event?: unknown, force = false, options: { boardType?: "overall" | "worldlink"; gameCharacterId?: number } = {}): Promise<LiveRankingSnapshot> {
   if (eventId === "none") return unavailableLiveSnapshot(region, eventId, event, []);
+  const boardType = options.boardType ?? "overall";
+  if (boardType === "worldlink" && options.gameCharacterId == null) return unavailableLiveSnapshot(region, eventId, event, ["gameCharacterId is required for World Link"]);
   const cache = await readRuntimeCache();
-  const key = rankingKey(region, eventId);
+  const key = rankingKey(region, eventId, boardType, options.gameCharacterId);
   rememberRanking(cache, region, eventId);
   const cached = cache.liveRankings[key];
   if (!force && cached) {
     if (isFresh(cached, config.rankingRefreshMs)) {
       rememberRankingSample(cache, region, eventId);
       await writeRuntimeCache(cache);
-      return { ...cached.data, currentEvent: currentEventSummary(event ?? cached.data.currentEvent, eventId, cached.data.currentEvent) };
+      return rehydrateLiveRankingSnapshot(region, {
+        ...cached.data,
+        currentEvent: currentEventSummary(event ?? cached.data.currentEvent, eventId, cached.data.currentEvent)
+      });
     }
-    triggerLiveRankingRefresh(region, eventId, event).catch(() => undefined);
+    triggerLiveRankingRefresh(region, eventId, event, options).catch(() => undefined);
     rememberRankingSample(cache, region, eventId);
     await writeRuntimeCache(cache);
-    return staleLiveSnapshot(cached);
+    return rehydrateLiveRankingSnapshot(region, staleLiveSnapshot(cached));
   }
   try {
-    return await triggerLiveRankingRefresh(region, eventId, event);
+    return await triggerLiveRankingRefresh(region, eventId, event, options);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const freshCache = await readRuntimeCache();
     const stale = freshCache.liveRankings[key];
-    if (stale) return staleLiveSnapshot(stale, [errorMessage]);
+    if (stale) return rehydrateLiveRankingSnapshot(region, staleLiveSnapshot(stale, [errorMessage]));
+    if (boardType === "worldlink") return unavailableLiveSnapshot(region, eventId, event, [errorMessage]);
     const [top100Result, borderResult] = await Promise.allSettled([
       harukiClient.getRankingTop100(region, eventId),
       harukiClient.getRankingBorder(region, eventId)
     ]);
-    const top100 = top100Result.status === "fulfilled" && Array.isArray(top100Result.value) ? top100Result.value : [];
+    const rawTop100 = top100Result.status === "fulfilled" && Array.isArray(top100Result.value) ? top100Result.value : [];
+    const top100 = await normalizeTop100(region, rawTop100 as RealtimeRankingEntry[]);
     const borderLines = borderResult.status === "fulfilled" && Array.isArray(borderResult.value) ? borderResult.value : [];
     if (top100.length || borderLines.length) {
       const sampledAt = new Date().toISOString();
@@ -543,6 +584,8 @@ export async function getLiveRankingCached(region: RegionId, eventId: string, ev
             ...(borderResult.status === "rejected" ? [String(borderResult.reason)] : [])
           ].slice(-6)
         },
+        boardType: "overall",
+        worldLinkCharacters: await worldLinkCharacters(region, event),
         worldLinkAvailable: false,
         staleRanks: [],
         warnings: ["Realtime ranking source unavailable; using Haruki toolbox fallback"]
@@ -568,7 +611,10 @@ export async function getLatestLiveRankingCached(region: RegionId, event?: unkno
   const cached = latestLiveRankingForRegion(cache, region);
   if (!force && cached) {
     if (isFresh(cached, config.rankingRefreshMs)) {
-      return { ...cached.data, currentEvent: currentEventSummary(cached.data.currentEvent, cached.data.eventId, cached.data.currentEvent) };
+      return rehydrateLiveRankingSnapshot(region, {
+        ...cached.data,
+        currentEvent: currentEventSummary(cached.data.currentEvent, cached.data.eventId, cached.data.currentEvent)
+      });
     }
     (async () => {
       const [latest, tierSeries] = await Promise.all([
@@ -577,7 +623,7 @@ export async function getLatestLiveRankingCached(region: RegionId, event?: unkno
       ]);
       await refreshLiveRanking(region, latest.eventId, event, latest, tierSeries, noWorldLinkProbe);
     })().catch(() => undefined);
-    return staleLiveSnapshot(cached);
+    return rehydrateLiveRankingSnapshot(region, staleLiveSnapshot(cached));
   }
   try {
     const [latest, tierSeries] = await Promise.all([
@@ -588,7 +634,7 @@ export async function getLatestLiveRankingCached(region: RegionId, event?: unkno
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const stale = latestLiveRankingForRegion(await readRuntimeCache(), region);
-    if (stale) return staleLiveSnapshot(stale, [errorMessage]);
+    if (stale) return rehydrateLiveRankingSnapshot(region, staleLiveSnapshot(stale, [errorMessage]));
     return unavailableLiveSnapshot(region, "unknown", event, [errorMessage]);
   }
 }

@@ -31,13 +31,15 @@
   Wand2,
   Zap
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { apiGet, apiPost, apiResourceUrl } from "./api";
 import { loadCachedCatalog } from "./catalogCache";
 import { useAuth } from "./AuthContext";
 import type { DeckConfig, PlayerBinding } from "./accountTypes";
 import { ArtImage, DetailDrawer, Pagination, SearchBox } from "./components/ui";
+import { CatalogFilterPanel, type CatalogFilterMeta } from "./components/CatalogFilterPanel";
+import { FavoriteButton } from "./components/FavoriteButton";
 import type { StoryPlaybackContext } from "./components/StoryPlaybackPlayer";
 import { AssetsPage, BindingsPage, BoundDeckPage, LoginPage, MeHomePage, MeProfileAnalysisPage, RegisterPage, RequireAuth, ScoresPage } from "./pages/account";
 import { RealChartPreview } from "./RealChartPreview";
@@ -47,6 +49,8 @@ import { VirtualLiveCatalogPage, VirtualLiveDetailPage } from "./pages/virtualLi
 import { Live2dCatalogPage } from "./pages/live2d";
 import { LazyRouteBoundary } from "./components/LazyRouteBoundary";
 import { StoryCatalogPage, StoryDetailPage } from "./pages/story";
+import { FavoritesPage } from "./pages/favorites";
+import type { FavoriteType } from "./sharedTypes";
 
 const LazyLive2dDetailPage = lazy(() => import("./pages/live2dDetail").then((module) => ({ default: module.Live2dDetailPage })));
 const StoryPlaybackPlayer = lazy(() => import("./components/StoryPlaybackPlayer").then((module) => ({ default: module.StoryPlaybackPlayer })));
@@ -56,15 +60,15 @@ type Region = { id: string; name: string };
 type DifficultyDetail = { difficulty: string; playLevel: number; totalNoteCount: number };
 type AssetInfo = Record<string, string | string[] | undefined>;
 type Song = { id: string; title: string; unit: string; difficultyDetails?: DifficultyDetail[]; assets?: { jacketUrl?: string; imageCandidates?: string[] }; durationSeconds?: number; categories?: string[]; bpm?: number };
-type Card = { id: string; character: string; title: string; rarity: number; attribute: string; assets?: { normalUrl?: string; normalThumbnailUrl?: string; imageCandidates?: string[]; normalThumbnailCandidates?: string[] } };
-type EventInfo = { id: string; name: string; eventType?: string; startAt: string; endAt: string; storyOutline?: string; assets?: AssetInfo };
+type Card = { id: string; characterId?: string; character: string; title: string; rarity: number; attribute: string; assets?: { normalUrl?: string; normalThumbnailUrl?: string; imageCandidates?: string[]; normalThumbnailCandidates?: string[] } };
+type EventInfo = { id: string; name: string; eventType?: string; eventUnit?: string; bonusCharacterIds?: string[]; bonusAttributes?: string[]; bannerCharacterId?: string; startAt: string; endAt: string; storyOutline?: string; assets?: AssetInfo };
 type CollectionItem = { id: string; type: string; name: string; title?: string; category?: string; rarity?: string; description?: string; startAt?: string; endAt?: string; assets?: AssetInfo; sourceMetadata?: unknown; designer?: string; gender?: string; source?: string; partTypes?: string[]; characterIds?: number[]; parts?: Record<string, Array<{ colorId?: number; colorName?: string; assetbundleName?: string }>>; extraParts?: Array<{ characterId?: number; partType?: string; variants?: Array<{ colorId?: number; colorName?: string; assetbundleName?: string }> }>; shopInfo?: unknown; assetStatus?: string };
 type FullSong = { music: Song; assets: AssetInfo; relations: Record<string, any> };
 type SkillInfo = { id: string; name?: string; description?: string; formattedDescriptions?: Record<"1" | "2" | "3" | "4", string>; skillFormatTrace?: { status?: string; missingFields?: string[] } };
 type FullCard = { card: Card & { skill?: SkillInfo; specialTrainingSkill?: SkillInfo }; assets: AssetInfo; relations: { relatedEvents: EventInfo[]; relatedGachas: CollectionItem[] } };
 type FullEvent = { event: EventInfo; assets: AssetInfo; relations: { relatedSongs: Song[]; relatedCards: Card[]; relatedGachas: CollectionItem[] } };
 type CollectionResponse = { source?: string; unavailableReason?: string; sourceMetadata?: unknown; items: CollectionItem[] };
-type CatalogResponse<T> = { items: T[]; page: number; pageSize: number; total: number; totalPages: number; hasNextPage?: boolean; hasPreviousPage?: boolean; masterVersion?: string; sourceHealth?: Record<string, unknown>; source?: string };
+type CatalogResponse<T> = { items: T[]; page: number; pageSize: number; total: number; totalPages: number; hasNextPage?: boolean; hasPreviousPage?: boolean; masterVersion?: string; sourceHealth?: Record<string, unknown>; source?: string; filterMeta?: CatalogFilterMeta; appliedFilters?: Record<string, string[] | boolean> };
 type ContentPreviewItem = { id: string; name: string; category?: string; description?: string; storyType?: string; raw?: any };
 type ContentDisplayGroup = { key: string; label?: string; count?: number; previewItems?: ContentPreviewItem[] };
 type SourceMetadata = { sourceType?: string; primaryUrl?: string; fallbackUrl?: string; sourceProject?: string; fetchedAt?: string; unavailableReason?: string };
@@ -154,6 +158,7 @@ type SectionId =
   | "materials"
   | "costumes"
   | "stamps"
+  | "comics"
   | "tools"
   | "deckCompare"
   | "share"
@@ -187,7 +192,8 @@ const navGroups: Array<{ title: string; items: Array<{ id: SectionId; label: str
       { id: "honors", label: "称号", icon: BadgePlus },
       { id: "materials", label: "素材", icon: Package },
       { id: "costumes", label: "服装", icon: Shirt },
-      { id: "stamps", label: "贴图/漫画", icon: Images }
+      { id: "stamps", label: "贴纸", icon: Images },
+      { id: "comics", label: "漫画", icon: BookOpen }
     ]
   },
   {
@@ -219,13 +225,27 @@ const navGroups: Array<{ title: string; items: Array<{ id: SectionId; label: str
 
 const navItems = navGroups.flatMap((group) => group.items);
 
-const collectionMeta: Record<string, { label: string; type: "gachas" | "honors" | "materials" | "costumes" | "stamps" | "comics" }> = {
+const collectionMeta = {
   gachas: { label: "卡池图鉴", type: "gachas" },
   honors: { label: "称号图鉴", type: "honors" },
   materials: { label: "素材图鉴", type: "materials" },
   costumes: { label: "服装图鉴", type: "costumes" },
-  stamps: { label: "贴图/漫画", type: "stamps" }
-};
+  stamps: { label: "贴纸图鉴", type: "stamps" },
+  comics: { label: "漫画图鉴", type: "comics" }
+} as const;
+
+const catalogFilterKeys = [
+  "eventTypes", "eventUnits", "bonusCharacterIds", "bannerCharacterIds", "bonusAttributes",
+  "musicTags", "categories", "characterIds", "units", "supportUnits", "attributes", "rarities",
+  "supplyTypes", "skillTypes", "gachaTypes", "honorTypes", "materialTypes", "partTypes",
+  "sources", "genders", "stampTypes", "comicTypes"
+];
+
+const catalogToggleKeys = ["groupOnce", "usableOnly", "relatedOnly"];
+
+function favoriteTypeForCatalog(type: string): FavoriteType {
+  return ({ songs: "song", cards: "card", events: "event", gachas: "gacha", honors: "honor", materials: "material", costumes: "costume", stamps: "stamp", comics: "comic" } as Record<string, FavoriteType>)[type];
+}
 
 function formatNumber(value?: number | null) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
@@ -438,8 +458,11 @@ export function App() {
   const rankingRequestInFlight = useRef(false);
   const [message, setMessage] = useState("准备就绪");
   const [filter, setFilter] = useState("");
+  const [debouncedFilter, setDebouncedFilter] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(24);
+  const [catalogFilters, setCatalogFilters] = useState<Record<string, string[]>>({});
+  const [catalogToggles, setCatalogToggles] = useState<Record<string, boolean>>({});
   const [collections, setCollections] = useState<Record<string, CollectionResponse>>({});
   const [catalogs, setCatalogs] = useState<Record<string, CatalogResponse<any>>>({});
   const catalogAborts = useRef(new Map<string, AbortController>());
@@ -468,7 +491,6 @@ export function App() {
   const [selectedSong, setSelectedSong] = useState<FullSong | null>(null);
   const [selectedCard, setSelectedCard] = useState<FullCard | null>(null);
   const [skillLevel, setSkillLevel] = useState<1 | 2 | 3 | 4>(4);
-  const [costumeFilters, setCostumeFilters] = useState({ partType: "", source: "", rarity: "", gender: "", characterId: "" });
   const [selectedEvent, setSelectedEvent] = useState<FullEvent | null>(null);
   const [selectedCollection, setSelectedCollection] = useState<{ item: CollectionItem; assets: AssetInfo; relations?: { relatedCards?: Card[] } } | null>(null);
   const [selectedChart, setSelectedChart] = useState<{ musicId: string; title: string; detail: DifficultyDetail } | null>(null);
@@ -579,13 +601,38 @@ export function App() {
     return id && navItems.some((item) => item.id === id) ? id : undefined;
   }, [location.pathname]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (routeSection) {
       setActiveSection(routeSection);
-      setFilter("");
-      setPage(1);
+      const params = new URLSearchParams(location.search);
+      setFilter(params.get("q") ?? "");
+      setPage(Math.max(1, Number(params.get("page") ?? 1) || 1));
+      setPageSize(Math.max(1, Number(params.get("pageSize") ?? 24) || 24));
+      setCatalogFilters(Object.fromEntries(catalogFilterKeys.flatMap((key) => {
+        const values = params.getAll(key).flatMap((value) => value.split(",")).map((value) => value.trim()).filter(Boolean);
+        return values.length ? [[key, [...new Set(values)]]] : [];
+      })));
+      setCatalogToggles(Object.fromEntries(catalogToggleKeys.map((key) => [key, params.get(key) === "true"])));
     }
-  }, [routeSection]);
+  }, [routeSection, location.search]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedFilter(filter), 250);
+    return () => window.clearTimeout(timer);
+  }, [filter]);
+
+  useEffect(() => {
+    const isCatalog = activeSection === "historyEvents" || activeSection === "songs" || activeSection === "cards" || activeSection in collectionMeta;
+    if (!isCatalog || !location.pathname.startsWith("/section/")) return;
+    const params = new URLSearchParams();
+    if (filter.trim()) params.set("q", filter.trim());
+    if (page > 1) params.set("page", String(page));
+    if (pageSize !== 24) params.set("pageSize", String(pageSize));
+    for (const [key, values] of Object.entries(catalogFilters)) if (values.length) params.set(key, values.join(","));
+    for (const [key, value] of Object.entries(catalogToggles)) if (value) params.set(key, "true");
+    const next = params.toString() ? `?${params}` : "";
+    if (next !== location.search) navigate(`${location.pathname}${next}`, { replace: true });
+  }, [activeSection, filter, page, pageSize, catalogFilters, catalogToggles, location.pathname, location.search, navigate]);
 
   useEffect(() => {
     loadBase(region).catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
@@ -619,17 +666,16 @@ export function App() {
 
   useEffect(() => {
     if (activeSection in collectionMeta) {
-      const type = collectionMeta[activeSection].type;
+      const type = collectionMeta[activeSection as keyof typeof collectionMeta].type;
       loadCatalog(type).catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
-      if (activeSection === "stamps") loadCatalog("comics").catch(() => undefined);
     }
     if (activeSection === "songs" || activeSection === "cards") loadCatalog(activeSection).catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
     if (["tools", "deckCompare"].includes(activeSection)) ensureFullToolData().catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
-    if (activeSection === "historyEvents") ensureEvents().catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
+    if (activeSection === "historyEvents") loadCatalog("events").catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
     if (["information", "exchanges", "missions", "mysekai"].includes(activeSection)) {
       loadContent(activeSection).catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
     }
-  }, [activeSection, region, page, pageSize, filter, costumeFilters.partType, costumeFilters.source, costumeFilters.rarity, costumeFilters.gender, costumeFilters.characterId]);
+  }, [activeSection, region, page, pageSize, debouncedFilter, catalogFilters, catalogToggles]);
 
   useEffect(() => {
     if (activeSection === "mysekai") {
@@ -689,9 +735,10 @@ export function App() {
     const controller = new AbortController();
     catalogAborts.current.set(type, controller);
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), sort: "id-desc" });
-    if (filter.trim()) params.set("q", filter.trim());
-    if (type === "costumes") Object.entries(costumeFilters).forEach(([key, value]) => { if (value) params.set(key, value); });
-    const path = `/api/master/${region}/catalog/${type}?${params}`;
+    if (debouncedFilter.trim()) params.set("q", debouncedFilter.trim());
+    for (const [key, values] of Object.entries(catalogFilters)) if (values.length) params.set(key, values.join(","));
+    for (const [key, value] of Object.entries(catalogToggles)) if (value) params.set(key, "true");
+    const path = `/api/master/${region}/catalogs/${type}?${params}`;
     const apply = (data: CatalogResponse<any>) => setCatalogs((current) => ({ ...current, [type]: data }));
     try {
       const data = await loadCachedCatalog<CatalogResponse<any>>(path, { signal: controller.signal, onCached: apply });
@@ -1382,34 +1429,51 @@ export function App() {
     );
   }
 
-  function CatalogPage({ type }: { type: "songs" | "cards" | keyof typeof collectionMeta }) {
+  function toggleCatalogFilter(key: string, value: string) {
+    setPage(1);
+    setCatalogFilters((current) => {
+      const values = current[key] ?? [];
+      const next = values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+      return { ...current, [key]: next };
+    });
+  }
+
+  function renderCatalogFilters(data: CatalogResponse<any>) {
+    return <CatalogFilterPanel
+      meta={data.filterMeta}
+      selected={catalogFilters}
+      toggles={catalogToggles}
+      total={data.total}
+      onToggle={toggleCatalogFilter}
+      onToggleBoolean={(key) => { setPage(1); setCatalogToggles((current) => ({ ...current, [key]: !current[key] })); }}
+      onClear={() => { setPage(1); setCatalogFilters({}); setCatalogToggles({}); }}
+    />;
+  }
+
+  function CatalogPage({ type }: { type: "events" | "songs" | "cards" | keyof typeof collectionMeta }) {
+    if (type === "events") {
+      const pageData = catalogs.events ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
+      return <section className="panel wide"><div className="panel-heading"><div><h2>活动图鉴</h2><p>浏览历次活动、加成角色与相关资料。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索活动名称或 ID" /></div>{renderCatalogFilters(pageData)}<div className="catalog-grid cards">{pageData.items.map((eventItem: EventInfo) => { const candidates = imageCandidates(eventItem.assets); return <article key={`${region}:event:${eventItem.id}`} className="catalog-card card-card"><button type="button" className="catalog-card-main" onClick={() => openEvent(eventItem.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={eventItem.name} variant="wide" /><strong>{eventItem.name}</strong><span>{eventItem.eventType ?? "活动"}{eventItem.eventUnit ? ` · ${eventItem.eventUnit}` : ""}</span><small>{formatDate(eventItem.startAt)} · ID {eventItem.id}</small></button><FavoriteButton compact type="event" region={region} targetId={eventItem.id} label={eventItem.name} /></article>; })}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
+    }
     if (type === "songs") {
       const pageData = catalogs.songs ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
-      return <section className="panel wide"><div className="panel-heading"><div><h2>歌曲图鉴</h2><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={setFilter} placeholder="搜索歌曲、ID、分类" /></div><div className="catalog-grid songs">{pageData.items.map((song: Song, index: number) => <button key={`${region}:song:${song.id}`} type="button" className="catalog-card song-card" onClick={() => openSong(song.id)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span><strong>{song.title}</strong><small>{song.unit} / ID {song.id}</small></span><small>{song.durationSeconds ? `${song.durationSeconds}s` : "时长待同步"}</small></button>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h2>歌曲图鉴</h2><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索歌曲、ID、分类" /></div>{renderCatalogFilters(pageData)}<div className="catalog-grid songs">{pageData.items.map((song: Song, index: number) => <article key={`${region}:song:${song.id}`} className="catalog-card song-card"><button type="button" className="catalog-card-main" onClick={() => openSong(song.id)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span><strong>{song.title}</strong><small>{song.unit} / ID {song.id}</small></span><small>{song.durationSeconds ? `${song.durationSeconds}s` : "时长待同步"}</small></button><FavoriteButton compact type="song" region={region} targetId={song.id} label={song.title} /></article>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
     }
     if (type === "cards") {
       const pageData = catalogs.cards ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
-      return <section className="panel wide"><div className="panel-heading"><div><h2>卡牌图鉴</h2><p>浏览卡面、角色信息与各等级技能效果。</p></div><SearchBox value={filter} onChange={setFilter} placeholder="搜索角色、卡名、属性" /></div><div className="catalog-grid cards">{pageData.items.map((card: Card, index: number) => <button key={`${region}:card:${card.id}`} type="button" className="catalog-card card-card" onClick={() => openCard(card.id)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates} label={card.title} variant="square" eager={index < 8} /><strong>{card.title}</strong><span>{card.character}</span><small>星级 {card.rarity} / {card.attribute} / ID {card.id}</small></button>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h2>卡牌图鉴</h2><p>浏览卡面、角色信息与各等级技能效果。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索角色、卡名、属性" /></div>{renderCatalogFilters(pageData)}<div className="catalog-grid cards">{pageData.items.map((card: Card, index: number) => <article key={`${region}:card:${card.id}`} className="catalog-card card-card"><button type="button" className="catalog-card-main" onClick={() => openCard(card.id)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates} label={card.title} variant="square" eager={index < 8} /><strong>{card.title}</strong><span>{card.character}</span><small>星级 {card.rarity} / {card.attribute} / ID {card.id}</small></button><FavoriteButton compact type="card" region={region} targetId={card.id} label={card.title} /></article>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
     }
     const collectionType = collectionMeta[type].type;
     const activeCollection = catalogs[collectionType];
     const pageData = activeCollection ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
-    const comicItems = catalogs.comics?.items ?? [];
     return (
       <section className="panel wide">
-        <div className="panel-heading"><div><h2>{collectionMeta[type].label}</h2><p>按名称、分类和 ID 浏览。</p></div><SearchBox value={filter} onChange={setFilter} placeholder="搜索名称、分类、ID" /></div>
-        {collectionType === "costumes" && <div className="catalog-filter-row">
-          <select value={costumeFilters.partType} onChange={(event) => { setPage(1); setCostumeFilters((value) => ({ ...value, partType: event.target.value })); }}><option value="">全部部件</option><option value="body">衣装</option><option value="hair">发型</option><option value="head">头饰</option></select>
-          <select value={costumeFilters.source} onChange={(event) => { setPage(1); setCostumeFilters((value) => ({ ...value, source: event.target.value })); }}><option value="">全部来源</option><option value="card">卡牌</option><option value="shop">商店</option><option value="other">其他</option></select>
-          <select value={costumeFilters.rarity} onChange={(event) => { setPage(1); setCostumeFilters((value) => ({ ...value, rarity: event.target.value })); }}><option value="">全部稀有度</option><option value="rare">稀有</option><option value="normal">普通</option></select>
-          <select value={costumeFilters.gender} onChange={(event) => { setPage(1); setCostumeFilters((value) => ({ ...value, gender: event.target.value })); }}><option value="">全部性别</option><option value="female">女性</option><option value="male">男性</option></select>
-          <input inputMode="numeric" value={costumeFilters.characterId} onChange={(event) => { setPage(1); setCostumeFilters((value) => ({ ...value, characterId: event.target.value.replace(/\D/g, "") })); }} placeholder="角色 ID" />
-        </div>}
+        <div className="panel-heading"><div><h2>{collectionMeta[type].label}</h2><p>按名称、分类和 ID 浏览。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索名称、分类、ID" /></div>
+        {renderCatalogFilters(pageData)}
         <div className="catalog-grid cards">{pageData.items.map((item: CollectionItem) => {
           const candidates = imageCandidates(item.assets);
-          return <button key={`${region}:${collectionType}:${item.id}`} type="button" className={`catalog-card card-card ${collectionType === "honors" ? "honor-card" : ""}`} onClick={() => openCollection(collectionType, item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionType === "honors" ? "wide" : "square"} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : item.category ?? item.rarity ?? "详细资料"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button>;
+          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card card-card ${collectionType === "honors" ? "honor-card" : ""}`}><button type="button" className="catalog-card-main" onClick={() => openCollection(collectionType, item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionType === "honors" || collectionType === "comics" ? "wide" : "square"} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : item.category ?? item.rarity ?? "详细资料"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
         })}</div>
-        {type === "stamps" && <><div className="panel-heading compact-heading collection-subheading"><div><h3>漫画</h3><p>浏览游戏内漫画内容。</p></div></div>{comicItems.length > 0 ? <div className="catalog-grid cards">{comicItems.slice(0, 96).map((item: CollectionItem) => { const candidates = imageCandidates(item.assets); return <button key={`${region}:comic:${item.id}`} type="button" className="catalog-card card-card" onClick={() => openCollection("comics", item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant="wide" /><strong>{item.name}</strong><span>{item.category ?? "漫画"}</span><small>ID {item.id}</small></button>; })}</div> : <p className="empty-state">该区服漫画暂不可用或暂无数据。</p>}</>}
         <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </section>
     );
@@ -2441,8 +2505,8 @@ export function App() {
     if (activeSection === "currentEvent") return <RankingPage />;
     if (activeSection === "forecast") return <ForecastPage />;
     if (activeSection === "profile") return <ProfilePage />;
-    if (activeSection === "historyEvents") return HistoryPage();
-    if (activeSection === "songs" || activeSection === "cards" || activeSection in collectionMeta) return <CatalogPage type={activeSection as any} />;
+    if (activeSection === "historyEvents") return CatalogPage({ type: "events" });
+    if (activeSection === "songs" || activeSection === "cards" || activeSection in collectionMeta) return CatalogPage({ type: activeSection as any });
     if (activeSection === "tools") return <ToolsPage />;
     if (activeSection === "deckCompare") return <DeckComparePage />;
     if (activeSection === "share") return <SharePage />;
@@ -2475,7 +2539,10 @@ export function App() {
           <div className="nav-group">
             <span className="nav-group-title">账号</span>
             {auth.isAuthenticated ? (
-              <NavLink to="/me" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><UserRound size={18} />个人信息管理</NavLink>
+              <>
+                <NavLink to="/me" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><UserRound size={18} />个人信息管理</NavLink>
+                <NavLink to="/me/favorites" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><Star size={18} />我的收藏</NavLink>
+              </>
             ) : (
               <>
                 <NavLink to="/login" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><LogIn size={18} />登录</NavLink>
@@ -2501,6 +2568,7 @@ export function App() {
           <Route path="/me/assets" element={<RequireAuth><AssetsPage /></RequireAuth>} />
           <Route path="/me/deck" element={<RequireAuth><BoundDeckPage eventId={event?.id === "none" ? undefined : event?.id} /></RequireAuth>} />
           <Route path="/me/scores" element={<RequireAuth><ScoresPage songs={songs} region={region} /></RequireAuth>} />
+          <Route path="/me/favorites" element={<RequireAuth><FavoritesPage /></RequireAuth>} />
           <Route path="/" element={LegacySections()} />
           <Route path="/section/virtualLives" element={<VirtualLiveCatalogPage region={region} />} />
           <Route path="/section/virtualLives/:virtualLiveId" element={<VirtualLiveDetailPage region={region} />} />
@@ -2522,6 +2590,7 @@ export function App() {
 
       {selectedSong && (
         <DetailDrawer title={selectedSong.music.title} onClose={() => setSelectedSong(null)}>
+          <FavoriteButton type="song" region={region} targetId={selectedSong.music.id} label={selectedSong.music.title} />
           <div className="detail-hero"><ArtImage src={stringAsset(selectedSong.assets, "jacketUrl")} label={selectedSong.music.title} /><div><strong>{selectedSong.music.title}</strong><span>ID {selectedSong.music.id}</span><p>{selectedSong.music.categories?.join(" / ") || selectedSong.music.unit}</p><small>时长 {selectedSong.music.durationSeconds ?? "-"}s / BPM {selectedSong.music.bpm ?? "-"}</small></div></div>
           <h3>谱面</h3><div className="difficulty-grid">{(selectedSong.music.difficultyDetails ?? []).map((detail) => <button key={detail.difficulty} type="button" className="difficulty-card" onClick={() => setSelectedChart({ musicId: selectedSong.music.id, title: selectedSong.music.title, detail })}><span>{detail.difficulty}</span><strong>Lv.{detail.playLevel}</strong><small>{formatNumber(detail.totalNoteCount)} notes</small></button>)}</div>
         </DetailDrawer>
@@ -2529,6 +2598,7 @@ export function App() {
       {selectedChart && <DetailDrawer title={`${selectedChart.title} / ${selectedChart.detail.difficulty}`} onClose={() => setSelectedChart(null)}><RealChartPreview region={region} musicId={selectedChart.musicId} difficulty={selectedChart.detail.difficulty} fallbackTitle={selectedChart.title} fallbackLevel={selectedChart.detail.playLevel} fallbackNotes={selectedChart.detail.totalNoteCount} formatNumber={(value) => formatNumber(value)} /></DetailDrawer>}
       {selectedCard && (
         <DetailDrawer title={selectedCard.card.title} onClose={() => setSelectedCard(null)} elevated={Boolean(selectedCollection || selectedEvent)}>
+          <FavoriteButton type="card" region={region} targetId={selectedCard.card.id} label={selectedCard.card.title} />
           <div className="detail-hero card-detail"><div><strong>{selectedCard.card.character}</strong><span>ID {selectedCard.card.id}</span><p>{selectedCard.card.title}</p><small>星级 {selectedCard.card.rarity} / {selectedCard.card.attribute}</small></div></div>
           <section className="card-art-grid">
             <article>
@@ -2547,6 +2617,7 @@ export function App() {
       )}
       {selectedEvent && (
         <DetailDrawer title={selectedEvent.event.name} onClose={() => setSelectedEvent(null)}>
+          <FavoriteButton type="event" region={region} targetId={selectedEvent.event.id} label={selectedEvent.event.name} />
           <div className="detail-hero"><ArtImage src={stringAsset(selectedEvent.assets, "bannerUrl")} label={selectedEvent.event.name} /><div><strong>{selectedEvent.event.name}</strong><span>{formatDate(selectedEvent.event.startAt)} - {formatDate(selectedEvent.event.endAt)}</span><p>{selectedEvent.event.storyOutline ?? "真实剧情简介暂不可用。"}</p></div></div>
           <section className="compact-list"><h3>相关歌曲</h3>{selectedEvent.relations.relatedSongs.map((song) => <div key={song.id}><span>{song.title}</span><button type="button" onClick={() => openSong(song.id)}>歌曲详情</button></div>)}</section>
           <section className="related-card-grid">{selectedEvent.relations.relatedCards.map((card) => renderRelatedCardTile(card, `${region}:event-card:${card.id}`))}</section>
@@ -2554,6 +2625,7 @@ export function App() {
       )}
       {selectedCollection && (
         <DetailDrawer title={selectedCollection.item.name} onClose={() => setSelectedCollection(null)}>
+          <FavoriteButton type={favoriteTypeForCatalog(selectedCollection.item.type)} region={region} targetId={selectedCollection.item.id} label={selectedCollection.item.name} />
           <div className={`detail-hero ${selectedCollection.item.type === "honors" ? "honor-detail" : ""}`}><ArtImage src={imageCandidates(selectedCollection.assets, true)[0]} srcCandidates={imageCandidates(selectedCollection.assets, true)} label={selectedCollection.item.name} variant={selectedCollection.item.type === "honors" || selectedCollection.item.type === "comics" ? "wide" : "square"} /><div><strong>{selectedCollection.item.name}</strong><span>ID {selectedCollection.item.id}</span><p>{selectedCollection.item.description ?? selectedCollection.item.category ?? "暂无更多说明"}</p><small>{formatDate(selectedCollection.item.startAt)} - {formatDate(selectedCollection.item.endAt)}</small></div></div>
           {selectedCollection.item.type === "costumes" && <section className="costume-detail-grid"><div><h3>服装信息</h3><p>部件：{selectedCollection.item.partTypes?.join(" / ") || "缺失"}</p><p>来源：{selectedCollection.item.source ?? "未知"} / 稀有度：{selectedCollection.item.rarity ?? "未知"}</p><p>性别：{selectedCollection.item.gender ?? "未知"}{selectedCollection.item.designer ? ` / 设计：${selectedCollection.item.designer}` : ""}</p><p>适用角色：{selectedCollection.item.characterIds?.join("、") || "未提供"}</p></div><div><h3>颜色与部件</h3>{Object.entries(selectedCollection.item.parts ?? {}).map(([partType, variants]) => <div key={partType} className="costume-part"><strong>{partType}</strong><span>{variants.map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}{(selectedCollection.item.extraParts ?? []).map((part, index) => <div key={`${part.characterId}-${part.partType}-${index}`} className="costume-part"><strong>{part.partType ?? "extra"} / 角色 {part.characterId ?? "-"}</strong><span>{(part.variants ?? []).map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}</div></section>}
           <section className="related-card-grid">{(selectedCollection.relations?.relatedCards ?? []).slice(0, 30).map((card) => renderRelatedCardTile(card, `${region}:collection-card:${card.id}`))}</section>

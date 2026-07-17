@@ -1,6 +1,34 @@
 import type { RegionId } from "./config.js";
 
-export type FavoriteType = "player" | "event" | "song" | "card";
+export type FavoriteType =
+  | "player"
+  | "event"
+  | "song"
+  | "card"
+  | "gacha"
+  | "honor"
+  | "material"
+  | "costume"
+  | "stamp"
+  | "comic";
+
+export interface FavoriteFolder {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FavoriteTargetSummary {
+  id: string;
+  type: FavoriteType;
+  displayName: string;
+  secondaryText?: string;
+  imageCandidates: string[];
+  available: boolean;
+}
 
 export interface UserAccount {
   id: string;
@@ -66,7 +94,10 @@ export interface Favorite {
   region: RegionId;
   targetId: string;
   label: string;
+  folderIds: string[];
   createdAt: string;
+  updatedAt: string;
+  target?: FavoriteTargetSummary;
 }
 
 export interface ScoreRecord {
@@ -267,6 +298,8 @@ export interface MusicMeta {
 
 export interface Card {
   id: string;
+  cardSupplyId?: string;
+  cardSupplyType?: string;
   characterId?: string;
   character: string;
   characterUnit?: string;

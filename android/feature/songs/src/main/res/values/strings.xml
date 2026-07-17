@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="songs_title">&#x6B4C;&#x66F2;</string>
+    <string name="songs_search">&#x641C;&#x7D22;&#x6B4C;&#x66F2;&#x3001;ID &#x6216;&#x521B;&#x4F5C;&#x4EBA;</string>
+    <string name="songs_all_categories">&#x5168;&#x90E8;&#x7C7B;&#x522B;</string>
+    <string name="songs_category_mv">MV</string>
+    <string name="songs_category_mv_2d">2D MV</string>
+    <string name="songs_detail">&#x6B4C;&#x66F2;&#x8BE6;&#x60C5;</string>
+    <string name="songs_chart">&#x771F;&#x5B9E;&#x8C31;&#x9762;</string>
+    <string name="songs_previous">&#x4E0A;&#x4E00;&#x9875;</string>
+    <string name="songs_next">&#x4E0B;&#x4E00;&#x9875;</string>
+    <string name="songs_refresh">&#x5237;&#x65B0;</string>
+    <string name="songs_sort">&#x6392;&#x5E8F;</string>
+    <string name="songs_sort_newest">&#x6700;&#x65B0;&#x53D1;&#x5E03;</string>
+    <string name="songs_sort_oldest">&#x6700;&#x65E9;&#x53D1;&#x5E03;</string>
+    <string name="songs_sort_name">&#x540D;&#x79F0;</string>
+    <string name="songs_close">&#x5173;&#x95ED;</string>
+    <string name="songs_select_detail">&#x9009;&#x62E9;&#x6B4C;&#x66F2;&#x67E5;&#x770B;&#x8BE6;&#x60C5;</string>
+    <string name="songs_item_meta">%1$s &#xB7; %2$s &#xB7; ID %3$s</string>
+    <string name="songs_published">&#x53D1;&#x5E03;&#x65E5;&#x671F;&#xFF1A;%1$s</string>
+    <string name="songs_duration">&#x65F6;&#x957F;&#xFF1A;%1$d:%2$02d</string>
+    <string name="songs_lyricist">&#x4F5C;&#x8BCD;&#xFF1A;%1$s</string>
+    <string name="songs_composer">&#x4F5C;&#x66F2;&#xFF1A;%1$s</string>
+    <string name="songs_arranger">&#x7F16;&#x66F2;&#xFF1A;%1$s</string>
+    <string name="songs_difficulties">&#x96BE;&#x5EA6;</string>
+    <string name="songs_chart_description">&#x771F;&#x5B9E;&#x8C31;&#x9762;</string>
+    <string name="songs_chart_unavailable">&#x5F53;&#x524D;&#x96BE;&#x5EA6;&#x6682;&#x65E0;&#x53EF;&#x7528;&#x8C31;&#x9762;&#x8D44;&#x6E90;</string>
+    <string name="songs_chart_reset">&#x91CD;&#x7F6E;&#x89C6;&#x56FE;</string>
+    <string name="songs_chart_fullscreen">&#x5168;&#x5C4F;&#x67E5;&#x770B;</string>
+    <string name="songs_filters">&#x9AD8;&#x7EA7;&#x7B5B;&#x9009;</string>
+    <string name="songs_filter_clear">&#x6E05;&#x7A7A;&#x5168;&#x90E8;</string>
+    <string name="songs_filter_done">&#x5B8C;&#x6210;</string>
+    <string name="songs_filter_unavailable">&#x7B5B;&#x9009;&#x6570;&#x636E;&#x672A;&#x7F13;&#x5B58;</string>
+    <string name="songs_favorite">&#x6536;&#x85CF;&#x6B4C;&#x66F2;</string>
+</resources>

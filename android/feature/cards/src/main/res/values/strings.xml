@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cards_title">&#x5361;&#x724C;</string>
+    <string name="cards_search">&#x641C;&#x7D22;&#x5361;&#x724C;&#x3001;&#x89D2;&#x8272;&#x6216; ID</string>
+    <string name="cards_detail">&#x5361;&#x724C;&#x8BE6;&#x60C5;</string>
+    <string name="cards_previous">&#x4E0A;&#x4E00;&#x9875;</string>
+    <string name="cards_next">&#x4E0B;&#x4E00;&#x9875;</string>
+    <string name="cards_normal">&#x666E;&#x901A;</string>
+    <string name="cards_trained">&#x7279;&#x8BAD;&#x540E;</string>
+    <string name="cards_refresh">&#x5237;&#x65B0;</string>
+    <string name="cards_sort">&#x6392;&#x5E8F;</string>
+    <string name="cards_sort_newest">ID &#x4ECE;&#x65B0;&#x5230;&#x65E7;</string>
+    <string name="cards_sort_oldest">ID &#x4ECE;&#x65E7;&#x5230;&#x65B0;</string>
+    <string name="cards_sort_name">&#x540D;&#x79F0;</string>
+    <string name="cards_close">&#x5173;&#x95ED;</string>
+    <string name="cards_select_detail">&#x9009;&#x62E9;&#x5361;&#x724C;&#x67E5;&#x770B;&#x8BE6;&#x60C5;</string>
+    <string name="cards_all_attributes">&#x5168;&#x90E8;&#x5C5E;&#x6027;</string>
+    <string name="cards_attribute_cool">&#x5E05;&#x6C14;</string>
+    <string name="cards_attribute_cute">&#x53EF;&#x7231;</string>
+    <string name="cards_attribute_happy">&#x6D3B;&#x529B;</string>
+    <string name="cards_attribute_mysterious">&#x795E;&#x79D8;</string>
+    <string name="cards_attribute_pure">&#x7EAF;&#x771F;</string>
+    <string name="cards_rarity">%1$s&#x2605;</string>
+    <string name="cards_item_meta">%1$s &#xB7; %2$d&#x2605; &#xB7; %3$s</string>
+    <string name="cards_detail_meta">%1$s &#xB7; %2$d&#x2605; &#xB7; %3$s\n%4$s &#xB7; ID %5$s</string>
+    <string name="cards_skill">&#x6280;&#x80FD;</string>
+    <string name="cards_training_skill">&#x7279;&#x8BAD;&#x540E;&#x6280;&#x80FD;</string>
+    <string name="cards_skill_missing">&#x6280;&#x80FD;&#x6570;&#x636E;&#x4E0D;&#x5B8C;&#x6574;&#xFF1A;%1$s</string>
+    <string name="cards_related_events">&#x5173;&#x8054;&#x6D3B;&#x52A8;</string>
+    <string name="cards_related_gachas">&#x5173;&#x8054;&#x5361;&#x6C60;</string>
+    <string name="cards_unknown">&#x672A;&#x77E5;</string>
+    <string name="cards_filters">&#x9AD8;&#x7EA7;&#x7B5B;&#x9009;</string>
+    <string name="cards_filter_clear">&#x6E05;&#x7A7A;&#x5168;&#x90E8;</string>
+    <string name="cards_filter_done">&#x5B8C;&#x6210;</string>
+    <string name="cards_filter_unavailable">&#x7B5B;&#x9009;&#x6570;&#x636E;&#x672A;&#x7F13;&#x5B58;</string>
+    <string name="cards_favorite">&#x6536;&#x85CF;&#x5361;&#x724C;</string>
+</resources>

@@ -2015,6 +2015,7 @@ export function isAllowedExternalAssetUrl(value: string) {
       "storage.exmeaning.com",
       "storage.pjsk.moe",
       "moe.exmeaning.com",
+      "charts-new.unipjsk.com",
       "production-web.sekai.colorfulpalette.org",
       "lf3-mkcncdn-tos.dailygn.com"
     ]);

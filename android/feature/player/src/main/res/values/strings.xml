@@ -1,0 +1,1 @@
+<resources><string name="player_title">玩家查询</string><string name="player_uid">玩家 UID</string><string name="player_query">查询</string><string name="player_refresh">刷新资料</string><string name="player_uid_error">请输入 10 至 20 位数字 UID</string><string name="player_hint">公开资料由当前区服的数据源提供。</string></resources>

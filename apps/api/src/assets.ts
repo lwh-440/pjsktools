@@ -85,7 +85,8 @@ function moeAssetUrlPair(region: RegionId, assetPath: string) {
   return [moeAssetUrl(region, assetPath), moeOverseasAssetUrl(region, assetPath)];
 }
 
-function proxiedAssetUrl(url: string) {
+export function proxiedAssetUrl(url: string) {
+  if (url.startsWith("/api/")) return url;
   return `/api/assets/proxy?url=${encodeURIComponent(url)}`;
 }
 

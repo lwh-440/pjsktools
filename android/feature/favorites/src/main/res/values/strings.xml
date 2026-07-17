@@ -1,0 +1,33 @@
+<resources>
+    <string name="favorites_title">&#x6211;&#x7684;&#x6536;&#x85CF;</string>
+    <string name="favorites_back">&#x8FD4;&#x56DE;</string>
+    <string name="favorites_login_required">&#x767B;&#x5F55;&#x540E;&#x53EF;&#x4E0E;&#x7F51;&#x9875;&#x7AEF;&#x540C;&#x6B65;&#x6536;&#x85CF;</string>
+    <string name="favorites_login">&#x53BB;&#x767B;&#x5F55;</string>
+    <string name="favorites_refresh">&#x5237;&#x65B0;</string>
+    <string name="favorites_search">&#x641C;&#x7D22;&#x540D;&#x79F0;&#x6216; ID</string>
+    <string name="favorites_all">&#x5168;&#x90E8;</string>
+    <string name="favorites_unfiled">&#x672A;&#x5206;&#x7C7B;</string>
+    <string name="favorites_new_folder">&#x65B0;&#x6536;&#x85CF;&#x5939;</string>
+    <string name="favorites_create">&#x521B;&#x5EFA;</string>
+    <string name="favorites_rename">&#x4FDD;&#x5B58;&#x6539;&#x540D;</string>
+    <string name="favorites_delete">&#x5220;&#x9664;</string>
+    <string name="favorites_empty">&#x6682;&#x65E0;&#x6536;&#x85CF;</string>
+    <string name="favorites_unavailable">&#x76EE;&#x6807;&#x5DF2;&#x5931;&#x6548;&#xFF0C;&#x4ECD;&#x53EF;&#x6574;&#x7406;&#x6216;&#x5220;&#x9664;</string>
+    <string name="favorites_selected">&#x5DF2;&#x9009; %1$d &#x9879;</string>
+    <string name="favorites_add_folder">&#x52A0;&#x5165;&#x6536;&#x85CF;&#x5939;</string>
+    <string name="favorites_clear_selection">&#x53D6;&#x6D88;&#x9009;&#x62E9;</string>
+    <string name="favorites_bulk_add">&#x6DFB;&#x52A0;</string>
+    <string name="favorites_bulk_remove">&#x79FB;&#x9664;</string>
+    <string name="favorites_bulk_replace">&#x66FF;&#x6362;</string>
+    <string name="favorites_item_meta">%1$s &#xB7; %2$s &#xB7; ID %3$s</string>
+    <string name="favorite_type_player">&#x73A9;&#x5BB6;</string>
+    <string name="favorite_type_event">&#x6D3B;&#x52A8;</string>
+    <string name="favorite_type_song">&#x6B4C;&#x66F2;</string>
+    <string name="favorite_type_card">&#x5361;&#x724C;</string>
+    <string name="favorite_type_gacha">&#x5361;&#x6C60;</string>
+    <string name="favorite_type_honor">&#x79F0;&#x53F7;</string>
+    <string name="favorite_type_material">&#x7D20;&#x6750;</string>
+    <string name="favorite_type_costume">&#x670D;&#x88C5;</string>
+    <string name="favorite_type_stamp">&#x8D34;&#x56FE;</string>
+    <string name="favorite_type_comic">&#x6F2B;&#x753B;</string>
+</resources>
