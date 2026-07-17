@@ -1,4 +1,7 @@
 node_modules/
+pnpm-lock.yaml
+.cache/assets/
+apps/api/.cache/assets/
 dist/
 *.tsbuildinfo
 .env
@@ -15,9 +18,17 @@ apps/api/data/reference-master/
 apps/api/data/runtime-cache.json
 apps/api/data/*.tmp
 .gradle/
+.gradle-codex/
+.android-codex/
 build/
 android/local.properties
+android/.idea/
+android/.local-maven/
 artifacts/
+tools/*.jar
+.runtime/
+.acceptance-*.png
+.filter-*.png
 .agents/
 .claude/
 .codex/

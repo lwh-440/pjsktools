@@ -1,0 +1,37 @@
+name: Android
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npm run build -w apps/api
+      - run: npm run test -w apps/api
+      - run: node apps/api/dist/exportOpenApi.js
+      - name: Verify committed OpenAPI
+        run: git diff --exit-code -- apps/api/openapi/openapi.json
+      - name: Download OpenAPI Generator 7.12.0
+        run: mkdir -p tools && curl -fsSL https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/7.12.0/openapi-generator-cli-7.12.0.jar -o tools/openapi-generator-cli-7.12.0.jar
+      - name: Regenerate Android API
+        shell: pwsh
+        run: ./scripts/generate-android-api.ps1
+      - name: Verify generated Android API
+        run: git diff --exit-code -- android/core/api
+      - uses: gradle/actions/setup-gradle@v4
+      - working-directory: android
+        run: ./gradlew assembleDebug testDebugUnitTest lintDebug --stacktrace

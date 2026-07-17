@@ -162,8 +162,9 @@ function normalizeSnapshot(json: any, region: RegionId, sourceLine: RealtimeRank
   };
 }
 
-async function fetchFromLine(region: RegionId, path: "latest" | "worldlink-latest", sourceLine: RealtimeRankingLine, timeoutMs: number) {
-  const url = `${realtimeRankingHosts[sourceLine]}/${region}/${path}`;
+async function fetchFromLine(region: RegionId, path: "latest" | "worldlink-latest", sourceLine: RealtimeRankingLine, timeoutMs: number, gameCharacterId?: number) {
+  const query = path === "worldlink-latest" && gameCharacterId ? `?gameCharacterId=${encodeURIComponent(String(gameCharacterId))}` : "";
+  const url = `${realtimeRankingHosts[sourceLine]}/${region}/${path}${query}`;
   return normalizeSnapshot(await fetchJsonWithTimeout(url, timeoutMs), region, sourceLine, url);
 }
 
@@ -237,11 +238,11 @@ export async function fetchRealtimeLatest(region: RegionId) {
   }
 }
 
-export async function fetchRealtimeWorldLinkLatest(region: RegionId, timeoutMs = 30_000) {
+export async function fetchRealtimeWorldLinkLatest(region: RegionId, timeoutMs = 30_000, gameCharacterId?: number) {
   const errors: string[] = [];
   for (const line of ["main", "global"] as const) {
     try {
-      return { snapshot: await fetchFromLine(region, "worldlink-latest", line, timeoutMs), errors };
+      return { snapshot: await fetchFromLine(region, "worldlink-latest", line, timeoutMs, gameCharacterId), errors };
     } catch (error) {
       const status = (error as Error & { status?: number }).status;
       errors.push(`${line}: ${error instanceof Error ? error.message : String(error)}`);

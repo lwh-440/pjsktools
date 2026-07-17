@@ -357,7 +357,7 @@ function StructuredTableEditor({ fields, rows, onChange }: { fields: AssetField[
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
-  if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   return children;
 }
 
@@ -368,7 +368,8 @@ export function LoginPage() {
   const [notice, setNotice] = useState("");
   const location = useLocation();
   const navigate = useNavigate();
-  const from = (location.state as { from?: string } | null)?.from ?? "/me";
+  const returnTo = new URLSearchParams(location.search).get("returnTo");
+  const from = (returnTo?.startsWith("/") ? returnTo : undefined) ?? (location.state as { from?: string } | null)?.from ?? "/me";
   async function submitLogin() {
     await login(email, password);
     navigate(from, { replace: true });
@@ -455,6 +456,7 @@ function useToolContext(binding?: PlayerBinding, refreshKey = 0) {
 }
 
 const meTools = [
+  { to: "/me/favorites", title: "我的收藏", icon: Bookmark, desc: "创建收藏夹、查看未分类项目，并批量整理图鉴收藏。" },
   { to: "/me/profile", title: "玩家档案", icon: UserRound, desc: "查看角色 Rank、Challenge、Bonds、综合力加成与区域道具升级。" },
   { to: "/me/bindings", title: "UID 管理", icon: UserRound, desc: "参考 QuickBind / AccountSelector，管理默认 UID 和公开资料。" },
   { to: "/me/assets", title: "玩家资产", icon: Upload, desc: "结构化维护库存、区域道具、角色 Rank、歌曲成绩和 MySekai 数据。" },

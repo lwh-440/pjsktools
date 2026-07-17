@@ -1,0 +1,16 @@
+<resources>
+    <string name="account_title">&#x8D26;&#x53F7;</string>
+    <string name="account_login">&#x767B;&#x5F55;</string>
+    <string name="account_register">&#x6CE8;&#x518C;</string>
+    <string name="account_email">&#x90AE;&#x7BB1;</string>
+    <string name="account_password">&#x5BC6;&#x7801;</string>
+    <string name="account_code">&#x9A8C;&#x8BC1;&#x7801;</string>
+    <string name="account_send_code">&#x53D1;&#x9001;&#x9A8C;&#x8BC1;&#x7801;</string>
+    <string name="account_submit_login">&#x767B;&#x5F55;</string>
+    <string name="account_submit_register">&#x521B;&#x5EFA;&#x8D26;&#x53F7;</string>
+    <string name="account_logout">&#x9000;&#x51FA;&#x767B;&#x5F55;</string>
+    <string name="account_signed_in">&#x5DF2;&#x767B;&#x5F55;&#xFF1A;%1$s</string>
+    <string name="account_code_sent">&#x9A8C;&#x8BC1;&#x7801;&#x5DF2;&#x53D1;&#x9001;</string>
+    <string name="account_dev_code">&#x5F00;&#x53D1;&#x9A8C;&#x8BC1;&#x7801;&#xFF1A;%1$s</string>
+    <string name="account_back">&#x8FD4;&#x56DE;</string>
+</resources>

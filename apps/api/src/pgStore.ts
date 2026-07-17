@@ -10,6 +10,7 @@ import type {
   EmailVerificationCode,
   EmailVerificationPurpose,
   Favorite,
+  FavoriteFolder,
   IdempotencyRecord,
   OAuthAccount,
   OAuthProvider,
@@ -179,7 +180,20 @@ function rowToFavorite(row: any): Favorite {
     region: row.region,
     targetId: row.target_id,
     label: row.label,
-    createdAt: new Date(row.created_at).toISOString()
+    folderIds: Array.isArray(row.folder_ids) ? row.folder_ids.map(String) : [],
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at ?? row.created_at).toISOString()
+  };
+}
+
+function rowToFavoriteFolder(row: any): FavoriteFolder {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    description: row.description ?? undefined,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString()
   };
 }
 
@@ -392,17 +406,177 @@ export class PgStore implements AuthStore {
     return result.rows[0] ? rowToAuthState(result.rows[0]) : null;
   }
 
+  async listFavoriteFolders(userId: string) {
+    const result = await this.pool.query(
+      `select folder.*
+       from favorite_folders folder
+       where folder.user_id = $1
+       order by folder.updated_at desc`,
+      [userId]
+    );
+    return result.rows.map(rowToFavoriteFolder);
+  }
+
+  async createFavoriteFolder(input: Omit<FavoriteFolder, "id" | "createdAt" | "updatedAt">) {
+    try {
+      const result = await this.pool.query(
+        `insert into favorite_folders (user_id, name, description)
+         values ($1, trim($2), $3)
+         returning *`,
+        [input.userId, input.name, input.description ?? null]
+      );
+      return rowToFavoriteFolder(result.rows[0]);
+    } catch (error: any) {
+      if (error?.code === "23505") throw new Error("FOLDER_EXISTS");
+      throw error;
+    }
+  }
+
+  async updateFavoriteFolder(userId: string, id: string, patch: Pick<FavoriteFolder, "name"> & { description?: string }) {
+    try {
+      const result = await this.pool.query(
+        `update favorite_folders
+         set name = trim($3), description = $4, updated_at = now()
+         where user_id = $1 and id = $2
+         returning *`,
+        [userId, id, patch.name, patch.description ?? null]
+      );
+      return result.rows[0] ? rowToFavoriteFolder(result.rows[0]) : null;
+    } catch (error: any) {
+      if (error?.code === "23505") throw new Error("FOLDER_EXISTS");
+      throw error;
+    }
+  }
+
+  async deleteFavoriteFolder(userId: string, id: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const affected = await client.query(
+        `select items.favorite_id
+         from favorite_folder_items items
+         join favorite_folders folder on folder.id = items.folder_id
+         where folder.user_id = $1 and folder.id = $2`,
+        [userId, id]
+      );
+      const result = await client.query(`delete from favorite_folders where user_id = $1 and id = $2`, [userId, id]);
+      const favoriteIds = affected.rows.map((row) => row.favorite_id);
+      if (favoriteIds.length) await client.query(`update favorites set updated_at = now() where id = any($1::uuid[])`, [favoriteIds]);
+      await client.query("commit");
+      return (result.rowCount ?? 0) > 0;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async listFavorites(userId: string) {
-    const result = await this.pool.query(`select * from favorites where user_id = $1 order by created_at desc`, [userId]);
+    const result = await this.pool.query(
+      `select favorite.*,
+        coalesce(array_agg(items.folder_id) filter (where items.folder_id is not null), '{}') as folder_ids
+       from favorites favorite
+       left join favorite_folder_items items on items.favorite_id = favorite.id
+       where favorite.user_id = $1
+       group by favorite.id
+       order by favorite.updated_at desc`,
+      [userId]
+    );
     return result.rows.map(rowToFavorite);
   }
 
-  async addFavorite(input: Omit<Favorite, "id" | "createdAt">) {
-    const result = await this.pool.query(
-      `insert into favorites (user_id, type, region, target_id, label) values ($1, $2, $3, $4, $5) returning *`,
-      [input.userId, input.type, input.region, input.targetId, input.label]
-    );
-    return rowToFavorite(result.rows[0]);
+  async addFavorite(input: Omit<Favorite, "id" | "createdAt" | "updatedAt" | "target">) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const folderIds = [...new Set(input.folderIds)];
+      if (folderIds.length) {
+        const owned = await client.query(
+          `select id from favorite_folders where user_id = $1 and id = any($2::uuid[])`,
+          [input.userId, folderIds]
+        );
+        if (owned.rowCount !== folderIds.length) throw new Error("FOLDER_NOT_FOUND");
+      }
+      const result = await client.query(
+        `insert into favorites (user_id, type, region, target_id, label, updated_at)
+         values ($1, $2, $3, $4, $5, now())
+         on conflict (user_id, type, region, target_id)
+         do update set label = excluded.label, updated_at = now()
+         returning *`,
+        [input.userId, input.type, input.region, input.targetId, input.label]
+      );
+      const favoriteId = result.rows[0].id;
+      for (const folderId of folderIds) {
+        await client.query(
+          `insert into favorite_folder_items (folder_id, favorite_id)
+           values ($1, $2)
+           on conflict do nothing`,
+          [folderId, favoriteId]
+        );
+      }
+      await client.query("commit");
+      return (await this.listFavorites(input.userId)).find((favorite) => favorite.id === favoriteId)!;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateFavoriteFolders(userId: string, id: string, folderIds: string[]) {
+    const rows = await this.bulkUpdateFavoriteFolders(userId, [id], folderIds, "replace");
+    return rows[0] ?? null;
+  }
+
+  async bulkUpdateFavoriteFolders(userId: string, ids: string[], folderIds: string[], mode: "add" | "remove" | "replace") {
+    const uniqueIds = [...new Set(ids)];
+    const uniqueFolderIds = [...new Set(folderIds)];
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const favorites = await client.query(
+        `select id from favorites where user_id = $1 and id = any($2::uuid[]) for update`,
+        [userId, uniqueIds]
+      );
+      if (favorites.rowCount !== uniqueIds.length) throw new Error("FAVORITE_NOT_FOUND");
+      if (uniqueFolderIds.length) {
+        const folders = await client.query(
+          `select id from favorite_folders where user_id = $1 and id = any($2::uuid[])`,
+          [userId, uniqueFolderIds]
+        );
+        if (folders.rowCount !== uniqueFolderIds.length) throw new Error("FOLDER_NOT_FOUND");
+      }
+      if (mode === "replace") {
+        await client.query(`delete from favorite_folder_items where favorite_id = any($1::uuid[])`, [uniqueIds]);
+      } else if (mode === "remove" && uniqueFolderIds.length) {
+        await client.query(
+          `delete from favorite_folder_items
+           where favorite_id = any($1::uuid[]) and folder_id = any($2::uuid[])`,
+          [uniqueIds, uniqueFolderIds]
+        );
+      }
+      if ((mode === "replace" || mode === "add") && uniqueFolderIds.length) {
+        await client.query(
+          `insert into favorite_folder_items (folder_id, favorite_id)
+           select folder_id, favorite_id
+           from unnest($1::uuid[]) folder_id
+           cross join unnest($2::uuid[]) favorite_id
+           on conflict do nothing`,
+          [uniqueFolderIds, uniqueIds]
+        );
+      }
+      await client.query(`update favorites set updated_at = now() where id = any($1::uuid[])`, [uniqueIds]);
+      await client.query("commit");
+      const updated = await this.listFavorites(userId);
+      return updated.filter((favorite) => uniqueIds.includes(favorite.id));
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async deleteFavorite(userId: string, id: string) {

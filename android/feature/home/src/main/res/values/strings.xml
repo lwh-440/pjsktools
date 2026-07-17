@@ -1,0 +1,13 @@
+<resources>
+    <string name="home_title">工具台</string>
+    <string name="home_refresh">刷新首页</string>
+    <string name="home_workbench">工具台</string>
+    <string name="home_current_event">当前活动</string>
+    <string name="home_open_ranking">查看分数线</string>
+    <string name="home_signed_in">已登录 · %1$d 项收藏</string>
+    <string name="home_signed_out">未登录 · 收藏和绑定工具需要登录</string>
+    <string name="home_tools">工具与图鉴</string>
+    <string name="home_cached_players">玩家缓存</string>
+    <string name="home_song_count">歌曲数量</string>
+    <string name="home_card_count">卡牌数量</string>
+</resources>

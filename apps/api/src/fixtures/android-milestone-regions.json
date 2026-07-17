@@ -1,0 +1,8 @@
+{
+  "jp": { "id": "jp", "name": "日服", "availability": "matched" },
+  "en": { "id": "en", "name": "国际服", "availability": "matched" },
+  "tw": { "id": "tw", "name": "繁中服", "availability": "cache-stale" },
+  "kr": { "id": "kr", "name": "韩服", "availability": "matched" },
+  "cn": { "id": "cn", "name": "国服", "availability": "matched" },
+  "states": ["matched", "not-released", "missing-data", "cache-stale", "source-unavailable"]
+}

@@ -1,0 +1,12 @@
+{
+  "regions": ["jp", "en", "tw", "kr", "cn"],
+  "catalogs": ["songs", "cards", "gachas", "honors", "materials", "costumes", "stamps", "comics"],
+  "availability": {
+    "jp": "matched",
+    "en": "matched",
+    "tw": "cache-stale",
+    "kr": "matched",
+    "cn": "matched"
+  },
+  "states": ["matched", "not-released", "missing-data", "cache-stale", "source-unavailable"]
+}
