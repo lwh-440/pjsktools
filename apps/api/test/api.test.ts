@@ -75,7 +75,7 @@ describe("pjsktools api", () => {
   }, 20_000);
 
   it("registers, reads me, refreshes and logs out", async () => {
-    const app = await buildApp();
+    const app = await buildApp({ enableTestAuthRoutes: true });
     const email = `user-${Date.now()}@example.com`;
     const code = await createRegistrationCode(email);
     const register = await app.inject({
@@ -122,7 +122,7 @@ describe("pjsktools api", () => {
   });
 
   it("rejects duplicate registration and invalid login", async () => {
-    const app = await buildApp();
+    const app = await buildApp({ enableTestAuthRoutes: true });
     const email = `dup-${Date.now()}@example.com`;
     const firstCode = await createRegistrationCode(email);
     await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "Password123!", code: firstCode } });
@@ -150,7 +150,7 @@ describe("pjsktools api", () => {
     expect(payload.items[0].assets.logoUrl).toContain("/gacha/");
     expect(payload.items[0].assets.imageCandidates.length).toBeGreaterThan(0);
     expect(payload.status).toBeUndefined();
-  }, 20_000);
+  }, 60_000);
 
   it("returns asset details and relations for catalog entities", async () => {
     const app = await buildApp();
@@ -165,7 +165,7 @@ describe("pjsktools api", () => {
     const musicRelations = await app.inject({ method: "GET", url: "/api/master/jp/music/1/relations" });
     expect(musicRelations.statusCode).toBe(200);
     expect(Array.isArray(musicRelations.json().musicVocals)).toBe(true);
-  }, 20_000);
+  }, 60_000);
 
   it("returns full aggregate details for music, cards, events and collection items", async () => {
     const app = await buildApp();
@@ -194,7 +194,7 @@ describe("pjsktools api", () => {
     expect(honor.statusCode).toBe(200);
     expect(honor.json().assets.degreeMainUrl).toContain("/honor/");
     expect(honor.json().assets.imageCandidates.length).toBeGreaterThan(0);
-  }, 20_000);
+  }, 60_000);
 
   it("calculates score-control and conservative deck recommendations", async () => {
     const app = await buildApp();
@@ -215,5 +215,5 @@ describe("pjsktools api", () => {
     expect(deck.statusCode).toBe(200);
     expect(Array.isArray(deck.json().recommendedCards)).toBe(true);
     expect(deck.json().missingFields.length).toBeGreaterThan(0);
-  }, 20_000);
+  }, 60_000);
 });

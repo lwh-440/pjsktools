@@ -323,26 +323,80 @@ async function hydrateFavorite(favorite: Favorite) {
   return { ...favorite, label: target.available ? target.displayName : favorite.label, target };
 }
 
-async function resolveShareCardData(typeValue: string, id: string, region: RegionId): Promise<ShareCardData | null> {
+async function resolveShareCardData(
+  typeValue: string,
+  id: string,
+  region: RegionId,
+  profileResolver: typeof getPlayerProfileCached = getPlayerProfileCached
+): Promise<ShareCardData | null> {
+  if (!(["profile", "score", "event", "card", "song"] as string[]).includes(typeValue)) return null;
   const type = typeValue as ShareCardData["type"];
-  if (!["profile", "score", "event", "card", "song"].includes(type)) return null;
+  if (type === "profile") {
+    const profile = await profileResolver(region, id).catch(() => null);
+    if (!profile || profile.userId !== id) return null;
+    return {
+      type,
+      id,
+      region,
+      title: profile.nickname,
+      subtitle: `玩家等级 ${profile.rank}`,
+      detail: [profile.comment, `UID ${profile.userId}`].filter(Boolean).join(" · "),
+      sourceImageUrl: (profile as any).avatarUrl ?? (profile as any).userProfile?.avatarUrl
+    };
+  }
   if (type === "event") {
-    const event = await getEventDetail(region, id).catch(() => null) as any;
-    return { type, id, region, title: event?.name ?? `活动 ${id}`, subtitle: event?.storyOutline ?? "Project Sekai 活动资料", detail: event?.startAt && event?.endAt ? `${event.startAt} - ${event.endAt}` : `活动 ID ${id}` };
+    const event = await getEventDetail(region, id).catch(() => null);
+    if (!event) return null;
+    const assets = getEventAssetDetail(region, event);
+    return {
+      type,
+      id,
+      region,
+      title: event.name,
+      subtitle: event.storyOutline || event.eventType,
+      detail: `${event.startAt} - ${event.endAt}`,
+      sourceImageUrl: assets.bannerUrl
+    };
   }
   if (type === "card") {
-    const card = await getCardDetail(region, id).catch(() => null) as any;
-    return { type, id, region, title: card?.title ?? card?.name ?? `卡牌 ${id}`, subtitle: [card?.character, card?.attribute, card?.rarity ? `星级 ${card.rarity}` : undefined].filter(Boolean).join(" · ") || "Project Sekai 卡牌资料", detail: `卡牌 ID ${id}` };
+    const card = await getCardDetail(region, id).catch(() => null);
+    if (!card) return null;
+    return {
+      type,
+      id,
+      region,
+      title: card.title,
+      subtitle: [card.character, card.attribute, `星级 ${card.rarity}`].filter(Boolean).join(" · "),
+      detail: `卡牌 ID ${card.id}`,
+      sourceImageUrl: card.assets?.afterTrainingUrl ?? card.assets?.normalUrl
+    };
   }
   if (type === "song") {
-    const song = await getSongDetail(region, id).catch(() => null) as any;
-    return { type, id, region, title: song?.title ?? song?.name ?? `歌曲 ${id}`, subtitle: song?.unit ?? "Project Sekai 歌曲资料", detail: song?.durationSeconds ? `${song.durationSeconds} 秒 · 歌曲 ID ${id}` : `歌曲 ID ${id}` };
+    const song = await getSongDetail(region, id).catch(() => null);
+    if (!song) return null;
+    return {
+      type,
+      id,
+      region,
+      title: song.title,
+      subtitle: song.unit || "Project Sekai 歌曲资料",
+      detail: [song.durationSeconds ? `${song.durationSeconds} 秒` : undefined, `歌曲 ID ${song.id}`].filter(Boolean).join(" · "),
+      sourceImageUrl: song.assets?.jacketUrl
+    };
   }
-  if (type === "profile") {
-    const profile = await getPlayerProfileCached(region, id).catch(() => null) as any;
-    return { type, id, region, title: profile?.nickname ?? profile?.name ?? `玩家 ${id}`, subtitle: profile?.rank ? `玩家等级 ${profile.rank}` : "Project Sekai 玩家档案", detail: `UID ${id}` };
-  }
-  return { type, id, region, title: `歌曲成绩 ${id}`, subtitle: "Project Sekai 成绩分享", detail: `成绩记录 ${id}` };
+  const score = await store.getScoreById(id);
+  if (!score || score.region !== region) return null;
+  const song = await getSongDetail(score.region, score.songId).catch(() => null);
+  if (!song) return null;
+  return {
+    type,
+    id,
+    region: score.region,
+    title: song.title,
+    subtitle: `${score.difficulty.toUpperCase()} · ${score.clearStatus.toUpperCase()} · ${score.score.toLocaleString("en-US")}`,
+    detail: [score.targetScore == null ? undefined : `目标 ${score.targetScore.toLocaleString("en-US")}`, score.note].filter(Boolean).join(" · ") || `成绩记录 ${score.id}`,
+    sourceImageUrl: song.assets?.jacketUrl
+  };
 }
 
 const informationDocumentStyles = `html{color:#232833;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif}body{margin:0;padding:20px;line-height:1.75}img{display:block;max-width:100%;height:auto;margin:0 auto 18px}a{color:#26708f;overflow-wrap:anywhere}.information-pre,.information-body-element{font-size:15px}.information-body-heading{margin:28px 0 14px;padding:10px 14px;border-radius:6px;background:#eef2f5;font-size:20px}.information-body-element-heading{font-size:17px}.btn{display:inline-block;padding:10px 16px;border:1px solid #26708f;border-radius:6px;text-decoration:none}@media(max-width:480px){body{padding:14px}.information-body-heading{font-size:18px}}`;
@@ -645,8 +699,9 @@ function createSixDigitCode() {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
-function normalizeRedirectTo(value?: string) {
+export function normalizeRedirectTo(value?: string) {
   if (!value) return config.publicWebBaseUrl;
+  if (value === mobileQqRedirect) return mobileQqLoginState;
   if (value.startsWith("/")) return `${config.publicWebBaseUrl}${value}`;
   try {
     const target = new URL(value);
@@ -656,6 +711,13 @@ function normalizeRedirectTo(value?: string) {
     return config.publicWebBaseUrl;
   }
 }
+
+const mobileQqRedirect = "pjsktools://auth/qq";
+const mobileQqLoginState = "mobile-login";
+const mobileQqLinkStatePrefix = "mobile-link:";
+const mobileHandoffTtlMs = 2 * 60 * 1000;
+function mobileHandoffExpiresAt() { return new Date(Date.now() + mobileHandoffTtlMs).toISOString(); }
+function mobileQqDeepLink(handoff: string) { return `${mobileQqRedirect}?handoff=${encodeURIComponent(handoff)}`; }
 
 async function requireBinding(userId: string, bindingId: string) {
   return (await store.listPlayerBindings(userId)).find((item) => item.id === bindingId) ?? null;
@@ -829,14 +891,17 @@ async function resolveQqLogin(code: string, state: string) {
   };
 }
 
-export async function buildApp() {
+export async function buildApp(options: {
+  enableTestAuthRoutes?: boolean;
+  shareCardProfileResolver?: typeof getPlayerProfileCached;
+} = {}) {
   const app = Fastify({
     logger: process.env.PJSKTOOLS_SILENT_APP_LOGS === "true" ? false : true,
     bodyLimit: 8 * 1024 * 1024
   });
   const buildOpenApiDocument = installOpenApi(app);
   const writeControls = createWriteControls(store);
-  await app.register(cors, { origin: true });
+  await app.register(cors, { origin: config.corsAllowedOrigins });
   await app.register(compress, { global: true, threshold: 1024 });
   await app.register(sensible);
   await app.register(jwt, { secret: config.jwtSecret });
@@ -1744,21 +1809,86 @@ export async function buildApp() {
     return { provider: "qq", state, authorizeUrl: buildQqAuthorizeUrl(state), expiresIn: authStateTtlMs / 1000 };
   });
 
+  app.get("/api/auth/qq/mobile-link/start", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    if (!qqConfigured()) return reply.serviceUnavailable("QQ login is not configured");
+    const state = createQqState();
+    await store.createAuthState("qq", state, `${mobileQqLinkStatePrefix}${request.user.sub}`, authStateExpiresAt());
+    return { provider: "qq", state, authorizeUrl: buildQqAuthorizeUrl(state), expiresIn: authStateTtlMs / 1000 };
+  });
+
   app.get("/api/auth/qq/callback", async (request, reply) => {
     if (!qqConfigured()) return reply.serviceUnavailable("QQ login is not configured");
     const query = qqCallbackSchema.parse(request.query);
     try {
-      const { oauth } = await resolveQqLogin(query.code, query.state);
+      const { oauth, authState } = await resolveQqLogin(query.code, query.state);
+      if (authState.redirectTo.startsWith(mobileQqLinkStatePrefix)) {
+        const userId = authState.redirectTo.slice(mobileQqLinkStatePrefix.length);
+        if (!userId || !(await store.getUser(userId))) return reply.unauthorized("Link target user not found");
+        const handoff = createQqState();
+        await store.createOAuthHandoff(handoff, { kind: "link", userId, oauth }, mobileHandoffExpiresAt());
+        return reply.redirect(mobileQqDeepLink(handoff));
+      }
       const existing = await store.findOAuthAccount("qq", oauth.providerUserId);
       const user = existing ? await store.getUser(existing.userId) : await store.createOAuthUser(oauth);
       if (!user) return reply.unauthorized("OAuth user not found");
       if (existing) await store.linkOAuthAccount(user.id, oauth);
+      if (authState.redirectTo === mobileQqLoginState) {
+        const handoff = createQqState();
+        await store.createOAuthHandoff(handoff, { kind: "login", userId: user.id, oauth }, mobileHandoffExpiresAt());
+        return reply.redirect(mobileQqDeepLink(handoff));
+      }
       return issueAuth(app, user.id, user.email);
     } catch (error) {
       if ((error as Error).message === "INVALID_AUTH_STATE") return reply.unauthorized("Invalid QQ auth state");
       throw error;
     }
   });
+
+  app.post("/api/auth/qq/mobile-exchange", async (request, reply) => {
+    const body = z.object({ handoff: z.string().min(8) }).parse(request.body);
+    const handoff = await store.consumeOAuthHandoff(body.handoff, "login");
+    if (!handoff?.userId) return reply.unauthorized("Invalid or expired mobile login handoff");
+    const user = await store.getUser(handoff.userId);
+    return user ? issueAuth(app, user.id, user.email) : reply.unauthorized("User not found");
+  });
+
+  app.post("/api/auth/qq/mobile-link/exchange", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const body = z.object({ handoff: z.string().min(8) }).parse(request.body);
+    const handoff = await store.consumeOAuthHandoff(body.handoff, "link", request.user.sub);
+    if (!handoff) return reply.unauthorized("Invalid or expired mobile link handoff");
+    try {
+      await store.linkOAuthAccount(request.user.sub, handoff.oauth);
+      return { ok: true, oauthAccounts: await store.listOAuthAccounts(request.user.sub) };
+    } catch (error) {
+      if ((error as Error).message === "OAUTH_ACCOUNT_EXISTS") return reply.conflict("QQ account already linked");
+      throw error;
+    }
+  });
+
+  if (options.enableTestAuthRoutes && config.nodeEnv === "test") {
+    app.post("/__test/auth/email-code", async (request, reply) => {
+      const body = z.object({ email: z.string().email(), code: z.string().regex(/^\d{6}$/) }).parse(request.body);
+      await store.createEmailVerificationCode({ email: body.email, purpose: "register", code: body.code, expiresAt: emailCodeExpiresAt() });
+      return reply.code(201).send({ ok: true });
+    });
+    app.post("/__test/auth/qq/handoff", async (request, reply) => {
+      const body = z.object({
+        handoff: z.string().min(8), kind: z.enum(["login", "link"]), userId: z.string().uuid(),
+        providerUserId: z.string().min(1), expiresAt: z.string().datetime()
+      }).parse(request.body);
+      if (!(await store.getUser(body.userId))) return reply.notFound("User not found");
+      await store.createOAuthHandoff(body.handoff, {
+        kind: body.kind, userId: body.userId,
+        oauth: { provider: "qq", providerUserId: body.providerUserId, nickname: "QQ test user" }
+      }, body.expiresAt);
+      return reply.code(201).send({ ok: true });
+    });
+    app.post("/__test/auth/user", async (request, reply) => {
+      const body = z.object({ email: z.string().email() }).parse(request.body);
+      const user = await store.createUser(body.email, "Strong-passphrase-123!");
+      return reply.code(201).send(await issueAuth(app, user.id, user.email));
+    });
+  }
 
   app.post("/api/auth/qq/link", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     if (!qqConfigured()) return reply.serviceUnavailable("QQ login is not configured");
@@ -2352,9 +2482,11 @@ export async function buildApp() {
   app.get("/api/share/cards/:type/:id.png", async (request, reply) => {
     const { type, id } = request.params as { type: string; id: string };
     const query = request.query as { region?: string };
+    if (query.region && !isRegion(query.region)) return reply.badRequest("Unsupported region");
+    if (!["profile", "score", "event", "card", "song"].includes(type)) return reply.badRequest("Unsupported share card type");
     const region = query.region && isRegion(query.region) ? query.region : "jp";
-    const data = await resolveShareCardData(type, id, region);
-    if (!data) return reply.badRequest("Unsupported share card type");
+    const data = await resolveShareCardData(type, id, region, options.shareCardProfileResolver);
+    if (!data) return reply.notFound("Share card source not found");
     const image = await renderShareCardPng(data);
     const etag = `"${createHash("sha256").update(image).digest("base64url")}"`;
     if (request.headers["if-none-match"] === etag) return reply.code(304).send();
@@ -2369,9 +2501,12 @@ export async function buildApp() {
   app.get("/api/share/cards/:type/:id", async (request, reply) => {
     const { type, id } = request.params as { type: string; id: string };
     const query = request.query as { region?: string };
+    if (query.region && !isRegion(query.region)) return reply.badRequest("Unsupported region");
+    if (!["profile", "score", "event", "card", "song"].includes(type)) return reply.badRequest("Unsupported share card type");
     const region = query.region && isRegion(query.region) ? query.region : "jp";
-    const data = await resolveShareCardData(type, id, region);
-    if (!data) return reply.badRequest("Unsupported share card type");
+    const data = await resolveShareCardData(type, id, region, options.shareCardProfileResolver);
+    if (!data) return reply.notFound("Share card source not found");
+    reply.header("cache-control", "public, max-age=60, stale-while-revalidate=300");
     return shareCardMetadata(data, `/api/share/cards/${encodeURIComponent(type)}/${encodeURIComponent(id)}.png?region=${region}`);
   });
 

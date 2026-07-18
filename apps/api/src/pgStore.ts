@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { Pool } from "pg";
 import { hashToken } from "./authCrypto.js";
 import { config, type RegionId } from "./config.js";
-import type { AuthStore, CreateOAuthInput } from "./store.js";
+import type { AuthStore, CreateOAuthInput, OAuthHandoff, OAuthHandoffKind } from "./store.js";
 import type {
   AuthSession,
   AuthState,
@@ -323,13 +323,13 @@ export class PgStore implements AuthStore {
           (user_id, provider, provider_user_id, nickname, avatar_url, access_token_encrypted, refresh_token_encrypted, expires_at)
          values ($1, $2, $3, $4, $5, $6, $7, $8)
          on conflict (provider, provider_user_id) do update set
-          user_id = excluded.user_id,
           nickname = excluded.nickname,
           avatar_url = excluded.avatar_url,
           access_token_encrypted = excluded.access_token_encrypted,
           refresh_token_encrypted = excluded.refresh_token_encrypted,
           expires_at = excluded.expires_at,
           updated_at = now()
+         where oauth_accounts.user_id = excluded.user_id
          returning *`,
         [
           userId,
@@ -342,6 +342,7 @@ export class PgStore implements AuthStore {
           input.expiresAt ?? null
         ]
       );
+      if (!result.rows[0]) throw new Error("OAUTH_ACCOUNT_EXISTS");
       await this.pool.query(`update users set nickname = coalesce(nickname, $2), avatar_url = coalesce(avatar_url, $3), updated_at = now() where id = $1`, [
         userId,
         input.nickname ?? null,
@@ -404,6 +405,28 @@ export class PgStore implements AuthStore {
       [provider, state]
     );
     return result.rows[0] ? rowToAuthState(result.rows[0]) : null;
+  }
+
+  async createOAuthHandoff(handoff: string, input: OAuthHandoff, expiresAt: string) {
+    await this.pool.query(
+      `insert into oauth_handoffs (handoff_hash, provider, kind, user_id, oauth_payload, expires_at)
+       values ($1, $2, $3, $4, $5::jsonb, $6)`,
+      [hashToken(handoff), input.oauth.provider, input.kind, input.userId ?? null, JSON.stringify(input.oauth), expiresAt]
+    );
+  }
+
+  async consumeOAuthHandoff(handoff: string, kind: OAuthHandoffKind, userId?: string) {
+    const result = await this.pool.query(
+      `delete from oauth_handoffs where id in (
+         select id from oauth_handoffs
+         where handoff_hash = $1 and kind = $2 and ($3::uuid is null or user_id = $3) and expires_at > now()
+         limit 1
+       ) returning *`,
+      [hashToken(handoff), kind, userId ?? null]
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return { kind: row.kind, userId: row.user_id ?? undefined, oauth: row.oauth_payload } as OAuthHandoff;
   }
 
   async listFavoriteFolders(userId: string) {
@@ -587,6 +610,11 @@ export class PgStore implements AuthStore {
   async listScores(userId: string) {
     const result = await this.pool.query(`select * from scores where user_id = $1 order by updated_at desc`, [userId]);
     return result.rows.map(rowToScore);
+  }
+
+  async getScoreById(id: string) {
+    const result = await this.pool.query(`select * from scores where id = $1`, [id]);
+    return result.rows[0] ? rowToScore(result.rows[0]) : null;
   }
 
   async upsertScore(input: Omit<ScoreRecord, "id" | "updatedAt"> & { id?: string }) {

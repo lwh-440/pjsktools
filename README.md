@@ -60,6 +60,16 @@ npm run build
 
 Android 可用 Android Studio 打开 `android/`。Android 构建环境、模块边界、生成客户端和阶段验收要求见 `agent.md`。
 
+Live2D 与故事舞台复用网页端的 Pixi/Cubism 运行时。发布 APK 前必须将网页端部署到稳定的 HTTP(S) 来源，并在构建时显式配置：
+
+```bash
+./gradlew :app:assembleRelease -PPJSKTOOLS_WEB_RUNTIME_BASE_URL=https://tools.example.com
+```
+
+未配置时 Android 会关闭交互式网页运行时并显示配置错误，不会猜测本地 Vite 端口。运行时 WebView 只允许同源导航；区服通过 `?region=jp` 等 URL 参数传入。
+
+部署网页时设置 `VITE_API_BASE_URL`，再把生成的网页 HTTPS 地址作为 Android 的 `PJSKTOOLS_WEB_RUNTIME_BASE_URL`。网页托管必须为 SPA 深层路由配置回退到 `index.html`，以便 Live2D 与故事播放器直接加载。
+
 ## 数据库与环境变量
 
 后端读取项目根目录 `.env`，也读取 `apps/api/.env`。可参考 `.env.example`。

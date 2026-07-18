@@ -849,7 +849,7 @@ Future validation should collect read-only public Suite UIDs by sample purpose. 
 
 ## External Requirements for Public Launch
 
-Deployment was intentionally paused on 2026-07-12. This section tracks services, accounts, approvals, domains, credentials, and operational subscriptions that are outside the project code. It is not a list of product-feature gaps. The preliminary `render.yaml` remains only a candidate deployment configuration.
+This section tracks services, accounts, approvals, domains, credentials, and operational subscriptions that are outside the project code. It is not a list of product-feature gaps. Provider-specific deployment configuration is intentionally kept outside the public repository.
 
 ### Required hosting and infrastructure services
 
@@ -931,8 +931,8 @@ Deployment was intentionally paused on 2026-07-12. This section tracks services,
 ### Current external readiness
 
 - GitHub repository exists and deployment providers can be authorized against it.
-- No final frontend host, API host, production domain, or production API URL is selected.
-- `render.yaml` exists as an optional Render Blueprint but deployment is paused.
+- A temporary VPS deployment is available for operational validation, but its provider-specific files and addresses stay outside the public repository.
+- A compliant production domain and final HTTPS origins are still pending.
 - Supabase has been used as hosted PostgreSQL during development, but the final production database ownership, plan, backup policy, and connection values still need confirmation.
 - QQ Connect approval and production callback registration are still pending.
 - Production SMTP credentials, monitoring, error tracking, support contact, privacy policy, terms, disclaimer, and takedown process are not yet finalized.

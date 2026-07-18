@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,6 +8,28 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
+
+val webRuntimeBaseUrl = providers.gradleProperty("PJSKTOOLS_WEB_RUNTIME_BASE_URL").orElse("")
+val configuredApiBaseUrl = providers.gradleProperty("PJSKTOOLS_API_BASE_URL")
+    .orElse(providers.environmentVariable("PJSKTOOLS_API_BASE_URL"))
+    .orElse("")
+    .get()
+val debugApiBaseUrl = providers.gradleProperty("pjsk.debugApiBaseUrl")
+    .orElse(configuredApiBaseUrl.ifBlank { "http://10.0.2.2:4000/" })
+    .get()
+val temporaryHttpHost = providers.gradleProperty("PJSKTOOLS_TEMP_HTTP_HOST")
+    .orElse(providers.environmentVariable("PJSKTOOLS_TEMP_HTTP_HOST"))
+    .orElse("")
+    .get()
+require(temporaryHttpHost.isBlank() || Regex("^[A-Za-z0-9.-]+$").matches(temporaryHttpHost)) {
+    "PJSKTOOLS_TEMP_HTTP_HOST must contain only a hostname or IP address"
+}
+val signingPropertiesFile = rootProject.file("../.secrets/android-signing.properties")
+val signingProperties = Properties().apply {
+    if (signingPropertiesFile.isFile) signingPropertiesFile.inputStream().use(::load)
+}
+fun quotedBuildConfig(value: String) = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+fun apiBaseUrl(value: String) = value.takeIf(String::isNotBlank)?.let { if (it.endsWith('/')) it else "$it/" }.orEmpty()
 
 android {
     namespace = "com.pjsktools.app"
@@ -17,30 +41,43 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        buildConfigField("String", "WEB_RUNTIME_BASE_URL", quotedBuildConfig(webRuntimeBaseUrl.get()))
+        buildConfigField("String", "TEMPORARY_HTTP_HOST", quotedBuildConfig(temporaryHttpHost))
     }
 
-    val debugApiBaseUrl = providers.gradleProperty("pjsk.debugApiBaseUrl").orElse("http://10.0.2.2:4000/")
+    signingConfigs {
+        if (signingPropertiesFile.isFile) {
+            create("release") {
+                storeFile = file(signingProperties.getProperty("storeFile"))
+                storePassword = signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias")
+                keyPassword = signingProperties.getProperty("keyPassword")
+            }
+        }
+    }
 
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            buildConfigField("String", "API_BASE_URL", "\"${debugApiBaseUrl.get()}\"")
+            buildConfigField("String", "API_BASE_URL", quotedBuildConfig(apiBaseUrl(debugApiBaseUrl)))
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
         }
         create("staging") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
             matchingFallbacks += listOf("debug")
-            buildConfigField("String", "API_BASE_URL", "\"https://staging.example.invalid/\"")
+            buildConfigField("String", "API_BASE_URL", quotedBuildConfig(apiBaseUrl(configuredApiBaseUrl.ifBlank { "https://staging.example.invalid/" })))
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            buildConfigField("String", "API_BASE_URL", "\"https://api.example.invalid/\"")
+            buildConfigField("String", "API_BASE_URL", quotedBuildConfig(apiBaseUrl(configuredApiBaseUrl)))
+            manifestPlaceholders["usesCleartextTraffic"] = (temporaryHttpHost.isNotBlank()).toString()
+            if (signingPropertiesFile.isFile) signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -105,6 +142,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.svg)
+    implementation(libs.okhttp.core)
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

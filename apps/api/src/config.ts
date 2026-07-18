@@ -27,15 +27,31 @@ function loadEnvironment() {
 
 loadEnvironment();
 
+function databaseUrl() {
+  if (process.env.PJSKTOOLS_FORCE_MEMORY_STORE === "true") return "";
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  if (!process.env.PGHOST) return "";
+  const user = encodeURIComponent(process.env.PGUSER ?? "pjsktools");
+  const password = encodeURIComponent(process.env.PGPASSWORD ?? "");
+  const host = process.env.PGHOST;
+  const port = process.env.PGPORT ?? "5432";
+  const database = encodeURIComponent(process.env.PGDATABASE ?? "pjsktools");
+  return `postgresql://${user}:${password}@${host}:${port}/${database}`;
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   host: process.env.API_HOST ?? (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1"),
   jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
-  databaseUrl: process.env.PJSKTOOLS_FORCE_MEMORY_STORE === "true" ? "" : process.env.DATABASE_URL ?? "",
+  databaseUrl: databaseUrl(),
   redisUrl: process.env.REDIS_URL ?? "",
   harukiApiBaseUrl: process.env.HARUKI_API_BASE_URL ?? "",
   masterRawBaseUrl: process.env.MASTER_RAW_BASE_URL ?? "https://raw.githubusercontent.com",
   publicWebBaseUrl: process.env.PUBLIC_WEB_BASE_URL ?? "http://127.0.0.1:5173",
+  corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? process.env.PUBLIC_WEB_BASE_URL ?? "http://127.0.0.1:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   qqConnectAppId: process.env.QQ_CONNECT_APP_ID ?? "",
   qqConnectAppKey: process.env.QQ_CONNECT_APP_KEY ?? "",
   qqConnectRedirectUri: process.env.QQ_CONNECT_REDIRECT_URI ?? "",

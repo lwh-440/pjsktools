@@ -37,6 +37,14 @@ export type CreateOAuthInput = {
   expiresAt?: string;
 };
 
+export type OAuthHandoffKind = "login" | "link";
+
+export type OAuthHandoff = {
+  kind: OAuthHandoffKind;
+  userId?: string;
+  oauth: CreateOAuthInput;
+};
+
 export type AuthStore = {
   createUser(email: string, password: string, profile?: { nickname?: string; avatarUrl?: string }): Promise<UserAccount>;
   createOAuthUser(input: CreateOAuthInput): Promise<UserAccount>;
@@ -54,6 +62,8 @@ export type AuthStore = {
   revokeSession(id: string): Promise<boolean>;
   createAuthState(provider: OAuthProvider, state: string, redirectTo: string, expiresAt: string): Promise<AuthState>;
   consumeAuthState(provider: OAuthProvider, state: string): Promise<AuthState | null>;
+  createOAuthHandoff(handoff: string, input: OAuthHandoff, expiresAt: string): Promise<void>;
+  consumeOAuthHandoff(handoff: string, kind: OAuthHandoffKind, userId?: string): Promise<OAuthHandoff | null>;
   listFavoriteFolders(userId: string): Promise<FavoriteFolder[]>;
   createFavoriteFolder(input: Omit<FavoriteFolder, "id" | "createdAt" | "updatedAt">): Promise<FavoriteFolder>;
   updateFavoriteFolder(userId: string, id: string, patch: Pick<FavoriteFolder, "name"> & { description?: string }): Promise<FavoriteFolder | null>;
@@ -64,6 +74,7 @@ export type AuthStore = {
   bulkUpdateFavoriteFolders(userId: string, ids: string[], folderIds: string[], mode: "add" | "remove" | "replace"): Promise<Favorite[]>;
   deleteFavorite(userId: string, id: string): Promise<boolean>;
   listScores(userId: string): Promise<ScoreRecord[]>;
+  getScoreById(id: string): Promise<ScoreRecord | null>;
   upsertScore(input: Omit<ScoreRecord, "id" | "updatedAt"> & { id?: string }): Promise<ScoreRecord>;
   deleteScore(userId: string, id: string): Promise<boolean>;
   listPlayerBindings(userId: string): Promise<PlayerBinding[]>;
@@ -113,6 +124,7 @@ export class MemoryStore implements AuthStore {
   private sessions = new Map<string, AuthSession>();
   private sessionsByHash = new Map<string, string>();
   private authStates = new Map<string, AuthState>();
+  private oauthHandoffs = new Map<string, OAuthHandoff & { expiresAt: string }>();
   private emailCodes = new Map<string, EmailVerificationCode>();
   private favoriteFolders = new Map<string, FavoriteFolder>();
   private favorites = new Map<string, Favorite>();
@@ -309,6 +321,21 @@ export class MemoryStore implements AuthStore {
     return authState;
   }
 
+  async createOAuthHandoff(handoff: string, input: OAuthHandoff, expiresAt: string) {
+    this.oauthHandoffs.set(hashToken(handoff), { ...input, expiresAt });
+  }
+
+  async consumeOAuthHandoff(handoff: string, kind: OAuthHandoffKind, userId?: string) {
+    const key = hashToken(handoff);
+    const value = this.oauthHandoffs.get(key);
+    if (!value || value.kind !== kind || (userId !== undefined && value.userId !== userId) || Date.parse(value.expiresAt) <= Date.now()) {
+      if (value && Date.parse(value.expiresAt) <= Date.now()) this.oauthHandoffs.delete(key);
+      return null;
+    }
+    this.oauthHandoffs.delete(key);
+    return { kind: value.kind, userId: value.userId, oauth: value.oauth };
+  }
+
   async listFavoriteFolders(userId: string) {
     return [...this.favoriteFolders.values()]
       .filter((folder) => folder.userId === userId)
@@ -445,6 +472,10 @@ export class MemoryStore implements AuthStore {
 
   async listScores(userId: string) {
     return [...this.scores.values()].filter((score) => score.userId === userId);
+  }
+
+  async getScoreById(id: string) {
+    return this.scores.get(id) ?? null;
   }
 
   async upsertScore(input: Omit<ScoreRecord, "id" | "updatedAt"> & { id?: string }) {

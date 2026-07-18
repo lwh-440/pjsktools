@@ -9,7 +9,7 @@
     "start": "node dist/server.js",
     "sync:master": "tsx src/syncMasterData.ts",
     "db:migrate": "tsx src/db/migrate.ts",
-    "test": "vitest run src --pool forks --maxWorkers 1 --minWorkers 1",
+    "test": "vitest run src test --pool forks --maxWorkers 1 --minWorkers 1",
     "openapi:export": "tsx src/exportOpenApi.ts"
   },
   "dependencies": {

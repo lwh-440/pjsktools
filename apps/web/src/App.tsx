@@ -438,7 +438,11 @@ export function App() {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<SectionId>("home");
   const [regions, setRegions] = useState<Region[]>([]);
-  const [region, setRegion] = useState("jp");
+  const [region, setRegion] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get("region");
+    if (requested && /^[a-z]{2,3}$/i.test(requested)) return requested.toLowerCase();
+    return window.sessionStorage.getItem("pjsktools:region") ?? "jp";
+  });
   const [songs, setSongs] = useState<Song[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
   const [events, setEvents] = useState<EventInfo[]>([]);
@@ -593,6 +597,8 @@ export function App() {
     setRegion(nextRegion);
     if (/^\/section\/stories\/.+/.test(location.pathname)) navigate("/section/stories", { replace: true });
   }
+
+  useEffect(() => { window.sessionStorage.setItem("pjsktools:region", region); }, [region]);
 
   const routeSection = useMemo(() => {
     if (location.pathname === "/") return "home";
