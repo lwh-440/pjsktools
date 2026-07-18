@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import com.pjsktools.core.model.CatalogAsset
+import com.pjsktools.core.model.CatalogKind
 import java.util.concurrent.ConcurrentHashMap
 
 private const val FAILED_SOURCE_TTL_MILLIS = 60_000L
@@ -39,15 +40,29 @@ fun orderedImageCandidates(vararg groups: List<String?>): List<String> = groups
     .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
     .distinct()
 
-fun catalogListImageCandidates(assets: CatalogAsset): List<String> = orderedImageCandidates(
-    listOf(assets.imageUrl, assets.thumbnailUrl, assets.bannerUrl, assets.logoUrl, assets.degreeMainUrl),
-    assets.imageCandidates
-)
+fun catalogListImageCandidates(kind: CatalogKind, assets: CatalogAsset): List<String> = when (kind) {
+    CatalogKind.GACHA -> orderedImageCandidates(
+        listOf(assets.bannerUrl, assets.imageUrl, assets.thumbnailUrl, assets.logoUrl, assets.screenUrl),
+        assets.imageCandidates
+    )
+    CatalogKind.HONOR -> orderedImageCandidates(
+        listOf(assets.degreeMainUrl, assets.imageUrl, assets.thumbnailUrl, assets.rankMainUrl, assets.scrollUrl),
+        assets.imageCandidates
+    )
+    else -> orderedImageCandidates(
+        listOf(assets.imageUrl, assets.thumbnailUrl, assets.bannerUrl, assets.logoUrl, assets.degreeMainUrl),
+        assets.imageCandidates
+    )
+}
 
-fun catalogDetailImageCandidates(assets: CatalogAsset): List<String> = orderedImageCandidates(
-    listOf(assets.screenUrl, assets.imageUrl, assets.thumbnailUrl, assets.bannerUrl, assets.logoUrl, assets.degreeMainUrl),
-    assets.imageCandidates
-)
+fun catalogDetailImageCandidates(kind: CatalogKind, assets: CatalogAsset): List<String> = catalogListImageCandidates(kind, assets)
+
+fun catalogImageAspectRatio(kind: CatalogKind): Float = when (kind) {
+    CatalogKind.GACHA -> 61f / 26f
+    CatalogKind.HONOR -> 4.75f
+    CatalogKind.COMIC -> 1.8f
+    else -> 1f
+}
 
 internal fun nextCandidateIndex(current: Int, lastIndex: Int): Int? = (current + 1).takeIf { it <= lastIndex }
 

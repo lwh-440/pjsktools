@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import com.pjsktools.core.model.CatalogAsset
+import com.pjsktools.core.model.CatalogKind
 
 class BackendImageTest {
     @Test
@@ -25,7 +26,7 @@ class BackendImageTest {
     }
 
     @Test
-    fun catalogCandidatesMatchWebListAndDetailPriority() {
+    fun catalogCandidatesUseTypeSpecificPriority() {
         val assets = CatalogAsset(
             imageUrl = "image",
             thumbnailUrl = "thumbnail",
@@ -38,11 +39,17 @@ class BackendImageTest {
 
         assertEquals(
             listOf("image", "thumbnail", "banner", "logo", "degree", "fallback"),
-            catalogListImageCandidates(assets)
+            catalogListImageCandidates(CatalogKind.MATERIAL, assets)
         )
         assertEquals(
-            listOf("screen", "image", "thumbnail", "banner", "logo", "degree", "fallback"),
-            catalogDetailImageCandidates(assets)
+            listOf("banner", "image", "thumbnail", "logo", "screen", "fallback"),
+            catalogDetailImageCandidates(CatalogKind.GACHA, assets)
         )
+        assertEquals(
+            listOf("degree", "image", "thumbnail", "fallback"),
+            catalogDetailImageCandidates(CatalogKind.HONOR, assets)
+        )
+        assertEquals(61f / 26f, catalogImageAspectRatio(CatalogKind.GACHA))
+        assertEquals(4.75f, catalogImageAspectRatio(CatalogKind.HONOR))
     }
 }

@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { RegionId } from "./config.js";
+import { config, regions, type RegionId } from "./config.js";
 
 export const formulaMasterKeys = [
   "cards",
@@ -53,7 +53,7 @@ type ReferenceManifest = {
 const memory = new Map<string, unknown[]>();
 const pendingLoads = new Map<string, Promise<unknown[]>>();
 const manifestMemory = new Map<RegionId, ReferenceManifest>();
-const metadataBase = "https://metadata.exmeaning.com";
+const metadataBases = ["https://metadata.exmeaning.com", "https://metadata.pjsk.moe"];
 const fastRefresh = process.env.PJSKTOOLS_FAST_MASTER_REFRESH === "true";
 
 function apiRoot() {
@@ -81,8 +81,13 @@ function manifestPath(region: RegionId) {
   return path.join(runtimeRoot(), region, "manifest.json");
 }
 
-function sourceUrl(region: RegionId, key: FormulaMasterKey) {
-  return `${metadataBase}/${region}/master/${key}.json`;
+function sourceUrls(region: RegionId, key: FormulaMasterKey) {
+  const repository = regions.find((item) => item.id === region)?.repository;
+  const rawBase = config.masterRawBaseUrl.replace(/\/+$/, "");
+  return [
+    ...metadataBases.map((base) => `${base}/${region}/master/${key}.json`),
+    ...(repository ? [`${rawBase}/${repository}/main/master/${key}.json`] : [])
+  ];
 }
 
 async function readArray(filePath: string) {
@@ -123,29 +128,35 @@ async function readManifest(region: RegionId) {
 }
 
 function fetchOptions() {
-  return fastRefresh ? { attempts: 1, timeoutMs: 1_500 } : { attempts: 3, timeoutMs: 12_000 };
+  return fastRefresh ? { attempts: 1, timeoutMs: 1_500 } : { attempts: 2, timeoutMs: 60_000 };
 }
 
-async function fetchReference(region: RegionId, key: FormulaMasterKey) {
+export async function fetchReference(region: RegionId, key: FormulaMasterKey) {
   const options = fetchOptions();
   let lastError: unknown;
-  for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
-    try {
-      const response = await fetch(sourceUrl(region, key), { signal: controller.signal, headers: { "User-Agent": "pjsktools-reference-sync" } });
-      if (response.status === 404) return { status: "not-released" as const, rows: [] as unknown[] };
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const rows = JSON.parse(await response.text());
-      if (!Array.isArray(rows)) throw new Error("response is not an array");
-      return { status: rows.length ? "available" as const : "available-empty" as const, rows };
-    } catch (error) {
-      lastError = error;
-      if (attempt < options.attempts && !fastRefresh) await new Promise((resolve) => setTimeout(resolve, 750 * attempt));
-    } finally {
-      clearTimeout(timeout);
+  let notReleased = true;
+  for (const sourceUrl of sourceUrls(region, key)) {
+    for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+      try {
+        const response = await fetch(sourceUrl, { signal: controller.signal, headers: { "User-Agent": "pjsktools-reference-sync" } });
+        if (response.status === 404) break;
+        notReleased = false;
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const rows = JSON.parse(await response.text());
+        if (!Array.isArray(rows)) throw new Error("response is not an array");
+        return { status: rows.length ? "available" as const : "available-empty" as const, rows, sourceUrl };
+      } catch (error) {
+        notReleased = false;
+        lastError = error;
+        if (attempt < options.attempts && !fastRefresh) await new Promise((resolve) => setTimeout(resolve, 750 * attempt));
+      } finally {
+        clearTimeout(timeout);
+      }
     }
   }
+  if (notReleased) return { status: "not-released" as const, rows: [] as unknown[], sourceUrl: sourceUrls(region, key).join(" | ") };
   return { status: "source-unavailable" as const, rows: [] as unknown[], error: lastError instanceof Error ? lastError.message : String(lastError) };
 }
 
@@ -158,7 +169,7 @@ export async function syncReferenceMasterRegion(region: RegionId) {
     if (result.status === "available" || result.status === "available-empty") {
       await atomicWrite(runtimePath(region, key), result.rows);
       memory.set(`${region}:${key}`, result.rows);
-      collections[key] = { status: result.status, count: result.rows.length, sourceUrl: sourceUrl(region, key), syncedAt };
+      collections[key] = { status: result.status, count: result.rows.length, sourceUrl: result.sourceUrl, syncedAt };
       continue;
     }
     const cached = await readCachedArray(region, key);
@@ -167,12 +178,12 @@ export async function syncReferenceMasterRegion(region: RegionId) {
       collections[key] = {
         status: "cache-stale",
         count: cached.rows.length,
-        sourceUrl: sourceUrl(region, key),
+        sourceUrl: sourceUrls(region, key).join(" | "),
         syncedAt: previousManifest?.collections[key]?.syncedAt,
         error: result.status === "not-released" ? "upstream returned 404; retained region-local cache" : result.error
       };
     } else {
-      collections[key] = { status: result.status, count: 0, sourceUrl: sourceUrl(region, key), error: result.error };
+      collections[key] = { status: result.status, count: 0, sourceUrl: sourceUrls(region, key).join(" | "), error: result.error };
     }
   }
   const manifest: ReferenceManifest = { schemaVersion: 1, region, syncedAt, collections };
@@ -212,7 +223,7 @@ export async function getReferenceMasterHealth(region: RegionId) {
   const collections = Object.fromEntries(formulaMasterKeys.map((key) => [key, manifest?.collections[key] ?? {
     status: counts[key] > 0 ? "cache-stale" : "source-unavailable",
     count: counts[key],
-    sourceUrl: sourceUrl(region, key),
+    sourceUrl: sourceUrls(region, key).join(" | "),
     error: manifest ? undefined : "runtime manifest not generated"
   }])) as Record<FormulaMasterKey, ReferenceCollectionHealth>;
   const missingFields = formulaMasterKeys.filter((key) => counts[key] === 0 && collections[key].status !== "available-empty");

@@ -194,13 +194,25 @@ const moesekaiLocalMasterPaths: Record<string, string> = {
   worldBloomSupportDeckBonusesWL2: path.resolve(process.cwd(), "refer", "Moesekai", "web", "public", "data", "worldBloomSupportDeckBonusesWL2.json"),
   worldBloomSupportDeckBonusesWL3: path.resolve(process.cwd(), "refer", "Moesekai", "web", "public", "data", "worldBloomSupportDeckBonusesWL3.json")
 };
-const moesekaiMetadataBase: Record<RegionId, string> = {
+const moesekaiMetadataPrimaryBase: Record<RegionId, string> = {
   jp: "https://metadata.exmeaning.com/jp/master",
   en: "https://metadata.exmeaning.com/en/master",
   tw: "https://metadata.exmeaning.com/tw/master",
   kr: "https://metadata.exmeaning.com/kr/master",
   cn: "https://metadata.exmeaning.com/cn/master"
 };
+const moesekaiMetadataFallbackBase: Record<RegionId, string> = {
+  jp: "https://metadata.pjsk.moe/jp/master",
+  en: "https://metadata.pjsk.moe/en/master",
+  tw: "https://metadata.pjsk.moe/tw/master",
+  kr: "https://metadata.pjsk.moe/kr/master",
+  cn: "https://metadata.pjsk.moe/cn/master"
+};
+
+function metadataUrls(region: RegionId, key: string) {
+  return [moesekaiMetadataPrimaryBase[region], moesekaiMetadataFallbackBase[region]]
+    .map((base) => `${base}/${key}.json`);
+}
 
 export const noCurrentEvent: EventInfo = {
   id: "none",
@@ -263,6 +275,8 @@ const failedAutoSyncCooldownMs = 1000 * 60 * 10;
 const runningSyncs = new Map<RegionId, Promise<MasterCache>>();
 const runningEventSyncs = new Map<RegionId, Promise<MasterCache | null>>();
 const runningRankingAssetSyncs = new Map<RegionId, Promise<MasterCache>>();
+const masterCacheMemory = new Map<RegionId, MasterCache>();
+const pendingMasterCacheReads = new Map<RegionId, Promise<MasterCache | null>>();
 const lastRankingAssetSyncAt = new Map<RegionId, number>();
 const rankingAssetSyncIntervalMs = 1000 * 60 * 5;
 const fastMasterRefresh = process.env.PJSKTOOLS_FAST_MASTER_REFRESH === "true";
@@ -316,7 +330,7 @@ function rawUrl(repository: string, filePath: string) {
 function masterFetchOptions() {
   return fastMasterRefresh
     ? { attempts: 1, timeoutMs: 1_500, retryDelayMs: 0 }
-    : { attempts: 3, timeoutMs: 12_000, retryDelayMs: 750 };
+    : { attempts: 2, timeoutMs: 60_000, retryDelayMs: 750 };
 }
 
 function errorSummary(error: unknown) {
@@ -372,6 +386,18 @@ async function fetchFirstAvailableJson<T>(repository: string, filePaths: string[
   return fallback;
 }
 
+async function fetchMetadataFirstAvailableJson<T>(region: RegionId, repository: string, filePaths: string[], fallback: T): Promise<T> {
+  for (const filePath of filePaths) {
+    const key = path.posix.basename(filePath, ".json");
+    try {
+      return await fetchMoesekaiMaster<T>(region, key);
+    } catch {
+      // Continue through alternate filenames before using the GitHub compatibility fallback.
+    }
+  }
+  return fetchFirstAvailableJson(repository, filePaths, fallback);
+}
+
 async function fetchMetadataFirst<T>(region: RegionId, key: string, repository: string, filePath: string): Promise<T> {
   try {
     return await fetchMoesekaiMaster<T>(region, key);
@@ -381,29 +407,30 @@ async function fetchMetadataFirst<T>(region: RegionId, key: string, repository: 
 }
 
 async function fetchMoesekaiMaster<T>(region: RegionId, key: string, fallback?: T): Promise<T> {
-  const url = `${moesekaiMetadataBase[region]}/${key}.json`;
   const options = masterFetchOptions();
   let lastError: unknown;
-  for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
-    try {
-      const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "pjsktools-reference-calculator" } });
-      if (!response.ok) throw new Error(`Failed to fetch ${url}: ${response.status}`);
-      return JSON.parse(await response.text()) as T;
-    } catch (error) {
-      lastError = error;
-      if (attempt < options.attempts && options.retryDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, options.retryDelayMs * attempt));
-    } finally {
-      clearTimeout(timeout);
+  for (const url of metadataUrls(region, key)) {
+    for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+      try {
+        const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "pjsktools-reference-calculator" } });
+        if (!response.ok) throw new Error(`Failed to fetch ${url}: ${response.status}`);
+        return JSON.parse(await response.text()) as T;
+      } catch (error) {
+        lastError = error;
+        if (attempt < options.attempts && options.retryDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, options.retryDelayMs * attempt));
+      } finally {
+        clearTimeout(timeout);
+      }
     }
   }
   if (fallback !== undefined) return fallback;
-  throw lastError instanceof Error ? lastError : new Error(`Failed to fetch ${url}`);
+  throw lastError instanceof Error ? lastError : new Error(`Failed to fetch metadata for ${region}/${key}`);
 }
 
 async function fetchFormulaCollection(region: RegionId, repository: string, key: string, filePath: string, previous: RawMasterItem[] = []) {
-  const metadataUrl = `${moesekaiMetadataBase[region]}/${key}.json`;
+  const metadataUrl = metadataUrls(region, key).join(" | ");
   try {
     const rows = await fetchMoesekaiMaster<RawMasterItem[]>(region, key);
     return {
@@ -776,12 +803,25 @@ async function getMoesekaiLocalMasterCollection(region: RegionId, type: string):
 }
 
 export async function readMasterCache(region: RegionId): Promise<MasterCache | null> {
-  try {
-    const content = await readFile(getCachePath(region), "utf-8");
-    return JSON.parse(content) as MasterCache;
-  } catch {
-    return null;
-  }
+  const cached = masterCacheMemory.get(region);
+  if (cached) return cached;
+  const pending = pendingMasterCacheReads.get(region);
+  if (pending) return pending;
+  const read = readFile(getCachePath(region), "utf-8")
+    .then((content) => {
+      const parsed = JSON.parse(content) as MasterCache;
+      masterCacheMemory.set(region, parsed);
+      return parsed;
+    })
+    .catch(() => null)
+    .finally(() => pendingMasterCacheReads.delete(region));
+  pendingMasterCacheReads.set(region, read);
+  return read;
+}
+
+async function writeMasterCache(region: RegionId, cache: MasterCache) {
+  await atomicWriteJson(getCachePath(region), cache);
+  masterCacheMemory.set(region, cache);
 }
 
 function normalizeMasterCache(cache: MasterCache): MasterCache {
@@ -871,12 +911,13 @@ export async function getMasterCollection(region: RegionId, type: string): Promi
         return {
           region,
           type,
-          source: `${moesekaiMetadataBase[region]}/${type}.json`,
+          source: metadataUrls(region, type).join(" | "),
           syncedAt: (await getReferenceMasterHealth(region)).syncedAt,
           items: transformCollection(referenceRows).map((item) => getDisplayCollectionItem(region, type, item)),
           sourceMetadata: {
             sourceType: "metadata",
-            primaryUrl: `${moesekaiMetadataBase[region]}/${type}.json`,
+            primaryUrl: metadataUrls(region, type)[0],
+            fallbackUrl: metadataUrls(region, type)[1],
             sourceProject: "Moesekai metadata region master",
             fetchedAt: (await getReferenceMasterHealth(region)).syncedAt ?? new Date(0).toISOString(),
             scope: "region"
@@ -1225,31 +1266,31 @@ export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
 
   try {
     const baseResults = await Promise.all([
-      fetchJson<RawMusic[]>(regionConfig.repository, masterFiles.musics),
-      fetchJson<RawMusicDifficulty[]>(regionConfig.repository, masterFiles.musicDifficulties),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, masterFiles.musicTags, []),
-      fetchFirstAvailableJson<RawMusicMeta[]>(regionConfig.repository, masterFiles.musicMetas, []),
-      fetchFirstAvailableJson<RawMusicBpm[]>(regionConfig.repository, masterFiles.musicBpms, []),
-      fetchJson<RawCharacter[]>(regionConfig.repository, masterFiles.gameCharacters),
-      fetchMoesekaiMaster<RawCard[]>(region, "cards"),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.cardSupplies], []),
-      fetchFirstAvailableJson<RawSkill[]>(regionConfig.repository, masterFiles.skills, []),
+      fetchMetadataFirst<RawMusic[]>(region, "musics", regionConfig.repository, masterFiles.musics),
+      fetchMetadataFirst<RawMusicDifficulty[]>(region, "musicDifficulties", regionConfig.repository, masterFiles.musicDifficulties),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, masterFiles.musicTags, []),
+      fetchMetadataFirstAvailableJson<RawMusicMeta[]>(region, regionConfig.repository, masterFiles.musicMetas, []),
+      fetchMetadataFirstAvailableJson<RawMusicBpm[]>(region, regionConfig.repository, masterFiles.musicBpms, []),
+      fetchMetadataFirst<RawCharacter[]>(region, "gameCharacters", regionConfig.repository, masterFiles.gameCharacters),
+      fetchMetadataFirst<RawCard[]>(region, "cards", regionConfig.repository, masterFiles.cards),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.cardSupplies], []),
+      fetchMetadataFirstAvailableJson<RawSkill[]>(region, regionConfig.repository, masterFiles.skills, []),
       fetchMetadataFirst<RawEvent[]>(region, "events", regionConfig.repository, masterFiles.events),
       fetchMetadataFirst<RawEventCard[]>(region, "eventCards", regionConfig.repository, masterFiles.eventCards),
       fetchMetadataFirst<RawEventStory[]>(region, "eventStories", regionConfig.repository, masterFiles.eventStories),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.gachas], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.honors], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.honorGroups], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.materials], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, masterFiles.costumes, []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.stamps], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.comics], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.eventMusics], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.musicVocals], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.eventDeckBonuses], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.eventRarityBonusRates], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.gameCharacterUnits], []),
-      fetchFirstAvailableJson<RawMasterItem[]>(regionConfig.repository, [masterFiles.cardRarities], [])
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.gachas], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.honors], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.honorGroups], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.materials], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, masterFiles.costumes, []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.stamps], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.comics], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.eventMusics], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.musicVocals], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.eventDeckBonuses], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.eventRarityBonusRates], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.gameCharacterUnits], []),
+      fetchMetadataFirstAvailableJson<RawMasterItem[]>(region, regionConfig.repository, [masterFiles.cardRarities], [])
     ]);
     [
       musics,
@@ -1340,7 +1381,7 @@ export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
       syncedAt: existing.syncedAt,
       events: existing.events ?? []
     });
-    await atomicWriteJson(getCachePath(region), preserved);
+    await writeMasterCache(region, preserved);
     try {
       await syncReferenceMasterRegion(region);
     } catch (referenceError) {
@@ -1360,7 +1401,7 @@ export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
     region,
     repository: regionConfig.repository,
     syncedAt: new Date().toISOString(),
-    source: `${moesekaiMetadataBase[region]} (Team-Haruki same-region fallback)`,
+    source: `${moesekaiMetadataPrimaryBase[region]} (metadata.pjsk.moe, local cache, and Team-Haruki compatibility fallbacks)`,
     songs: transformSongs(musics, musicDifficulties, musicMetas, musicBpms),
     cards: transformedCards,
     events: transformEvents(events, eventCards, eventStories, transformedCards),
@@ -1405,7 +1446,7 @@ export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
     collectionHealth
   };
 
-  await atomicWriteJson(getCachePath(region), cache);
+  await writeMasterCache(region, cache);
   try {
     await syncReferenceMasterRegion(region);
   } catch (error) {
@@ -1963,7 +2004,7 @@ export async function getMasterRegionStatus(region: RegionId) {
       },
       formulaReferenceMaster: {
         primary: "Moesekai metadata / metadata.exmeaning.com",
-        fallback: "same-region Team-Haruki collections where applicable",
+        fallback: "metadata.pjsk.moe, then same-region Team-Haruki raw collections where applicable",
         role: "formula reference collections and music metadata"
       },
       playerAssets: {
@@ -2004,10 +2045,10 @@ export async function syncEventMasterRegion(region: RegionId) {
   const updated: MasterCache = {
     ...existing,
     syncedAt: new Date().toISOString(),
-    source: `${moesekaiMetadataBase[region]} (Team-Haruki same-region fallback)`,
+    source: `${moesekaiMetadataPrimaryBase[region]} (metadata.pjsk.moe, local cache, and Team-Haruki compatibility fallbacks)`,
     events: transformEvents(events, eventCards, eventStories, existing.cards)
   };
-  await atomicWriteJson(getCachePath(region), updated);
+  await writeMasterCache(region, updated);
   return updated;
 }
 
@@ -2037,11 +2078,11 @@ export async function syncRankingAssetMasterRegion(region: RegionId): Promise<Ma
     const updated: MasterCache = {
       ...existing,
       syncedAt: new Date().toISOString(),
-      source: `${moesekaiMetadataBase[region]} (Team-Haruki same-region fallback)`,
+      source: `${moesekaiMetadataPrimaryBase[region]} (metadata.pjsk.moe, local cache, and Team-Haruki compatibility fallbacks)`,
       cards: transformedCards,
       events: transformEvents(events, eventCards, eventStories, transformedCards)
     };
-    await atomicWriteJson(getCachePath(region), updated);
+    await writeMasterCache(region, updated);
     lastRankingAssetSyncAt.set(region, Date.now());
     return updated;
   })().finally(() => runningRankingAssetSyncs.delete(region));

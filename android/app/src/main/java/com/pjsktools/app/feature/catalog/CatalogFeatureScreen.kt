@@ -264,7 +264,7 @@ private fun CatalogItemCard(baseUrl: String, item: CatalogItem, onClick: () -> U
                 baseUrl = baseUrl,
                 candidates = item.assetUrls,
                 contentDescription = item.title,
-                heightDp = if (item.type == CatalogType.HONORS || item.type == CatalogType.COMICS) 120 else 180
+                aspectRatio = catalogImageAspectRatio(item.type)
             )
             Text(item.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             item.subtitle?.let { Text(it) }
@@ -360,7 +360,7 @@ private fun DetailContent(
         is CollectionCatalogDetail -> {
             RemoteCatalogImage(
                 baseUrl, detail.assetUrls, detail.item.title,
-                heightDp = if (detail.item.type == CatalogType.HONORS || detail.item.type == CatalogType.COMICS) 220 else 300
+                aspectRatio = catalogImageAspectRatio(detail.item.type)
             )
             Text(listOfNotNull(detail.item.category, detail.item.rarity).joinToString(" · "))
             detail.costume?.let { costume ->

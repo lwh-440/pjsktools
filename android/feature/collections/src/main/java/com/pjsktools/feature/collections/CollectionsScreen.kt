@@ -33,6 +33,7 @@ import com.pjsktools.core.designsystem.CatalogFilterSheet
 import com.pjsktools.core.designsystem.FavoriteFolderSheet
 import com.pjsktools.core.designsystem.ResultContent
 import com.pjsktools.core.designsystem.catalogDetailImageCandidates
+import com.pjsktools.core.designsystem.catalogImageAspectRatio
 import com.pjsktools.core.designsystem.catalogListImageCandidates
 import com.pjsktools.core.model.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -298,9 +299,9 @@ private fun facetKeyLabelPlain(value: String) = when (value) {
 
 @Composable private fun CatalogTile(region: Region, item: CatalogEntry, favorite: Boolean, onFavorite: () -> Unit, onClick: () -> Unit) {
     val data = item.data
-    val candidates = catalogListImageCandidates(data.assets)
+    val candidates = catalogListImageCandidates(data.kind, data.assets)
     ElevatedCard(Modifier.padding(6.dp).clickable(onClick = onClick)) {
-        BackendImage(candidates, data.name, "${region.id}:${data.kind.apiName}:${data.id}:list", Modifier.fillMaxWidth().aspectRatio(if (data.kind in setOf(CatalogKind.GACHA, CatalogKind.HONOR, CatalogKind.COMIC)) 1.8f else 1f), ContentScale.Crop)
+        BackendImage(candidates, data.name, "${region.id}:${data.kind.apiName}:${data.id}:list", Modifier.fillMaxWidth().aspectRatio(catalogImageAspectRatio(data.kind)), if (data.kind in setOf(CatalogKind.GACHA, CatalogKind.HONOR, CatalogKind.COMIC)) ContentScale.Fit else ContentScale.Crop)
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(data.name, maxLines = 2, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -316,7 +317,7 @@ private fun facetKeyLabelPlain(value: String) = when (value) {
 @Composable private fun CatalogDetailPane(region: Region, result: DataResult<CatalogDetail>, onBack: () -> Unit, modifier: Modifier, showBack: Boolean = true, favorite: Boolean = false, onFavorite: (CatalogEntry) -> Unit = {}) {
     ResultContent(result, modifier) { detail ->
         val data = detail.item.data
-        val candidates = catalogDetailImageCandidates(data.assets)
+        val candidates = catalogDetailImageCandidates(data.kind, data.assets)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -327,7 +328,7 @@ private fun facetKeyLabelPlain(value: String) = when (value) {
                     }
                 }
             }
-            item { BackendImage(candidates, data.name, "${region.id}:${data.kind.apiName}:${data.id}:detail", Modifier.fillMaxWidth().aspectRatio(if (data.kind in setOf(CatalogKind.GACHA, CatalogKind.HONOR, CatalogKind.COMIC)) 1.8f else 1f), ContentScale.Fit, showProgress = true) }
+            item { BackendImage(candidates, data.name, "${region.id}:${data.kind.apiName}:${data.id}:detail", Modifier.fillMaxWidth().aspectRatio(catalogImageAspectRatio(data.kind)), ContentScale.Fit, showProgress = true) }
             item { Text(data.name, style = MaterialTheme.typography.headlineSmall); Text(stringResource(R.string.catalog_id, data.id)); Text(data.description ?: stringResource(R.string.catalog_no_description)) }
             item { CatalogTypedMetadata(detail.item) }
             if (detail.relatedCards.isNotEmpty()) {

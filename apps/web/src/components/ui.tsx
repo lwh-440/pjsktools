@@ -18,7 +18,7 @@ export function ArtImage({
   src?: string;
   srcCandidates?: Array<string | undefined>;
   label: string;
-  variant?: "square" | "card" | "wide" | "avatar";
+  variant?: "square" | "card" | "wide" | "gacha" | "avatar";
   eager?: boolean;
   fallback?: ReactNode;
 }) {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,7 +59,8 @@ internal fun RemoteCatalogImage(
     candidates: List<String>,
     contentDescription: String,
     modifier: Modifier = Modifier,
-    heightDp: Int = 180
+    heightDp: Int = 180,
+    aspectRatio: Float? = null
 ) {
     val state by produceState<RemoteImageState>(
         initialValue = RemoteImageState.Loading,
@@ -70,7 +72,7 @@ internal fun RemoteCatalogImage(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(heightDp.dp)
+            .then(if (aspectRatio != null) Modifier.aspectRatio(aspectRatio) else Modifier.height(heightDp.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
@@ -89,6 +91,13 @@ internal fun RemoteCatalogImage(
             )
         }
     }
+}
+
+internal fun catalogImageAspectRatio(type: CatalogType): Float? = when (type) {
+    CatalogType.GACHAS -> 61f / 26f
+    CatalogType.HONORS -> 4.75f
+    CatalogType.COMICS -> 1.8f
+    else -> null
 }
 
 private suspend fun loadFirstImage(baseUrl: String, candidates: List<String>): RemoteImageState =

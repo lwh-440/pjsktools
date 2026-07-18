@@ -120,7 +120,7 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
             rarity = json.text("rarity"),
             startAt = json.text("startAt"),
             endAt = json.text("endAt"),
-            assetUrls = assetUrls(json.optJSONObject("assets"))
+            assetUrls = assetUrls(json.optJSONObject("assets"), type)
         )
     }
 
@@ -178,7 +178,7 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
         val item = parseCatalogItem(fallback.type, json).withFallback(fallback)
         return CollectionCatalogDetail(
             item = item,
-            assetUrls = (assetUrls(body.optJSONObject("assets")) + item.assetUrls).distinct(),
+            assetUrls = (assetUrls(body.optJSONObject("assets"), fallback.type) + item.assetUrls).distinct(),
             costume = if (fallback.type == CatalogType.COSTUMES) parseCostume(json) else null,
             relatedCards = relatedItems(body.optJSONObject("relations")?.optJSONArray("relatedCards"), RelatedKind.CARD)
         )
@@ -233,9 +233,15 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
         )
     }
 
-    private fun assetUrls(json: JSONObject?): List<String> {
+    private fun assetUrls(json: JSONObject?, type: CatalogType? = null): List<String> {
         json ?: return emptyList()
+        val priorityKeys = when (type) {
+            CatalogType.GACHAS -> arrayOf("bannerUrl", "imageUrl", "thumbnailUrl", "logoUrl", "screenUrl", "imageCandidates")
+            CatalogType.HONORS -> arrayOf("degreeMainUrl", "imageUrl", "thumbnailUrl", "rankMainUrl", "scrollUrl", "imageCandidates", "degreeSubUrl", "frameUrl")
+            else -> emptyArray()
+        }
         val result = mutableListOf<String>()
+        result += assetValues(json, *priorityKeys)
         for (key in json.keys()) when (val value = json.opt(key)) {
             is String -> if (value.isAssetUrl()) result += value
             is JSONArray -> for (index in 0 until value.length()) value.optString(index).takeIf { it.isAssetUrl() }?.let(result::add)

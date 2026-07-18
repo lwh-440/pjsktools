@@ -125,8 +125,8 @@ export function getAssetConfig(region: RegionId) {
     },
     repository: regionConfig?.repository ?? "",
     sources: {
-      master: "Team-Haruki master repositories for base catalog data",
-      formulaReferenceMaster: "Moesekai metadata / metadata.exmeaning.com for formula-only reference collections",
+      master: "Moesekai metadata.exmeaning.com primary, metadata.pjsk.moe and Team-Haruki compatibility fallbacks",
+      formulaReferenceMaster: "Moesekai metadata.exmeaning.com primary, metadata.pjsk.moe and same-region Team-Haruki raw fallbacks",
       realtimeRanking: "rks-n.exmeaning.com primary, rks-n.pjsk.moe global fallback",
       publicPlayerAssets: "Haruki Suite Public API for user-uploaded public player assets",
       rankingFallback: "Haruki toolbox for ranking detail and fallback snapshots",

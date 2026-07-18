@@ -3937,6 +3937,13 @@ small {
   object-fit: contain;
 }
 
+.art-image.gacha,
+.art-fallback.gacha,
+.art-frame.gacha {
+  aspect-ratio: 61 / 26;
+  object-fit: contain;
+}
+
 .song-card .art-image,
 .song-card .art-fallback {
   width: 82px;
@@ -4023,6 +4030,18 @@ small {
 
 .detail-hero.card-detail {
   grid-template-columns: 1fr;
+}
+
+.detail-hero.honor-detail,
+.detail-hero.gacha-detail {
+  grid-template-columns: minmax(320px, 1.25fr) minmax(220px, 1fr);
+  align-items: center;
+}
+
+.detail-hero.honor-detail > .art-frame,
+.detail-hero.gacha-detail > .art-frame {
+  max-width: 560px;
+  justify-self: center;
 }
 
 .card-art-grid {
@@ -5011,6 +5030,8 @@ code {
   .song-card,
   .detail-hero,
   .detail-hero.card-detail,
+  .detail-hero.honor-detail,
+  .detail-hero.gacha-detail,
   .card-art-grid,
   .difficulty-grid,
   .detail-stats,
@@ -5018,6 +5039,11 @@ code {
   .skill-level-grid,
   .mysekai-recommendation-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-hero.honor-detail > .art-frame,
+  .detail-hero.gacha-detail > .art-frame {
+    max-width: 100%;
   }
 
   .ranking-head {

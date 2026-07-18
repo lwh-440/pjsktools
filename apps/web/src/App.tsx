@@ -280,6 +280,36 @@ function imageCandidates(assets: AssetInfo | undefined, preferDetail = false) {
   return unique([...keys.map((key) => stringAsset(assets, key)), ...stringAssetList(assets, "imageCandidates")]);
 }
 
+function collectionImageCandidates(type: string, assets: AssetInfo | undefined, preferDetail = false) {
+  if (type === "honors") {
+    return unique([
+      stringAsset(assets, "degreeMainUrl"),
+      stringAsset(assets, "imageUrl"),
+      stringAsset(assets, "thumbnailUrl"),
+      stringAsset(assets, "rankMainUrl"),
+      stringAsset(assets, "scrollUrl"),
+      ...stringAssetList(assets, "imageCandidates")
+    ]);
+  }
+  if (type === "gachas") {
+    return unique([
+      stringAsset(assets, "bannerUrl"),
+      stringAsset(assets, "imageUrl"),
+      stringAsset(assets, "thumbnailUrl"),
+      stringAsset(assets, "logoUrl"),
+      stringAsset(assets, "screenUrl"),
+      ...stringAssetList(assets, "imageCandidates")
+    ]);
+  }
+  return imageCandidates(assets, preferDetail);
+}
+
+function collectionImageVariant(type: string): "square" | "wide" | "gacha" {
+  if (type === "honors" || type === "comics") return "wide";
+  if (type === "gachas") return "gacha";
+  return "square";
+}
+
 function paginate<T>(items: T[], page: number, pageSize: number) {
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -1477,8 +1507,8 @@ export function App() {
         <div className="panel-heading"><div><h2>{collectionMeta[type].label}</h2><p>按名称、分类和 ID 浏览。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索名称、分类、ID" /></div>
         {renderCatalogFilters(pageData)}
         <div className="catalog-grid cards">{pageData.items.map((item: CollectionItem) => {
-          const candidates = imageCandidates(item.assets);
-          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card card-card ${collectionType === "honors" ? "honor-card" : ""}`}><button type="button" className="catalog-card-main" onClick={() => openCollection(collectionType, item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionType === "honors" || collectionType === "comics" ? "wide" : "square"} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : item.category ?? item.rarity ?? "详细资料"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
+          const candidates = collectionImageCandidates(collectionType, item.assets);
+          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card card-card ${collectionType === "honors" ? "honor-card" : ""}`}><button type="button" className="catalog-card-main" onClick={() => openCollection(collectionType, item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : item.category ?? item.rarity ?? "详细资料"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
         })}</div>
         <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </section>
@@ -2632,7 +2662,7 @@ export function App() {
       {selectedCollection && (
         <DetailDrawer title={selectedCollection.item.name} onClose={() => setSelectedCollection(null)}>
           <FavoriteButton type={favoriteTypeForCatalog(selectedCollection.item.type)} region={region} targetId={selectedCollection.item.id} label={selectedCollection.item.name} />
-          <div className={`detail-hero ${selectedCollection.item.type === "honors" ? "honor-detail" : ""}`}><ArtImage src={imageCandidates(selectedCollection.assets, true)[0]} srcCandidates={imageCandidates(selectedCollection.assets, true)} label={selectedCollection.item.name} variant={selectedCollection.item.type === "honors" || selectedCollection.item.type === "comics" ? "wide" : "square"} /><div><strong>{selectedCollection.item.name}</strong><span>ID {selectedCollection.item.id}</span><p>{selectedCollection.item.description ?? selectedCollection.item.category ?? "暂无更多说明"}</p><small>{formatDate(selectedCollection.item.startAt)} - {formatDate(selectedCollection.item.endAt)}</small></div></div>
+          <div className={`detail-hero ${selectedCollection.item.type === "honors" ? "honor-detail" : selectedCollection.item.type === "gachas" ? "gacha-detail" : ""}`}><ArtImage src={collectionImageCandidates(selectedCollection.item.type, selectedCollection.assets, true)[0]} srcCandidates={collectionImageCandidates(selectedCollection.item.type, selectedCollection.assets, true)} label={selectedCollection.item.name} variant={collectionImageVariant(selectedCollection.item.type)} /><div><strong>{selectedCollection.item.name}</strong><span>ID {selectedCollection.item.id}</span><p>{selectedCollection.item.description ?? selectedCollection.item.category ?? "暂无更多说明"}</p><small>{formatDate(selectedCollection.item.startAt)} - {formatDate(selectedCollection.item.endAt)}</small></div></div>
           {selectedCollection.item.type === "costumes" && <section className="costume-detail-grid"><div><h3>服装信息</h3><p>部件：{selectedCollection.item.partTypes?.join(" / ") || "缺失"}</p><p>来源：{selectedCollection.item.source ?? "未知"} / 稀有度：{selectedCollection.item.rarity ?? "未知"}</p><p>性别：{selectedCollection.item.gender ?? "未知"}{selectedCollection.item.designer ? ` / 设计：${selectedCollection.item.designer}` : ""}</p><p>适用角色：{selectedCollection.item.characterIds?.join("、") || "未提供"}</p></div><div><h3>颜色与部件</h3>{Object.entries(selectedCollection.item.parts ?? {}).map(([partType, variants]) => <div key={partType} className="costume-part"><strong>{partType}</strong><span>{variants.map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}{(selectedCollection.item.extraParts ?? []).map((part, index) => <div key={`${part.characterId}-${part.partType}-${index}`} className="costume-part"><strong>{part.partType ?? "extra"} / 角色 {part.characterId ?? "-"}</strong><span>{(part.variants ?? []).map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}</div></section>}
           <section className="related-card-grid">{(selectedCollection.relations?.relatedCards ?? []).slice(0, 30).map((card) => renderRelatedCardTile(card, `${region}:collection-card:${card.id}`))}</section>
         </DetailDrawer>
