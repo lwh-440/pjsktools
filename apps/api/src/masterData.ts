@@ -1101,11 +1101,13 @@ export async function getCollectionFullDetail(region: RegionId, type: string, id
     : costumeCardIds
       ? (await getCards(region)).filter((card) => costumeCardIds.has(card.id))
       : [];
+  const displayItem = getDisplayCollectionItem(region, type, item);
+  const assets = typedCatalogAssets(getCollectionItemAssetDetail(region, type, item));
   return {
     region,
     type,
-    item: getDisplayCollectionItem(region, type, item),
-    assets: getCollectionItemAssetDetail(region, type, item),
+    item: { ...displayItem, assets },
+    assets,
     relations: {
       relatedCards
     },

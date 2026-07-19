@@ -32,6 +32,8 @@ export function ArtImage({
 
   useEffect(() => {
     let cancelled = false;
+    const cached = successfulImageSources.get(sourceKey);
+    setResolvedSource(cached ?? "");
     setFailed(false);
 
     if (sources.length === 0) {
@@ -39,9 +41,7 @@ export function ArtImage({
       return;
     }
 
-    const cached = successfulImageSources.get(sourceKey);
     if (cached) {
-      setResolvedSource(cached);
       return;
     }
 
@@ -49,7 +49,7 @@ export function ArtImage({
       if (cancelled) return;
       const source = sources.slice(index).find((candidate) => !failedImageSources.has(candidate));
       if (!source) {
-        if (!resolvedSource) setFailed(true);
+        setFailed(true);
         return;
       }
       const sourceIndex = sources.indexOf(source);

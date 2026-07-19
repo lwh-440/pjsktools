@@ -187,13 +187,16 @@ describe("pjsktools api", () => {
     const gacha = await app.inject({ method: "GET", url: "/api/master/jp/gachas/1/full" });
     expect(gacha.statusCode).toBe(200);
     expect(gacha.json().item.assets).toBeTruthy();
-    expect(gacha.json().assets.logoUrl).toContain("/gacha/");
-    expect(gacha.json().assets.bannerUrl).toContain("/home/banner/banner_gacha1/");
+    expect(gacha.json().assets.logoUrl).toContain("/api/assets/proxy?url=");
+    expect(gacha.json().assets.bannerUrl).toContain("/api/assets/proxy?url=");
+    expect(gacha.json().item.assets.bannerUrl).toBe(gacha.json().assets.bannerUrl);
 
     const honor = await app.inject({ method: "GET", url: "/api/master/jp/honors/1/full" });
     expect(honor.statusCode).toBe(200);
-    expect(honor.json().assets.degreeMainUrl).toContain("/honor/");
+    expect(honor.json().assets.degreeMainUrl).toContain("/api/assets/proxy?url=");
+    expect(honor.json().item.assets.degreeMainUrl).toBe(honor.json().assets.degreeMainUrl);
     expect(honor.json().assets.imageCandidates.length).toBeGreaterThan(0);
+    expect(honor.json().assets.imageCandidates.every((url: string) => url.startsWith("/api/assets/proxy?url="))).toBe(true);
   }, 60_000);
 
   it("calculates score-control and conservative deck recommendations", async () => {
