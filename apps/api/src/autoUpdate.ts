@@ -3,16 +3,25 @@ import { config, regions } from "./config.js";
 import { syncMasterRegion } from "./masterData.js";
 import { refreshWatchedPlayers, refreshWatchedRankings } from "./runtimeData.js";
 
-function startLoop(name: string, intervalMs: number, task: () => Promise<unknown>, logger: FastifyBaseLogger) {
+export function startLoop(name: string, intervalMs: number, task: () => Promise<unknown>, logger: FastifyBaseLogger) {
+  let running = false;
   const run = async () => {
+    if (running) {
+      logger.warn({ job: name }, "auto update skipped because previous run is still active");
+      return;
+    }
+    running = true;
     try {
       await task();
       logger.info({ job: name }, "auto update completed");
     } catch (error) {
       logger.warn({ job: name, error }, "auto update failed");
+    } finally {
+      running = false;
     }
   };
 
+  void run();
   const timer = setInterval(run, intervalMs);
   timer.unref();
   return timer;

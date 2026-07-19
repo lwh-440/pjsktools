@@ -757,6 +757,14 @@ export function App() {
     setCards([]);
     setEvents([]);
     setEvent(null);
+    setRanking([]);
+    setBorders([]);
+    setForecast(null);
+    setRankingHistorySummary(null);
+    setRankingHistory(null);
+    setRankingSourceHealth(null);
+    setRankingUpdatedAt(null);
+    setRankingWarnings([]);
     setCatalogTotals({ songs: null, cards: null });
     setCatalogs({});
     setCollections({});
@@ -769,7 +777,7 @@ export function App() {
       ]);
       if (controller.signal.aborted || baseRequest.current?.id !== requestId || regionRef.current !== nextRegion) return;
       setRegions(nextRegions);
-      setEvent(currentEvent);
+      if (currentEvent) setEvent((current) => current ?? currentEvent);
       setCatalogTotals({ songs: songPage?.total ?? null, cards: cardPage?.total ?? null });
       setHistoryEventId("");
       setMessage("基础数据已就绪，图鉴将在打开时加载");
@@ -851,7 +859,7 @@ export function App() {
       setRankingUpdatedAt(live.updatedAt ?? live.sourceHealth?.latestUpdatedAt ?? null);
       setRankingWarnings(live.warnings ?? []);
       setRankingNextRefreshAt(Date.now() + 10_000);
-      const activeEventId = live.currentEvent?.id ?? event?.id;
+      const activeEventId = live.currentEvent?.id;
       if (activeEventId && activeEventId !== "none") void loadRankingExtras(activeEventId, nextRegion);
     } catch (error) {
       if ((error as Error).name !== "AbortError") throw error;

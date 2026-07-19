@@ -65,8 +65,8 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   autoUpdateEnabled: process.env.AUTO_UPDATE_ENABLED !== "false",
   playerRefreshMs: Number(process.env.PLAYER_REFRESH_MS ?? 60_000),
-  rankingRefreshMs: Number(process.env.RANKING_REFRESH_MS ?? 60_000),
-  masterRefreshMs: Number(process.env.MASTER_REFRESH_MS ?? 600_000)
+  rankingRefreshMs: Number(process.env.RANKING_REFRESH_MS ?? 10_000),
+  masterRefreshMs: Number(process.env.MASTER_REFRESH_MS ?? 43_200_000)
 };
 
 export const regions = [
