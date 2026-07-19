@@ -32,11 +32,18 @@ interface SessionStorage {
 interface AuthRepository {
     val state: Flow<AuthState>
     suspend fun login(email: String, password: String): Result<Unit>
-    suspend fun sendRegistrationCode(email: String): Result<String?>
+    suspend fun sendRegistrationCode(email: String): Result<VerificationCodeDelivery>
     suspend fun register(email: String, password: String, code: String): Result<Unit>
     suspend fun refresh(): Result<Unit>
     suspend fun logout()
 }
+
+data class VerificationCodeDelivery(
+    val sent: Boolean,
+    val expiresInSeconds: Int,
+    val resendAfterSeconds: Int,
+    val developmentCode: String? = null
+)
 
 data class PlayerBindingSummary(
     val id: String, val region: Region, val playerUid: String, val displayName: String? = null,

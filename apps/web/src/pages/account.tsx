@@ -403,16 +403,41 @@ export function RegisterPage() {
   const { register, isAuthenticated } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
   const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [sendingCode, setSendingCode] = useState(false);
+  const [resendSeconds, setResendSeconds] = useState(0);
   const navigate = useNavigate();
+  useEffect(() => {
+    if (resendSeconds <= 0) return;
+    const timer = window.setInterval(() => setResendSeconds((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [resendSeconds]);
   async function requestCode() {
-    const result = await apiPost<{ devCode?: string; sent?: boolean }>("/api/auth/email-code/start", { email, purpose: "register" });
-    setNotice(result.devCode ? `开发验证码：${result.devCode}` : "验证码已发送。");
+    if (!email.trim()) return setError("请输入有效邮箱。");
+    setSendingCode(true);
+    setError("");
+    try {
+      const result = await apiPost<{ devCode?: string; sent: boolean; expiresIn: number; resendAfter: number }>("/api/auth/email-code/start", { email, purpose: "register" });
+      setResendSeconds(result.resendAfter);
+      setNotice(result.devCode ? `开发验证码：${result.devCode}，${Math.floor(result.expiresIn / 60)} 分钟内有效。` : `验证码已发送，${Math.floor(result.expiresIn / 60)} 分钟内有效。`);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "验证码发送失败，请稍后重试。");
+    } finally {
+      setSendingCode(false);
+    }
   }
   async function submitRegister() {
-    await register(email, password, code);
-    navigate("/me");
+    setError("");
+    if (password !== confirmPassword) return setError("两次输入的密码不一致。");
+    try {
+      await register(email, password, code);
+      navigate("/me");
+    } catch (registerError) {
+      setError(registerError instanceof Error ? registerError.message : "注册失败，请检查填写内容。");
+    }
   }
   if (isAuthenticated) return <Navigate to="/me" replace />;
   return (
@@ -421,10 +446,13 @@ export function RegisterPage() {
       <article className="panel auth-panel">
         <h2>邮箱注册</h2>
         <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="邮箱" />
-        <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 10 位密码" />
-        <div className="button-row"><input value={code} onChange={(event) => setCode(event.target.value)} placeholder="验证码" /><button type="button" className="secondary" onClick={requestCode}>获取验证码</button></div>
-        <button type="button" onClick={submitRegister}>注册</button>
+        <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" />
+        <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再次输入密码" />
+        <small>密码至少 10 位，并包含大写字母、小写字母、数字和符号；14 位以上至少包含其中三类，且不能包含邮箱名前缀。</small>
+        <div className="button-row"><input value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6 位验证码" /><button type="button" className="secondary" disabled={sendingCode || resendSeconds > 0 || !email.trim()} onClick={requestCode}>{sendingCode ? "发送中..." : resendSeconds > 0 ? `${resendSeconds}s 后重发` : "获取验证码"}</button></div>
+        <button type="button" disabled={password !== confirmPassword || code.length !== 6} onClick={submitRegister}>注册</button>
         {notice && <p className="empty-state">{notice}</p>}
+        {error && <p className="warning-text">{error}</p>}
         <Link to="/login">已有账号？去登录</Link>
       </article>
     </section>

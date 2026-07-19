@@ -26,6 +26,7 @@ import kotlinx.serialization.Contextual
  * @param ok 
  * @param sent 
  * @param expiresIn 
+ * @param resendAfter Seconds before another code may be requested for the same email.
  * @param devCode 
  */
 @Serializable
@@ -40,6 +41,10 @@ data class EmailCodeResponse (
 
     @SerialName(value = "expiresIn")
     val expiresIn: kotlin.Int,
+
+    /* Seconds before another code may be requested for the same email. */
+    @SerialName(value = "resendAfter")
+    val resendAfter: kotlin.Int,
 
     @SerialName(value = "devCode")
     val devCode: kotlin.String? = null

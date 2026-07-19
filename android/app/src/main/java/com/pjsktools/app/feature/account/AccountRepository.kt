@@ -110,7 +110,7 @@ class AccountRepository(
 
     suspend fun requestRegistrationCode(email: String) = io {
         post("/api/auth/email-code/start", JSONObject().put("email", email.trim()).put("purpose", "register")).let {
-            RegistrationCodeResult(it.optBoolean("sent"), it.longOrNull("expiresIn"), it.stringOrNull("devCode"))
+            RegistrationCodeResult(it.optBoolean("sent"), it.longOrNull("expiresIn"), it.longOrNull("resendAfter"), it.stringOrNull("devCode"))
         }
     }
     suspend fun login(email: String, password: String) = io {
@@ -265,7 +265,8 @@ class AccountRepository(
         val (code, body) = awaitResponse(request)
         if (code in 200..299) return body
         if (code == 401 && allowRefresh) return refreshAndRetryRaw(request)
-        throw AccountApiException(code, body.ifBlank { "API 请求失败（HTTP $code）" })
+        val message = runCatching { JSONObject(body).optString("message") }.getOrNull().orEmpty()
+        throw AccountApiException(code, message.ifBlank { body.ifBlank { "API 请求失败（HTTP $code）" } })
     }
     private suspend fun refreshAndRetryRaw(original: Request): String = refreshMutex.withLock {
         val stored = sessionStore.load() ?: throw AccountApiException(401, "登录状态已失效")

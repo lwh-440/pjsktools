@@ -26,6 +26,7 @@ import com.pjsktools.core.model.FavoriteTarget
 import com.pjsktools.core.model.FavoriteType
 import com.pjsktools.core.model.Region
 import com.pjsktools.core.model.SessionStorage
+import com.pjsktools.core.model.VerificationCodeDelivery
 import com.pjsktools.core.model.PlayerBindingRepository
 import com.pjsktools.core.model.PlayerBindingSummary
 import kotlinx.coroutines.flow.Flow
@@ -143,7 +144,8 @@ class AccountRepositoryImpl @Inject constructor(
 
     override suspend fun sendRegistrationCode(email: String) = runCatching {
         val response = api.startEmailVerification(EmailCodeRequest(email))
-        requireNotNull(response.body()) { "验证码发送失败 (${response.code()})" }.devCode
+        val body = requireNotNull(response.body()) { "验证码发送失败 (${response.code()})" }
+        VerificationCodeDelivery(body.sent, body.expiresIn, body.resendAfter, body.devCode)
     }
 
     override suspend fun register(email: String, password: String, code: String) = runCatching {

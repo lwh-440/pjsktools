@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -61,14 +62,25 @@ class AccountViewModel @Inject constructor(
     )
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow<String?>(null)
+    val resendSeconds = MutableStateFlow(0)
 
     fun login(email: String, password: String) = submit { repository.login(email.trim(), password) }
-    fun register(email: String, password: String, code: String) =
+    fun register(email: String, password: String, confirmPassword: String, code: String) {
+        if (password != confirmPassword) {
+            message.value = "PASSWORD_MISMATCH"
+            return
+        }
         submit { repository.register(email.trim(), password, code.trim()) }
+    }
 
     fun sendCode(email: String) = submit {
-        repository.sendRegistrationCode(email.trim()).onSuccess { devCode ->
-            message.value = devCode?.let { "DEV:$it" } ?: "SENT"
+        repository.sendRegistrationCode(email.trim()).onSuccess { delivery ->
+            message.value = delivery.developmentCode?.let { "DEV:$it:${delivery.expiresInSeconds}" } ?: "SENT:${delivery.expiresInSeconds}"
+            resendSeconds.value = delivery.resendAfterSeconds
+            while (resendSeconds.value > 0) {
+                delay(1000)
+                resendSeconds.value -= 1
+            }
         }
     }
 
@@ -95,6 +107,7 @@ fun AccountScreen(
     val auth by viewModel.auth.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val message by viewModel.message.collectAsState()
+    val resendSeconds by viewModel.resendSeconds.collectAsState()
     LaunchedEffect(auth) {
         if (auth is AuthState.SignedIn) onSignedIn()
     }
@@ -129,16 +142,17 @@ fun AccountScreen(
                 }
                 return@Column
             }
-            AccountForm(busy, message, viewModel)
+            AccountForm(busy, message, resendSeconds, viewModel)
         }
     }
 }
 
 @Composable
-private fun AccountForm(busy: Boolean, message: String?, viewModel: AccountViewModel) {
+private fun AccountForm(busy: Boolean, message: String?, resendSeconds: Int, viewModel: AccountViewModel) {
     var register by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     Column(
         Modifier.fillMaxWidth().widthIn(max = 520.dp),
@@ -158,6 +172,12 @@ private fun AccountForm(busy: Boolean, message: String?, viewModel: AccountViewM
             visualTransformation = PasswordVisualTransformation(), singleLine = true
         )
         if (register) {
+            OutlinedTextField(
+                confirmPassword, { confirmPassword = it }, Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.account_confirm_password)) },
+                visualTransformation = PasswordVisualTransformation(), singleLine = true
+            )
+            Text(stringResource(R.string.account_password_rules), style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     code, { code = it.take(6) }, Modifier.weight(1f),
@@ -165,27 +185,28 @@ private fun AccountForm(busy: Boolean, message: String?, viewModel: AccountViewM
                 )
                 OutlinedButton(
                     { viewModel.sendCode(email) },
-                    enabled = !busy && email.contains("@")
-                ) { Text(stringResource(R.string.account_send_code)) }
+                    enabled = !busy && email.contains("@") && resendSeconds == 0
+                ) { Text(if (resendSeconds > 0) stringResource(R.string.account_resend_countdown, resendSeconds) else stringResource(R.string.account_send_code)) }
             }
         }
         message?.let {
             Text(
-                if (it.startsWith("DEV:")) stringResource(R.string.account_dev_code, it.removePrefix("DEV:"))
-                else if (it == "SENT") stringResource(R.string.account_code_sent) else it,
-                color = if (it == "SENT" || it.startsWith("DEV:")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                if (it.startsWith("DEV:")) stringResource(R.string.account_dev_code, it.removePrefix("DEV:").substringBefore(':'))
+                else if (it.startsWith("SENT:")) stringResource(R.string.account_code_sent, it.substringAfter(':').toInt() / 60)
+                else if (it == "PASSWORD_MISMATCH") stringResource(R.string.account_password_mismatch) else it,
+                color = if (it.startsWith("SENT:") || it.startsWith("DEV:")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
             )
         }
         Button(
             {
-                if (register) viewModel.register(email, password, code)
+                if (register) viewModel.register(email, password, confirmPassword, code)
                 else viewModel.login(email, password)
             },
             Modifier.fillMaxWidth(),
             enabled = !busy &&
                 email.contains("@") &&
                 password.length >= (if (register) 10 else 8) &&
-                (!register || code.length == 6)
+                (!register || code.length == 6 && password == confirmPassword)
         ) {
             if (busy) CircularProgressIndicator(Modifier.height(20.dp), strokeWidth = 2.dp)
             else Text(stringResource(if (register) R.string.account_submit_register else R.string.account_submit_login))

@@ -39,14 +39,18 @@ class AccountFeatureController(private val repository: AccountRepository) {
 
     suspend fun requestRegistrationCode(email: String) = mutex.withLock {
         if (!requireInput(email.isNotBlank(), "请输入邮箱")) return@withLock
-        loading { it.copy(registrationCode = repository.requestRegistrationCode(email), message = "验证码已请求") }
+        loading {
+            val result = repository.requestRegistrationCode(email)
+            it.copy(registrationCode = result, message = "验证码已发送，${(result.expiresInSeconds ?: 300) / 60} 分钟内有效")
+        }
     }
     suspend fun login(email: String, password: String) = mutex.withLock {
         if (!requireInput(email.isNotBlank() && password.length >= 8, "请输入有效邮箱和至少 8 位密码")) return@withLock
         authenticate { repository.login(email, password) }
     }
-    suspend fun register(email: String, password: String, code: String) = mutex.withLock {
-        if (!requireInput(email.isNotBlank() && password.length >= 10 && code.matches(Regex("\\d{6}")), "注册需要有效邮箱、至少 10 位密码和 6 位验证码")) return@withLock
+    suspend fun register(email: String, password: String, confirmPassword: String, code: String) = mutex.withLock {
+        if (!requireInput(password == confirmPassword, "两次输入的密码不一致")) return@withLock
+        if (!requireInput(email.isNotBlank() && password.length >= 10 && code.matches(Regex("\\d{6}")), "注册需要有效邮箱、符合规则的密码和 6 位验证码")) return@withLock
         authenticate { repository.register(email, password, code) }
     }
     suspend fun refreshSession() = mutex.withLock {

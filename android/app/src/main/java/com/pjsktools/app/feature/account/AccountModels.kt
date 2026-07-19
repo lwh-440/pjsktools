@@ -43,7 +43,12 @@ data class MeProfile(
     val deckConfigs: List<DeckConfig> = emptyList()
 ) { fun summaryFor(bindingId: String) = bindingSummaries.firstOrNull { it.bindingId == bindingId } }
 
-data class RegistrationCodeResult(val sent: Boolean, val expiresInSeconds: Long? = null, val developmentCode: String? = null)
+data class RegistrationCodeResult(
+    val sent: Boolean,
+    val expiresInSeconds: Long? = null,
+    val resendAfterSeconds: Long? = null,
+    val developmentCode: String? = null
+)
 data class NewPlayerBinding(val region: String, val playerUid: String, val displayName: String = "", val note: String = "", val isDefault: Boolean = false)
 enum class AccountEntryMode { LOGIN, REGISTER }
 

@@ -49,6 +49,9 @@ export type AuthStore = {
   createUser(email: string, password: string, profile?: { nickname?: string; avatarUrl?: string }): Promise<UserAccount>;
   createOAuthUser(input: CreateOAuthInput): Promise<UserAccount>;
   createEmailVerificationCode(input: { email: string; purpose: EmailVerificationPurpose; code: string; expiresAt: string }): Promise<EmailVerificationCode>;
+  getLatestEmailVerificationCode(email: string, purpose: EmailVerificationPurpose): Promise<EmailVerificationCode | null>;
+  reserveEmailVerificationCooldown(input: { email: string; purpose: EmailVerificationPurpose; reservationId: string; cooldownSeconds: number }): Promise<number>;
+  releaseEmailVerificationCooldown(input: { email: string; purpose: EmailVerificationPurpose; reservationId: string }): Promise<void>;
   consumeEmailVerificationCode(input: { email: string; purpose: EmailVerificationPurpose; code: string }): Promise<boolean>;
   verifyUser(email: string, password: string): Promise<UserAccount | null>;
   getUser(id: string): Promise<UserAccount | null>;
@@ -126,6 +129,7 @@ export class MemoryStore implements AuthStore {
   private authStates = new Map<string, AuthState>();
   private oauthHandoffs = new Map<string, OAuthHandoff & { expiresAt: string }>();
   private emailCodes = new Map<string, EmailVerificationCode>();
+  private emailCodeCooldowns = new Map<string, { reservationId: string; expiresAt: number }>();
   private favoriteFolders = new Map<string, FavoriteFolder>();
   private favorites = new Map<string, Favorite>();
   private scores = new Map<string, ScoreRecord>();
@@ -185,6 +189,30 @@ export class MemoryStore implements AuthStore {
     };
     this.emailCodes.set(codeRecord.id, codeRecord);
     return codeRecord;
+  }
+
+  async getLatestEmailVerificationCode(email: string, purpose: EmailVerificationPurpose) {
+    const normalizedEmail = normalizeEmail(email);
+    return [...this.emailCodes.values()]
+      .filter((item) => item.email === normalizedEmail && item.purpose === purpose)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null;
+  }
+
+  async reserveEmailVerificationCooldown(input: { email: string; purpose: EmailVerificationPurpose; reservationId: string; cooldownSeconds: number }) {
+    const key = `${normalizeEmail(input.email)}:${input.purpose}`;
+    const now = Date.now();
+    const latest = await this.getLatestEmailVerificationCode(input.email, input.purpose);
+    const latestExpiry = latest ? Date.parse(latest.createdAt) + input.cooldownSeconds * 1000 : 0;
+    const reservedExpiry = this.emailCodeCooldowns.get(key)?.expiresAt ?? 0;
+    const blockedUntil = Math.max(latestExpiry, reservedExpiry);
+    if (blockedUntil > now) return Math.max(1, Math.ceil((blockedUntil - now) / 1000));
+    this.emailCodeCooldowns.set(key, { reservationId: input.reservationId, expiresAt: now + input.cooldownSeconds * 1000 });
+    return 0;
+  }
+
+  async releaseEmailVerificationCooldown(input: { email: string; purpose: EmailVerificationPurpose; reservationId: string }) {
+    const key = `${normalizeEmail(input.email)}:${input.purpose}`;
+    if (this.emailCodeCooldowns.get(key)?.reservationId === input.reservationId) this.emailCodeCooldowns.delete(key);
   }
 
   async consumeEmailVerificationCode(input: { email: string; purpose: EmailVerificationPurpose; code: string }) {

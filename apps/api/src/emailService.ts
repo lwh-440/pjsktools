@@ -33,11 +33,16 @@ function readResponse(socket: net.Socket): Promise<string> {
   });
 }
 
-async function command(socket: net.Socket, line: string, expected: number[]) {
+export function smtpCommandError(stage: string, response: string) {
+  const code = Number(response.slice(0, 3));
+  return new Error(`SMTP_${stage}_FAILED_${Number.isFinite(code) ? code : "UNKNOWN"}`);
+}
+
+async function command(socket: net.Socket, stage: string, line: string, expected: number[]) {
   socket.write(`${line}\r\n`);
   const response = await readResponse(socket);
   const code = Number(response.slice(0, 3));
-  if (!expected.includes(code)) throw new Error(`SMTP command failed: ${line} -> ${response.trim()}`);
+  if (!expected.includes(code)) throw smtpCommandError(stage, response);
   return response;
 }
 
@@ -67,15 +72,15 @@ export async function sendVerificationEmail(email: string, code: string) {
 
   try {
     await readResponse(socket);
-    await command(socket, `EHLO ${config.smtpHost}`, [250]);
-    await command(socket, "AUTH LOGIN", [334]);
-    await command(socket, Buffer.from(config.smtpUser).toString("base64"), [334]);
-    await command(socket, Buffer.from(config.smtpPass).toString("base64"), [235]);
-    await command(socket, `MAIL FROM:<${from.address}>`, [250]);
-    await command(socket, `RCPT TO:<${email}>`, [250, 251]);
-    await command(socket, "DATA", [354]);
-    await command(socket, `${message}\r\n.`, [250]);
-    await command(socket, "QUIT", [221]);
+    await command(socket, "EHLO", `EHLO ${config.smtpHost}`, [250]);
+    await command(socket, "AUTH", "AUTH LOGIN", [334]);
+    await command(socket, "AUTH_USER", Buffer.from(config.smtpUser).toString("base64"), [334]);
+    await command(socket, "AUTH_PASS", Buffer.from(config.smtpPass).toString("base64"), [235]);
+    await command(socket, "MAIL_FROM", `MAIL FROM:<${from.address}>`, [250]);
+    await command(socket, "RCPT_TO", `RCPT TO:<${email}>`, [250, 251]);
+    await command(socket, "DATA_START", "DATA", [354]);
+    await command(socket, "DATA_BODY", `${message}\r\n.`, [250]);
+    await command(socket, "QUIT", "QUIT", [221]);
     return { sent: true };
   } finally {
     socket.end();

@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -84,7 +85,16 @@ private fun AccountEntry(
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
+    var resendSeconds by remember { mutableStateOf(0L) }
+    LaunchedEffect(state.registrationCode) {
+        resendSeconds = state.registrationCode?.resendAfterSeconds ?: 0
+        while (resendSeconds > 0) {
+            delay(1000)
+            resendSeconds -= 1
+        }
+    }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("PJSK Tools 账号", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
         item { Text("登录后与网页端共享 UID、公开资料和玩家资产。绑定 UID 不代表所有权证明。") }
@@ -97,20 +107,23 @@ private fun AccountEntry(
             }
         }
         item { OutlinedTextField(email, { email = it }, modifier = Modifier.fillMaxWidth(), label = { Text("邮箱") }, singleLine = true) }
-        item { OutlinedTextField(password, { password = it }, modifier = Modifier.fillMaxWidth(), label = { Text(if (state.entryMode == AccountEntryMode.REGISTER) "密码（至少 10 位）" else "密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }
+        item { OutlinedTextField(password, { password = it }, modifier = Modifier.fillMaxWidth(), label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }
         if (state.entryMode == AccountEntryMode.REGISTER) {
+            item { OutlinedTextField(confirmPassword, { confirmPassword = it }, modifier = Modifier.fillMaxWidth(), label = { Text("再次输入密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }
+            item { Text("密码至少 10 位，并包含大写字母、小写字母、数字和符号；14 位以上至少包含其中三类，且不能包含邮箱名前缀。", style = MaterialTheme.typography.bodySmall) }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, modifier = Modifier.weight(1f), label = { Text("6 位验证码") }, singleLine = true)
-                    OutlinedButton(enabled = !state.busy && email.isNotBlank(), onClick = { launch { controller.requestRegistrationCode(email) } }) { Text("获取验证码") }
+                    OutlinedButton(enabled = !state.busy && email.isNotBlank() && resendSeconds == 0L, onClick = { launch { controller.requestRegistrationCode(email) } }) { Text(if (resendSeconds > 0) "${resendSeconds}s 后重发" else "获取验证码") }
                 }
             }
+            state.registrationCode?.let { result -> item { Text("验证码已发送，${(result.expiresInSeconds ?: 300) / 60} 分钟内有效。") } }
             state.registrationCode?.developmentCode?.let { devCode -> item { Text("开发环境验证码：$devCode") } }
         }
         item {
             Button(
-                enabled = !state.busy,
-                onClick = { launch { if (state.entryMode == AccountEntryMode.LOGIN) controller.login(email, password) else controller.register(email, password, code) } },
+                enabled = !state.busy && (state.entryMode == AccountEntryMode.LOGIN || password == confirmPassword && code.length == 6),
+                onClick = { launch { if (state.entryMode == AccountEntryMode.LOGIN) controller.login(email, password) else controller.register(email, password, confirmPassword, code) } },
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (state.busy) "请稍候…" else if (state.entryMode == AccountEntryMode.LOGIN) "登录" else "创建账号") }
         }

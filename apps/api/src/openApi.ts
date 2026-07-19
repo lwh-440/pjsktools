@@ -61,9 +61,10 @@ const schemas: Record<string, Schema> = {
     properties: { email: { type: "string", format: "email" }, purpose: { type: "string", enum: ["register"], default: "register" } }
   },
   EmailCodeResponse: {
-    type: "object", required: ["ok", "sent", "expiresIn"],
+    type: "object", required: ["ok", "sent", "expiresIn", "resendAfter"],
     properties: {
       ok: { type: "boolean" }, sent: { type: "boolean" }, expiresIn: { type: "integer" },
+      resendAfter: { type: "integer", description: "Seconds before another code may be requested for the same email." },
       devCode: nullable({ type: "string" })
     }
   },

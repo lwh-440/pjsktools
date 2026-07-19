@@ -275,6 +275,55 @@ export class PgStore implements AuthStore {
     return rowToEmailCode(result.rows[0]);
   }
 
+  async getLatestEmailVerificationCode(email: string, purpose: EmailVerificationPurpose) {
+    const result = await this.pool.query(
+      `select * from email_verification_codes where email = $1 and purpose = $2 order by created_at desc limit 1`,
+      [normalizeEmail(email), purpose]
+    );
+    return result.rows[0] ? rowToEmailCode(result.rows[0]) : null;
+  }
+
+  async reserveEmailVerificationCooldown(input: { email: string; purpose: EmailVerificationPurpose; reservationId: string; cooldownSeconds: number }) {
+    const email = normalizeEmail(input.email);
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(`select pg_advisory_xact_lock(hashtextextended($1, 0))`, [`${email}:${input.purpose}`]);
+      const blocked = await client.query(
+        `select greatest(
+           coalesce((select max(created_at) + ($3 * interval '1 second') from email_verification_codes where email = $1 and purpose = $2), '-infinity'::timestamptz),
+           coalesce((select expires_at from email_verification_cooldowns where email = $1 and purpose = $2), '-infinity'::timestamptz)
+         ) as blocked_until`,
+        [email, input.purpose, input.cooldownSeconds]
+      );
+      const blockedUntil = Date.parse(blocked.rows[0].blocked_until);
+      if (Number.isFinite(blockedUntil) && blockedUntil > Date.now()) {
+        await client.query("commit");
+        return Math.max(1, Math.ceil((blockedUntil - Date.now()) / 1000));
+      }
+      await client.query(
+        `insert into email_verification_cooldowns (email, purpose, reservation_id, expires_at)
+         values ($1, $2, $3, now() + ($4 * interval '1 second'))
+         on conflict (email, purpose) do update set reservation_id = excluded.reservation_id, expires_at = excluded.expires_at`,
+        [email, input.purpose, input.reservationId, input.cooldownSeconds]
+      );
+      await client.query("commit");
+      return 0;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async releaseEmailVerificationCooldown(input: { email: string; purpose: EmailVerificationPurpose; reservationId: string }) {
+    await this.pool.query(
+      `delete from email_verification_cooldowns where email = $1 and purpose = $2 and reservation_id = $3`,
+      [normalizeEmail(input.email), input.purpose, input.reservationId]
+    );
+  }
+
   async consumeEmailVerificationCode(input: { email: string; purpose: EmailVerificationPurpose; code: string }) {
     const result = await this.pool.query(
       `select * from email_verification_codes

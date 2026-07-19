@@ -50,7 +50,7 @@ import {
 } from "./qqClient.js";
 import { getLatestLiveRankingCached, getLiveRankingCached, getPlayerProfileCached, getRankingBorderCached, getRankingChurnCached, getRankingHistory, getRankingHistorySummary, getRankingPlayerDetail, getRankingTop100Cached, getRuntimeStatus } from "./runtimeData.js";
 import { calculateMysekai } from "./mysekaiCalc.js";
-import { store, toPublicUser } from "./store.js";
+import { store, toPublicUser, type AuthStore } from "./store.js";
 import type { Favorite, FavoriteTargetSummary, FavoriteType, PlayerDataKind } from "./types.js";
 import { validatePasswordStrength } from "./passwordPolicy.js";
 import { buildBindingCompleteness, buildBindingSummary, buildMeProfile, isPlayerDataKind, normalizeSuitePlayerDataImport, playerDataKinds, reviewPlayerDataImport, validatePlayerDataRecord } from "./playerSummary.js";
@@ -682,6 +682,8 @@ const collectionTypes = new Set([
 const accessTokenTtl = "15m";
 const refreshTokenTtlMs = 1000 * 60 * 60 * 24 * 30;
 const authStateTtlMs = 1000 * 60 * 10;
+const emailCodeTtlSeconds = 5 * 60;
+const emailCodeResendCooldownSeconds = 60;
 
 function refreshExpiresAt() {
   return new Date(Date.now() + refreshTokenTtlMs).toISOString();
@@ -692,7 +694,7 @@ function authStateExpiresAt() {
 }
 
 function emailCodeExpiresAt() {
-  return new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  return new Date(Date.now() + emailCodeTtlSeconds * 1000).toISOString();
 }
 
 function createSixDigitCode() {
@@ -894,6 +896,9 @@ async function resolveQqLogin(code: string, state: string) {
 export async function buildApp(options: {
   enableTestAuthRoutes?: boolean;
   shareCardProfileResolver?: typeof getPlayerProfileCached;
+  verificationEmailSender?: typeof sendVerificationEmail;
+  smtpAvailable?: boolean;
+  authStore?: AuthStore;
 } = {}) {
   const app = Fastify({
     logger: process.env.PJSKTOOLS_SILENT_APP_LOGS === "true" ? false : true,
@@ -901,6 +906,9 @@ export async function buildApp(options: {
   });
   const buildOpenApiDocument = installOpenApi(app);
   const writeControls = createWriteControls(store);
+  const verificationEmailSender = options.verificationEmailSender ?? sendVerificationEmail;
+  const smtpAvailable = options.smtpAvailable ?? smtpConfigured();
+  const emailVerificationStore = options.authStore ?? store;
   await app.register(cors, { origin: config.corsAllowedOrigins });
   await app.register(compress, { global: true, threshold: 1024 });
   await app.register(sensible);
@@ -1724,14 +1732,44 @@ export async function buildApp(options: {
 
   app.post("/api/auth/email-code/start", async (request, reply) => {
     const body = emailCodeSchema.parse(request.body);
+    if (!smtpAvailable && (config.nodeEnv === "production" || options.smtpAvailable === false)) {
+      return reply.serviceUnavailable("邮件验证码服务尚未配置，请联系管理员。");
+    }
+    const reservationId = randomUUID();
+    const retryAfterSeconds = await emailVerificationStore.reserveEmailVerificationCooldown({
+      email: body.email,
+      purpose: body.purpose,
+      reservationId,
+      cooldownSeconds: emailCodeResendCooldownSeconds
+    });
+    if (retryAfterSeconds > 0) {
+      reply.header("retry-after", String(retryAfterSeconds));
+      return reply.code(429).send({
+        statusCode: 429,
+        code: "EMAIL_CODE_COOLDOWN",
+        error: "Too Many Requests",
+        message: `请等待 ${retryAfterSeconds} 秒后再获取验证码。`,
+        retryAfterSeconds
+      });
+    }
     const code = createSixDigitCode();
-    await store.createEmailVerificationCode({ email: body.email, purpose: body.purpose, code, expiresAt: emailCodeExpiresAt() });
     try {
-      const result = await sendVerificationEmail(body.email, code);
-      return { ok: true, sent: result.sent, expiresIn: 300, devCode: result.devCode };
+      const result = await verificationEmailSender(body.email, code);
+      await emailVerificationStore.createEmailVerificationCode({ email: body.email, purpose: body.purpose, code, expiresAt: emailCodeExpiresAt() });
+      return {
+        ok: true,
+        sent: result.sent,
+        expiresIn: emailCodeTtlSeconds,
+        resendAfter: emailCodeResendCooldownSeconds,
+        devCode: result.devCode
+      };
     } catch (error) {
-      if ((error as Error).message === "SMTP_NOT_CONFIGURED") return reply.serviceUnavailable("SMTP is not configured");
-      throw error;
+      await emailVerificationStore.releaseEmailVerificationCooldown({ email: body.email, purpose: body.purpose, reservationId });
+      if ((error as Error).message === "SMTP_NOT_CONFIGURED") {
+        return reply.serviceUnavailable("邮件验证码服务尚未配置，请联系管理员。");
+      }
+      request.log.error({ errorType: (error as Error).name }, "verification email delivery failed");
+      return reply.serviceUnavailable("验证码邮件发送失败，请稍后重试。");
     }
   });
 
