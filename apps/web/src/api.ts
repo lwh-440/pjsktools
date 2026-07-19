@@ -1,4 +1,9 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:4000";
+import { resolveApiBaseUrl } from "./apiBase";
+
+export const API_BASE_URL = resolveApiBaseUrl(
+  import.meta.env.VITE_API_BASE_URL,
+  typeof window === "undefined" ? undefined : window.location.href
+);
 
 export function apiResourceUrl(url?: string) {
   if (!url) return "";
