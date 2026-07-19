@@ -266,7 +266,7 @@ private fun EventHistoryContent(
         detail?.let { full ->
             item {
                 InfoCard(full.event.name) {
-                    if (full.bannerCandidates.isNotEmpty()) RemoteCatalogImage(baseUrl, full.bannerCandidates, full.event.name, heightDp = 220)
+                    if (full.bannerCandidates.isNotEmpty()) RemoteCatalogImage(baseUrl, full.bannerCandidates, full.event.name, aspectRatio = 3.2f)
                     Text(full.event.eventType ?: "未知活动类型")
                     Text("${shortDate(full.event.startAt)} — ${shortDate(full.event.endAt)}")
                     full.event.storyOutline?.let { Text(it) }

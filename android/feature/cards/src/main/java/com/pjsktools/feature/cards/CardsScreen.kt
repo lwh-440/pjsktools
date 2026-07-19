@@ -278,7 +278,7 @@ private fun CardDetailPane(region: Region, result: DataResult<CardDetail>, close
                         SegmentedButton(trained, { trained = true }, SegmentedButtonDefaults.itemShape(1, 2)) { Text(stringResource(R.string.cards_trained)) }
                     }
                 }
-                BackendImage(imageCandidates.ifEmpty { listOfNotNull(if (trained) detail.trainedUrl else detail.normalUrl) }, null, "${region.id}:cards:${detail.card.id}:${if (trained) "trained" else "normal"}", Modifier.fillMaxWidth().aspectRatio(1.78f), ContentScale.Fit, showProgress = true)
+                BackendImage(imageCandidates.ifEmpty { listOfNotNull(if (trained) detail.trainedUrl else detail.normalUrl) }, null, "${region.id}:cards:${detail.card.id}:${if (trained) "trained" else "normal"}", Modifier.fillMaxWidth().aspectRatio(2338f / 1440f), ContentScale.Fit, showProgress = true)
                 detail.skill?.let { skill ->
                     Text(skill.name ?: stringResource(R.string.cards_skill), style = MaterialTheme.typography.titleMedium)
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {

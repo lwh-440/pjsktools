@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -264,7 +265,8 @@ private fun CatalogItemCard(baseUrl: String, item: CatalogItem, onClick: () -> U
                 baseUrl = baseUrl,
                 candidates = item.assetUrls,
                 contentDescription = item.title,
-                aspectRatio = catalogImageAspectRatio(item.type)
+                aspectRatio = catalogListImageAspectRatio(item.type),
+                contentScale = catalogListContentScale(item.type)
             )
             Text(item.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             item.subtitle?.let { Text(it) }
@@ -315,7 +317,7 @@ private fun DetailContent(
     }
     when (detail) {
         is SongCatalogDetail -> {
-            RemoteCatalogImage(baseUrl, detail.assetUrls, detail.item.title, heightDp = 220)
+            RemoteCatalogImage(baseUrl, detail.assetUrls, detail.item.title, aspectRatio = 1f, contentScale = ContentScale.Crop)
             Text(listOfNotNull(detail.unit, detail.durationSeconds?.let { "${it}s" }, detail.bpm?.let { "BPM $it" }).joinToString(" · "))
             if (detail.categories.isNotEmpty()) Text("分类：${detail.categories.joinToString(" / ")}")
             SectionTitle("谱面")
@@ -347,10 +349,10 @@ private fun DetailContent(
         is CardCatalogDetail -> {
             Text(listOfNotNull(detail.character, detail.rarity?.let { "星级 $it" }, detail.attribute).joinToString(" · "))
             SectionTitle("特训前")
-            RemoteCatalogImage(baseUrl, detail.normalImageCandidates, "${detail.item.title} 特训前", heightDp = 300)
+            RemoteCatalogImage(baseUrl, detail.normalImageCandidates, "${detail.item.title} 特训前", aspectRatio = 2338f / 1440f)
             if ((detail.rarity ?: 0) >= 3) {
                 SectionTitle("特训后")
-                RemoteCatalogImage(baseUrl, detail.afterTrainingImageCandidates, "${detail.item.title} 特训后", heightDp = 300)
+                RemoteCatalogImage(baseUrl, detail.afterTrainingImageCandidates, "${detail.item.title} 特训后", aspectRatio = 2338f / 1440f)
             }
             SkillBlock("技能", detail.skill)
             SkillBlock("特训后技能", detail.specialTrainingSkill)
@@ -360,7 +362,7 @@ private fun DetailContent(
         is CollectionCatalogDetail -> {
             RemoteCatalogImage(
                 baseUrl, detail.assetUrls, detail.item.title,
-                aspectRatio = catalogImageAspectRatio(detail.item.type)
+                aspectRatio = catalogDetailImageAspectRatio(detail.item.type)
             )
             Text(listOfNotNull(detail.item.category, detail.item.rarity).joinToString(" · "))
             detail.costume?.let { costume ->

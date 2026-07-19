@@ -55,7 +55,7 @@ class ShellRepository(
         val cards = cardsRequest.await().value("卡牌数量加载失败", 0)
         var event = eventRequest.await().value<ShellEvent?>("当前活动加载失败", null)
         val live = liveRequest.await().value<JSONObject?>("实时榜单加载失败", null)
-        live?.optJSONObject("currentEvent")?.let { event = parseEvent(it) }
+        if (event == null) live?.optJSONObject("currentEvent")?.let { event = parseEvent(it) }
         HomeDashboard(
             regions = regions,
             songCount = songs,

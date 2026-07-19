@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pjsktools.app.feature.catalog.RemoteCatalogImage
@@ -217,6 +218,7 @@ fun SettingsFeatureScreen(
     configurationError: String? = null,
     modifier: Modifier = Modifier
 ) {
+    val uriHandler = LocalUriHandler.current
     var baseUrl by remember(settings.apiBaseUrl) { mutableStateOf(settings.apiBaseUrl) }
     var region by remember(settings.defaultRegion) { mutableStateOf(settings.defaultRegion) }
     var cachePolicy by remember(settings.cachePolicy) { mutableStateOf(settings.cachePolicy) }
@@ -257,6 +259,10 @@ fun SettingsFeatureScreen(
         cacheNotice?.let { item { ShellCard("缓存清理结果", it) {} } }
         item {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { uriHandler.openUri(BuildConfig.WEB_RUNTIME_BASE_URL) },
+                    enabled = BuildConfig.WEB_RUNTIME_BASE_URL.isNotBlank()
+                ) { Text("打开网页版工具台") }
                 Button(onClick = {
                     runCatching { ApiOrigin.normalize(baseUrl, BuildConfig.DEBUG, BuildConfig.TEMPORARY_HTTP_HOST) }
                         .onSuccess { normalized -> error = null; onSave(ShellSettings(normalized, region, cachePolicy)) }

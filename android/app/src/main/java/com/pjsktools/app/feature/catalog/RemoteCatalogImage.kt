@@ -60,7 +60,8 @@ internal fun RemoteCatalogImage(
     contentDescription: String,
     modifier: Modifier = Modifier,
     heightDp: Int = 180,
-    aspectRatio: Float? = null
+    aspectRatio: Float? = null,
+    contentScale: ContentScale = ContentScale.Fit
 ) {
     val state by produceState<RemoteImageState>(
         initialValue = RemoteImageState.Loading,
@@ -81,7 +82,7 @@ internal fun RemoteCatalogImage(
             is RemoteImageState.Ready -> Image(
                 bitmap = current.bitmap,
                 contentDescription = contentDescription,
-                contentScale = ContentScale.Fit,
+                contentScale = contentScale,
                 modifier = Modifier.fillMaxSize()
             )
             is RemoteImageState.Failed -> Text(
@@ -93,11 +94,20 @@ internal fun RemoteCatalogImage(
     }
 }
 
-internal fun catalogImageAspectRatio(type: CatalogType): Float? = when (type) {
+internal fun catalogListImageAspectRatio(type: CatalogType): Float = when (type) {
     CatalogType.GACHAS -> 61f / 26f
     CatalogType.HONORS -> 4.75f
     CatalogType.COMICS -> 1.8f
-    else -> null
+    CatalogType.SONGS, CatalogType.CARDS, CatalogType.MATERIALS,
+    CatalogType.COSTUMES, CatalogType.STAMPS -> 1f
+}
+
+internal fun catalogDetailImageAspectRatio(type: CatalogType): Float = catalogListImageAspectRatio(type)
+
+internal fun catalogListContentScale(type: CatalogType): ContentScale = when (type) {
+    CatalogType.SONGS, CatalogType.CARDS, CatalogType.MATERIALS,
+    CatalogType.COSTUMES, CatalogType.STAMPS -> ContentScale.Crop
+    CatalogType.GACHAS, CatalogType.HONORS, CatalogType.COMICS -> ContentScale.Fit
 }
 
 private suspend fun loadFirstImage(baseUrl: String, candidates: List<String>): RemoteImageState =

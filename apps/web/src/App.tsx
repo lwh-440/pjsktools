@@ -9,6 +9,7 @@
   Check,
   Clapperboard,
   Coins,
+  Download,
   Gift,
   Gem,
   Images,
@@ -33,7 +34,7 @@
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { apiGet, apiPost, apiResourceUrl } from "./api";
+import { apiGet, apiGetWithSignal, apiPost, apiResourceUrl } from "./api";
 import { loadCachedCatalog } from "./catalogCache";
 import { useAuth } from "./AuthContext";
 import type { DeckConfig, PlayerBinding } from "./accountTypes";
@@ -304,9 +305,10 @@ function collectionImageCandidates(type: string, assets: AssetInfo | undefined, 
   return imageCandidates(assets, preferDetail);
 }
 
-function collectionImageVariant(type: string): "square" | "wide" | "gacha" {
-  if (type === "honors" || type === "comics") return "wide";
+function collectionImageVariant(type: string): "square" | "honor" | "gacha" | "comic" {
+  if (type === "honors") return "honor";
   if (type === "gachas") return "gacha";
+  if (type === "comics") return "comic";
   return "square";
 }
 
@@ -475,6 +477,7 @@ export function App() {
   });
   const [songs, setSongs] = useState<Song[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
+  const [catalogTotals, setCatalogTotals] = useState<{ songs: number | null; cards: number | null }>({ songs: null, cards: null });
   const [events, setEvents] = useState<EventInfo[]>([]);
   const [event, setEvent] = useState<EventInfo | null>(null);
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
@@ -489,7 +492,10 @@ export function App() {
   const [rankingRefreshing, setRankingRefreshing] = useState(false);
   const [rankingNextRefreshAt, setRankingNextRefreshAt] = useState<number | null>(null);
   const [rankingCountdown, setRankingCountdown] = useState(10);
-  const rankingRequestInFlight = useRef(false);
+  const regionRef = useRef(region);
+  const baseRequest = useRef<{ id: number; region: string; controller: AbortController } | null>(null);
+  const baseRequestId = useRef(0);
+  const rankingRequests = useRef(new Map<string, AbortController>());
   const [message, setMessage] = useState("准备就绪");
   const [filter, setFilter] = useState("");
   const [debouncedFilter, setDebouncedFilter] = useState("");
@@ -622,6 +628,8 @@ export function App() {
   const [virtualLiveQueueIndex, setVirtualLiveQueueIndex] = useState(-1);
   const [virtualLiveQueueWarnings, setVirtualLiveQueueWarnings] = useState<string[]>([]);
 
+  regionRef.current = region;
+
   function changeRegion(nextRegion: string) {
     if (nextRegion === region) return;
     setRegion(nextRegion);
@@ -681,17 +689,24 @@ export function App() {
     setVirtualLiveDetail(null);
     setVirtualLivePlayback(null);
     setMysekaiDetail(null);
+    return () => {
+      if (baseRequest.current?.region === region) baseRequest.current.controller.abort();
+    };
   }, [region]);
 
   useEffect(() => {
-    loadRankings().catch(() => undefined);
+    loadRankings(region).catch(() => undefined);
     setRankingNextRefreshAt(Date.now() + 10_000);
     const timer = window.setInterval(() => {
-      if (!rankingRequestInFlight.current) loadRankings().catch(() => undefined);
+      loadRankings(region).catch(() => undefined);
       setRankingNextRefreshAt(Date.now() + 10_000);
     }, 10_000);
-    return () => window.clearInterval(timer);
-  }, [event?.id, region]);
+    return () => {
+      window.clearInterval(timer);
+      rankingRequests.current.get(region)?.abort();
+      rankingRequests.current.delete(region);
+    };
+  }, [region]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -723,7 +738,7 @@ export function App() {
     if (activeSection === "forecast" && event?.id && event.id !== "none") {
       loadRankingExtras(event.id).catch(() => undefined);
     }
-  }, [forecastWindow]);
+  }, [forecastWindow, event?.id, region]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -734,19 +749,33 @@ export function App() {
   useEffect(() => { setVirtualLiveDisplayCount(60); }, [region, virtualLiveSearch, virtualLiveSort]);
 
   async function loadBase(nextRegion: string) {
+    baseRequest.current?.controller.abort();
+    const controller = new AbortController();
+    const requestId = ++baseRequestId.current;
+    baseRequest.current = { id: requestId, region: nextRegion, controller };
     setSongs([]);
     setCards([]);
     setEvents([]);
+    setEvent(null);
+    setCatalogTotals({ songs: null, cards: null });
     setCatalogs({});
     setCollections({});
-    const [nextRegions, currentEvent] = await Promise.all([
-      apiGet<Region[]>("/api/regions"),
-      apiGet<EventInfo>(`/api/events/${nextRegion}/current`).catch(() => null)
-    ]);
-    setRegions(nextRegions);
-    setEvent(currentEvent);
-    setHistoryEventId("");
-    setMessage("基础数据已就绪，图鉴将在打开时加载");
+    try {
+      const [nextRegions, currentEvent, songPage, cardPage] = await Promise.all([
+        apiGetWithSignal<Region[]>("/api/regions", controller.signal),
+        apiGetWithSignal<EventInfo>(`/api/events/${nextRegion}/current`, controller.signal).catch(() => null),
+        apiGetWithSignal<CatalogResponse<Song>>(`/api/master/${nextRegion}/catalogs/songs?page=1&pageSize=1`, controller.signal).catch(() => null),
+        apiGetWithSignal<CatalogResponse<Card>>(`/api/master/${nextRegion}/catalogs/cards?page=1&pageSize=1`, controller.signal).catch(() => null)
+      ]);
+      if (controller.signal.aborted || baseRequest.current?.id !== requestId || regionRef.current !== nextRegion) return;
+      setRegions(nextRegions);
+      setEvent(currentEvent);
+      setCatalogTotals({ songs: songPage?.total ?? null, cards: cardPage?.total ?? null });
+      setHistoryEventId("");
+      setMessage("基础数据已就绪，图鉴将在打开时加载");
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") throw error;
+    }
   }
 
   async function ensureFullToolData() {
@@ -784,29 +813,37 @@ export function App() {
     }
   }
 
-  async function loadRankingExtras(eventId: string) {
+  async function loadRankingExtras(eventId: string, nextRegion = region) {
     if (!eventId || eventId === "none") return;
     const windowParam = forecastWindow === "all" ? "" : `?windowHours=${forecastWindow}`;
     const historyQuery = `sampleType=border&limit=5000${forecastWindow === "all" ? "" : `&windowHours=${forecastWindow}`}`;
     const [nextForecast, nextHistorySummary, nextHistory] = await Promise.all([
-      apiGet<Forecast>(`/api/events/${region}/${eventId}/ranking-forecast${windowParam}`).catch(() => null),
-      apiGet<RankingHistorySummary>(`/api/events/${region}/${eventId}/ranking-history/summary?sampleType=border${forecastWindow === "all" ? "" : `&windowHours=${forecastWindow}`}`).catch(() => null),
-      apiGet<RankingHistoryResponse>(`/api/events/${region}/${eventId}/ranking-history?${historyQuery}`).catch(() => null)
+      apiGet<Forecast>(`/api/events/${nextRegion}/${eventId}/ranking-forecast${windowParam}`).catch(() => null),
+      apiGet<RankingHistorySummary>(`/api/events/${nextRegion}/${eventId}/ranking-history/summary?sampleType=border${forecastWindow === "all" ? "" : `&windowHours=${forecastWindow}`}`).catch(() => null),
+      apiGet<RankingHistoryResponse>(`/api/events/${nextRegion}/${eventId}/ranking-history?${historyQuery}`).catch(() => null)
     ]);
+    if (regionRef.current !== nextRegion) return;
     setForecast(nextForecast);
     setRankingHistorySummary(nextHistorySummary);
     setRankingHistory(nextHistory);
   }
 
-  async function loadRankings() {
-    if (rankingRequestInFlight.current) return;
-    rankingRequestInFlight.current = true;
+  async function loadRankings(nextRegion = region) {
+    if (rankingRequests.current.has(nextRegion)) return;
+    const controller = new AbortController();
+    rankingRequests.current.set(nextRegion, controller);
     setRankingRefreshing(true);
     try {
-      const live = await apiGet<LiveRankingResponse>(`/api/events/${region}/live-ranking`);
-      if (live.currentEvent?.id && live.currentEvent.id !== event?.id) {
-        const matchedEvent = events.find((item) => String(item.id) === String(live.currentEvent?.id));
-        setEvent(matchedEvent ?? live.currentEvent);
+      const live = await apiGetWithSignal<LiveRankingResponse>(`/api/events/${nextRegion}/live-ranking`, controller.signal);
+      if (controller.signal.aborted || regionRef.current !== nextRegion) return;
+      if (live.currentEvent?.id) {
+        const liveHasDetails = Boolean(live.currentEvent.startAt && live.currentEvent.endAt && !/^活动\s*#/u.test(live.currentEvent.name));
+        const currentEvent = !liveHasDetails
+          ? await apiGetWithSignal<EventInfo>(`/api/events/${nextRegion}/current`, controller.signal).catch(() => null)
+          : null;
+        if (controller.signal.aborted || regionRef.current !== nextRegion) return;
+        const resolvedEvent = currentEvent ?? (liveHasDetails ? live.currentEvent : null);
+        if (resolvedEvent) setEvent(resolvedEvent);
       }
       setRanking(live.top100 ?? []);
       setBorders(live.borderLines ?? []);
@@ -815,10 +852,12 @@ export function App() {
       setRankingWarnings(live.warnings ?? []);
       setRankingNextRefreshAt(Date.now() + 10_000);
       const activeEventId = live.currentEvent?.id ?? event?.id;
-      if (activeEventId && activeEventId !== "none") void loadRankingExtras(activeEventId);
+      if (activeEventId && activeEventId !== "none") void loadRankingExtras(activeEventId, nextRegion);
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") throw error;
     } finally {
-      rankingRequestInFlight.current = false;
-      setRankingRefreshing(false);
+      if (rankingRequests.current.get(nextRegion) === controller) rankingRequests.current.delete(nextRegion);
+      if (regionRef.current === nextRegion) setRankingRefreshing(false);
     }
   }
 
@@ -1272,8 +1311,8 @@ export function App() {
           </div>
           <div className="hero-metrics">
             <div><span>区服</span><strong>{region.toUpperCase()}</strong></div>
-            <div><span>歌曲</span><strong>{formatNumber(songs.length)}</strong></div>
-            <div><span>卡牌</span><strong>{formatNumber(cards.length)}</strong></div>
+            <div><span>歌曲</span><strong>{catalogTotals.songs === null ? "-" : formatNumber(catalogTotals.songs)}</strong></div>
+            <div><span>卡牌</span><strong>{catalogTotals.cards === null ? "-" : formatNumber(catalogTotals.cards)}</strong></div>
           </div>
         </div>
         <div className="dashboard-grid">
@@ -1285,6 +1324,10 @@ export function App() {
           <article className="panel status-panel">
             <div className="panel-heading"><div><h2>账号状态</h2><p>{auth.isAuthenticated ? "可使用绑定 UID 与上传资产" : "登录后启用资产联动"}</p></div></div>
             <Link className="feature-link" to={auth.isAuthenticated ? "/me" : "/login"}>{auth.isAuthenticated ? "进入个人信息管理" : "登录 / 注册"}</Link>
+          </article>
+          <article className="panel android-download-panel">
+            <div className="android-download-copy"><span className="tool-icon"><Download size={22} /></span><div><h2>Android 客户端</h2><p>在手机上使用图鉴、活动与玩家工具。</p></div></div>
+            <a className="feature-link android-download-link" href="/download/pjsktools-android-0.1.0.apk" download>下载 APK</a>
           </article>
           <article className="panel wide">
             <div className="panel-heading"><div><h2>常用入口</h2><p>按工作流分组，减少来回切换。</p></div></div>
@@ -1318,7 +1361,7 @@ export function App() {
       <section className="rank-page">
         <div className="rank-hero">
           <div><span className="home-kicker">活动排名每 10 秒更新</span><h2>{event?.name ?? "正在加载活动"}</h2><div className="rank-meta"><span>{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</span><span>{ranking.length} 条 T100 数据</span><span>{borders.length} 条普通分数线</span><span>{sourceLabel}</span><span>更新 {formatDate(rankingUpdatedAt ?? undefined)}</span><span>{rankingRefreshing ? "刷新中" : `${rankingCountdown}s 后刷新`}</span></div></div>
-          <div className="rank-actions"><button type="button" onClick={loadRankings} disabled={rankingRefreshing}><RefreshCw size={16} />{rankingRefreshing ? "刷新中" : "立即刷新"}</button><button type="button" className="secondary" onClick={() => goSection("forecast")}>预测线</button></div>
+          <div className="rank-actions"><button type="button" onClick={() => loadRankings(region)} disabled={rankingRefreshing}><RefreshCw size={16} />{rankingRefreshing ? "刷新中" : "立即刷新"}</button><button type="button" className="secondary" onClick={() => goSection("forecast")}>预测线</button></div>
         </div>
         {(rankingWarnings.length > 0 || rankingSourceHealth?.fallbackLine || rankingSourceHealth?.stale) && <div className="notice compact"><strong>更新状态</strong><span>{rankingSourceHealth?.stale ? "当前内容可能稍有延迟，正在刷新。" : "部分内容正在恢复。"}</span></div>}
         <div className="rank-stat-grid">{borders.map((line) => <div key={line.rank}><span>T{line.rank}</span><strong>{formatNumber(line.score)} pt</strong><small>{formatDate(line.updatedAt)}</small></div>)}{borders.length === 0 && <div><span>状态</span><strong>暂无分数线</strong><small>无活动或上游不可用</small></div>}</div>
@@ -1489,11 +1532,11 @@ export function App() {
   function CatalogPage({ type }: { type: "events" | "songs" | "cards" | keyof typeof collectionMeta }) {
     if (type === "events") {
       const pageData = catalogs.events ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
-      return <section className="panel wide"><div className="panel-heading"><div><h2>活动图鉴</h2><p>浏览历次活动、加成角色与相关资料。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索活动名称或 ID" /></div>{renderCatalogFilters(pageData)}<div className="catalog-grid cards">{pageData.items.map((eventItem: EventInfo) => { const candidates = imageCandidates(eventItem.assets); return <article key={`${region}:event:${eventItem.id}`} className="catalog-card card-card"><button type="button" className="catalog-card-main" onClick={() => openEvent(eventItem.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={eventItem.name} variant="wide" /><strong>{eventItem.name}</strong><span>{eventItem.eventType ?? "活动"}{eventItem.eventUnit ? ` · ${eventItem.eventUnit}` : ""}</span><small>{formatDate(eventItem.startAt)} · ID {eventItem.id}</small></button><FavoriteButton compact type="event" region={region} targetId={eventItem.id} label={eventItem.name} /></article>; })}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h2>活动图鉴</h2><p>浏览历次活动、加成角色与相关资料。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索活动名称或 ID" /></div>{renderCatalogFilters(pageData)}<div className="catalog-grid event-grid">{pageData.items.map((eventItem: EventInfo) => { const candidates = imageCandidates(eventItem.assets); return <article key={`${region}:event:${eventItem.id}`} className="catalog-card event-card"><button type="button" className="catalog-card-main" onClick={() => openEvent(eventItem.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={eventItem.name} variant="event" /><strong>{eventItem.name}</strong><span>{eventItem.eventType ?? "活动"}{eventItem.eventUnit ? ` · ${eventItem.eventUnit}` : ""}</span><small>{formatDate(eventItem.startAt)} · ID {eventItem.id}</small></button><FavoriteButton compact type="event" region={region} targetId={eventItem.id} label={eventItem.name} /></article>; })}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
     }
     if (type === "songs") {
       const pageData = catalogs.songs ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
-      return <section className="panel wide"><div className="panel-heading"><div><h2>歌曲图鉴</h2><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索歌曲、ID、分类" /></div>{renderCatalogFilters(pageData)}<div className="catalog-grid songs">{pageData.items.map((song: Song, index: number) => <article key={`${region}:song:${song.id}`} className="catalog-card song-card"><button type="button" className="catalog-card-main" onClick={() => openSong(song.id)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span><strong>{song.title}</strong><small>{song.unit} / ID {song.id}</small></span><small>{song.durationSeconds ? `${song.durationSeconds}s` : "时长待同步"}</small></button><FavoriteButton compact type="song" region={region} targetId={song.id} label={song.title} /></article>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h2>歌曲图鉴</h2><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索歌曲、ID、分类" /></div>{renderCatalogFilters(pageData)}<div className="catalog-grid songs">{pageData.items.map((song: Song, index: number) => <article key={`${region}:song:${song.id}`} className="catalog-card song-card"><button type="button" className="catalog-card-main" onClick={() => openSong(song.id)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span className="song-card-copy"><strong>{song.title}</strong><span>{song.unit} · ID {song.id}</span><small>{song.durationSeconds ? `时长 ${song.durationSeconds}s` : "时长待同步"}</small></span></button><FavoriteButton compact type="song" region={region} targetId={song.id} label={song.title} /></article>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
     }
     if (type === "cards") {
       const pageData = catalogs.cards ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
@@ -1506,9 +1549,9 @@ export function App() {
       <section className="panel wide">
         <div className="panel-heading"><div><h2>{collectionMeta[type].label}</h2><p>按名称、分类和 ID 浏览。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索名称、分类、ID" /></div>
         {renderCatalogFilters(pageData)}
-        <div className="catalog-grid cards">{pageData.items.map((item: CollectionItem) => {
+        <div className={`catalog-grid collection-grid collection-grid-${collectionType}`}>{pageData.items.map((item: CollectionItem) => {
           const candidates = collectionImageCandidates(collectionType, item.assets);
-          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card card-card ${collectionType === "honors" ? "honor-card" : ""}`}><button type="button" className="catalog-card-main" onClick={() => openCollection(collectionType, item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : item.category ?? item.rarity ?? "详细资料"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
+          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card collection-card collection-card-${collectionType}`}><button type="button" className="catalog-card-main" onClick={() => openCollection(collectionType, item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : item.category ?? item.rarity ?? "详细资料"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
         })}</div>
         <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </section>
@@ -2654,7 +2697,7 @@ export function App() {
       {selectedEvent && (
         <DetailDrawer title={selectedEvent.event.name} onClose={() => setSelectedEvent(null)}>
           <FavoriteButton type="event" region={region} targetId={selectedEvent.event.id} label={selectedEvent.event.name} />
-          <div className="detail-hero"><ArtImage src={stringAsset(selectedEvent.assets, "bannerUrl")} label={selectedEvent.event.name} /><div><strong>{selectedEvent.event.name}</strong><span>{formatDate(selectedEvent.event.startAt)} - {formatDate(selectedEvent.event.endAt)}</span><p>{selectedEvent.event.storyOutline ?? "真实剧情简介暂不可用。"}</p></div></div>
+          <div className="detail-hero"><ArtImage src={stringAsset(selectedEvent.assets, "bannerUrl")} label={selectedEvent.event.name} variant="event" /><div><strong>{selectedEvent.event.name}</strong><span>{formatDate(selectedEvent.event.startAt)} - {formatDate(selectedEvent.event.endAt)}</span><p>{selectedEvent.event.storyOutline ?? "真实剧情简介暂不可用。"}</p></div></div>
           <section className="compact-list"><h3>相关歌曲</h3>{selectedEvent.relations.relatedSongs.map((song) => <div key={song.id}><span>{song.title}</span><button type="button" onClick={() => openSong(song.id)}>歌曲详情</button></div>)}</section>
           <section className="related-card-grid">{selectedEvent.relations.relatedCards.map((card) => renderRelatedCardTile(card, `${region}:event-card:${card.id}`))}</section>
         </DetailDrawer>
