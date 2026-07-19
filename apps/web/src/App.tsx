@@ -496,6 +496,7 @@ export function App() {
   const baseRequest = useRef<{ id: number; region: string; controller: AbortController } | null>(null);
   const baseRequestId = useRef(0);
   const rankingRequests = useRef(new Map<string, AbortController>());
+  const rankingDetailRequest = useRef(0);
   const [message, setMessage] = useState("准备就绪");
   const [filter, setFilter] = useState("");
   const [debouncedFilter, setDebouncedFilter] = useState("");
@@ -765,6 +766,10 @@ export function App() {
     setRankingSourceHealth(null);
     setRankingUpdatedAt(null);
     setRankingWarnings([]);
+    rankingDetailRequest.current += 1;
+    setRankingDetail(null);
+    setRankingDetailOpen(false);
+    setRankingDetailLoading(false);
     setCatalogTotals({ songs: null, cards: null });
     setCatalogs({});
     setCollections({});
@@ -974,15 +979,19 @@ export function App() {
 
   async function openRankingDetail(rank: number) {
     if (!event?.id || event.id === "none") return;
+    const requestId = ++rankingDetailRequest.current;
+    const requestRegion = region;
+    const requestEventId = event.id;
     setRankingDetailOpen(true);
     setRankingDetailLoading(true);
     const listEntry = ranking.find((entry) => entry.rank === rank);
     if (listEntry) setRankingDetail(listEntry as RankingPlayerDetail);
     try {
-      const detail = await apiGet<RankingPlayerDetail>(`/api/events/${region}/${event.id}/ranking-player/${rank}`);
+      const detail = await apiGet<RankingPlayerDetail>(`/api/events/${requestRegion}/${requestEventId}/ranking-player/${rank}`);
+      if (rankingDetailRequest.current !== requestId || regionRef.current !== requestRegion) return;
       setRankingDetail({ ...listEntry, ...detail });
     } finally {
-      setRankingDetailLoading(false);
+      if (rankingDetailRequest.current === requestId && regionRef.current === requestRegion) setRankingDetailLoading(false);
     }
   }
 
