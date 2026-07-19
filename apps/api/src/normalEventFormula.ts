@@ -2,9 +2,10 @@ import type { RegionId } from "./config.js";
 import { getMasterCollection, getSongDetail } from "./masterData.js";
 import { getMusicMeta } from "./musicMeta.js";
 import { calculateMultiLive, type MultiLivePlayer, type Skill15Strategy, type Skill6Mode } from "./multiLiveCalculator.js";
+import { getBoostEnergyRate } from "./boostEnergy.js";
 import type { Card, MasterCollectionItem, UserCardInventoryItem } from "./types.js";
 
-export const sharedFormulaVersion = "normal-event-v4.1-reference";
+export const sharedFormulaVersion = "normal-event-v4.2-reference";
 
 export type LiveType = "solo" | "multi" | "auto" | "cheerful" | "challenge";
 
@@ -552,7 +553,7 @@ export function buildCardPowerBreakdown(card: Card, owned?: UserCardState, playe
     calculationTrace: [
       "Moesekai CardPowerCalculator uses power1/power2/power3 base parameters, then adds special training, episodes, master lessons, and MySekai canvas before rate bonuses",
       "Area item and character rank bonuses are applied per power axis with floor, then summed",
-      parameter.vector ? "normal-event-v4.1-reference used cardParameters for the base power vector" : "cardParameters row was unavailable; normal-event-v4.1-reference used deterministic vector fallback"
+      parameter.vector ? "normal-event-v4.2-reference used cardParameters for the base power vector" : "cardParameters row was unavailable; normal-event-v4.2-reference used deterministic vector fallback"
     ],
     cardParameterTrace: {
       source: parameter.source,
@@ -897,10 +898,6 @@ function liveMultiplier(liveType?: LiveType) {
   return 1;
 }
 
-function boostMultiplier(boost?: number) {
-  return 1 + Math.max(0, boost ?? 0) * 0.5;
-}
-
 export function calculateReferenceEventPoint(input: {
   liveType?: LiveType;
   eventType?: string;
@@ -983,7 +980,7 @@ export async function estimateNormalEventPoint(input: EventPointEstimateInput) {
   });
   const baseScore = input.baseScore ?? 1000000;
   const live = liveMultiplier(input.liveType);
-  const boost = boostMultiplier(input.boost);
+  const boost = getBoostEnergyRate(input.boost);
   const event = 1 + Math.max(0, input.eventBonusPercent ?? 0) / 100;
   const musicRate = musicMetaResult.meta?.eventRate ?? 0;
   const difficultyMultiplier = musicRate / 100;
@@ -1053,7 +1050,7 @@ export async function estimateNormalEventPoint(input: EventPointEstimateInput) {
       exactness: referencePoint.exactness,
       referenceFormulaId: referencePoint.referenceFormulaId,
       referenceFormula: referencePoint.referenceFormula,
-      source: "shared normal-event-v4.1-reference event point core"
+      source: "shared normal-event-v4.2-reference event point core"
     },
     multiLiveTrace: multiLive,
     musicMetaTrace: musicMetaResult.sourceHealth,

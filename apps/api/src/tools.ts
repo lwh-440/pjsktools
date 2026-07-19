@@ -8,6 +8,7 @@ import type { MultiLivePlayer, Skill15Strategy, Skill6Mode } from "./multiLiveCa
 import { recommendAreaItemUpgrades } from "./areaItemRecommend.js";
 import { calculateMultiLive } from "./multiLiveCalculator.js";
 import { calculateReferenceEventPoint } from "./normalEventFormula.js";
+import { getBoostEnergyRate } from "./boostEnergy.js";
 import { calculateLiveExact } from "./liveExactCalculator.js";
 
 export type ScoreControlInput = {
@@ -289,7 +290,7 @@ export async function recommendDeck(input: DeckRecommendInput) {
     estimatedFieldsUsed,
     missingFields,
     formulaSources: ["Sekai-World/sekai-viewer EventPointCalc/eventCardBonus", "moe-sekai/Moesekai re_sekai-calculator deck-recommend", "local deterministic DFS/pruning"],
-    note: "Deck recommendation uses shared normal-event-v4.1-reference formula context with reference CardPower/CardSkill data, CardDetailMap-backed DeckCalculator detail, and music-meta-backed LiveCalculator scoring. Missing raw master/user fields stay in missingFields.",
+    note: "Deck recommendation uses shared normal-event-v4.2-reference formula context with reference CardPower/CardSkill data, CardDetailMap-backed DeckCalculator detail, and music-meta-backed LiveCalculator scoring. Missing raw master/user fields stay in missingFields.",
     realDataRequired: true
   };
 }
@@ -487,7 +488,7 @@ export async function recommendMusic(input: {
   }
   base ??= 1000;
   const liveMultiplier = input.liveType === "auto" ? 0.7 : input.liveType === "multi" || input.liveType === "cheerful" ? 1.08 : 1;
-  const boostMultiplier = 1 + Math.max(0, input.boost ?? 0) * 0.5;
+  const boostMultiplier = getBoostEnergyRate(input.boost);
   const eventMultiplier = 1 + Math.max(0, input.eventBonusPercent ?? 0) / 100;
   const candidates: Array<{
     music: Pick<(typeof songs)[number], "id" | "title" | "unit" | "durationSeconds" | "assets">;
@@ -538,7 +539,7 @@ export async function recommendMusic(input: {
         otherScore: multi?.otherScore,
         musicRate: meta.eventRate,
         deckBonus: input.eventBonusPercent ?? 0,
-        boostRate: 1 + Math.max(0, input.boost ?? 0) * 0.5
+        boostRate: getBoostEnergyRate(input.boost)
       }) : null;
       const estimatedPt = point?.estimatedPt ?? 0;
       return {

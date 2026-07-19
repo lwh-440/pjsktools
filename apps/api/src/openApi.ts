@@ -308,7 +308,7 @@ const schemas: Record<string, Schema> = {
     properties: {
       region: ref("RegionId"), bindingId: nullable({ type: "string" }), eventId: nullable({ type: "string" }), musicId: nullable({ type: "string" }),
       difficulty: nullable({ type: "string" }), currentPt: nullable({ type: "number" }), targetPt: nullable({ type: "number" }),
-      eventBonusPercent: nullable({ type: "number" }), baseScore: nullable({ type: "number" }), boost: nullable({ type: "number" })
+      eventBonusPercent: nullable({ type: "number" }), baseScore: nullable({ type: "number" }), boost: nullable({ type: "integer", minimum: 0, maximum: 10 })
     }
   },
   EventPointEstimateResult: {

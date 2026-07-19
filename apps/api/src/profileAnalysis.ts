@@ -260,7 +260,7 @@ export async function buildProfileAnalysis(userId: string, bindingId: string) {
     challengeAnalysis: { items: challengeItems, rewardRowCount: challenge.rewards.length },
     bondsAnalysis: { items: bondsItems, ownedCount: bondsItems.length },
     powerBonusAnalysis: {
-      formulaVersion: "normal-event-v4.1-reference",
+      formulaVersion: "normal-event-v4.2-reference",
       referenceFormulaId: "Moesekai.CardPowerCalculator.getCardPower",
       inventoryCardCount: inventory.length,
       exactCardCount: completeCards.length,

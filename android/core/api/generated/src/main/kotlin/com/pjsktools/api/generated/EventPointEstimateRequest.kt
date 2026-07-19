@@ -66,8 +66,8 @@ data class EventPointEstimateRequest (
     @Contextual @SerialName(value = "baseScore")
     val baseScore: java.math.BigDecimal? = null,
 
-    @Contextual @SerialName(value = "boost")
-    val boost: java.math.BigDecimal? = null
+    @SerialName(value = "boost")
+    val boost: kotlin.Int? = null
 
 ) {
 

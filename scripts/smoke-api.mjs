@@ -304,7 +304,7 @@ try {
   if (!publicPlan.sharedFormulaVersion || !publicPlan.deck || !publicPlan.eventPoint || !publicPlan.scoreControl || !publicPlan.music || !publicPlan.area) {
     throw new Error("normal-event-plan missing planning sections");
   }
-  if (publicPlan.sharedFormulaVersion !== "normal-event-v4.1-reference" || !publicPlan.referenceParity || !Array.isArray(publicPlan.referenceSources)) {
+  if (publicPlan.sharedFormulaVersion !== "normal-event-v4.2-reference" || !publicPlan.referenceParity || !Array.isArray(publicPlan.referenceSources)) {
     throw new Error("normal-event-plan missing v4 reference parity fields");
   }
   if (!publicPlan.eventPoint?.eventPointBreakdown?.referenceFormulaId || !publicPlan.eventPoint?.eventPointBreakdown?.exactness) {
@@ -498,7 +498,7 @@ try {
   if (!profileAnalysis.characterRankAnalysis.items.length || !profileAnalysis.challengeAnalysis.items.length) {
     throw new Error("profile analysis did not consume uploaded character/challenge data");
   }
-  if (profileAnalysis.powerBonusAnalysis.formulaVersion !== "normal-event-v4.1-reference" || !Array.isArray(profileAnalysis.powerBonusAnalysis.missingFields)) {
+  if (profileAnalysis.powerBonusAnalysis.formulaVersion !== "normal-event-v4.2-reference" || !Array.isArray(profileAnalysis.powerBonusAnalysis.missingFields)) {
     throw new Error("profile analysis missing shared CardCalculator diagnostics");
   }
   if (profileAnalysis.areaItemUpgradeAnalysis.areaItemVersion !== "area-item-v1-reference") {

@@ -5,6 +5,7 @@ import { getMusicMeta } from "./musicMeta.js";
 import { calculateReferenceEventPoint } from "./normalEventFormula.js";
 import { calculateMultiLive, multiLiveVersion, type MultiLivePlayer, type Skill15Strategy, type Skill6Mode } from "./multiLiveCalculator.js";
 import { calculateLiveExact, liveExactVersion } from "./liveExactCalculator.js";
+import { getBoostEnergyRate } from "./boostEnergy.js";
 
 export type DeckCompareCandidate = {
   id?: string;
@@ -33,13 +34,6 @@ export type DeckCompareInput = {
   feverMusicId?: string;
   feverDifficulty?: string;
 };
-
-function boostRate(boost?: number) {
-  const value = Math.max(0, Math.min(10, Math.floor(boost ?? 0)));
-  if (value === 0) return 1;
-  if (value <= 5) return value * 5;
-  return [27, 29, 31, 33, 35][value - 6];
-}
 
 async function resolveCandidate(input: DeckCompareInput, candidate: DeckCompareCandidate) {
   if (candidate.power != null && candidate.effectiveness != null) {
@@ -120,7 +114,7 @@ export async function compareDecks(input: DeckCompareInput) {
       musicRate: meta.eventRate,
       deckBonus: input.eventBonusPercent ?? resolved.deckDetail?.eventBonus ?? 0,
       supportDeckBonus: resolved.deckDetail?.supportDeckBonus,
-      boostRate: boostRate(input.boost)
+      boostRate: getBoostEnergyRate(input.boost)
     }) : null;
     comparisons.push({
       id: candidate.id ?? `candidate-${index + 1}`,
