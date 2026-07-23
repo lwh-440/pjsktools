@@ -74,7 +74,10 @@ android {
         }
         release {
             isMinifyEnabled = true
-            isShrinkResources = true
+            // AGP 8.5's ShrinkProtoResourcesAction fails consistently on the
+            // Windows release builder. Keep R8 enabled and package resources
+            // without the unstable post-link shrink step.
+            isShrinkResources = false
             buildConfigField("String", "API_BASE_URL", quotedBuildConfig(apiBaseUrl(configuredApiBaseUrl)))
             manifestPlaceholders["usesCleartextTraffic"] = (temporaryHttpHost.isNotBlank()).toString()
             if (signingPropertiesFile.isFile) signingConfig = signingConfigs.getByName("release")

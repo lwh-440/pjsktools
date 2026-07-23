@@ -2,20 +2,29 @@ package com.pjsktools.app
 
 import android.net.Uri
 import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DrawerDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
@@ -32,8 +41,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.pjsktools.core.designsystem.SekaiInk
+import com.pjsktools.core.designsystem.SekaiPink
+import com.pjsktools.core.designsystem.SekaiTeal
+import com.pjsktools.core.designsystem.SekaiYellow
 import com.pjsktools.app.core.AppSection
 import com.pjsktools.app.core.ApiOrigin
 import com.pjsktools.app.core.ShellApiOrigins
@@ -138,19 +152,40 @@ fun PjskToolsApp(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet {
-                LazyColumn(Modifier.padding(horizontal = 12.dp, vertical = 18.dp)) {
+            ModalDrawerSheet(
+                drawerContainerColor = SekaiInk,
+                drawerContentColor = androidx.compose.ui.graphics.Color.White
+            ) {
+                LazyColumn(Modifier.padding(horizontal = 14.dp, vertical = 20.dp)) {
                     item {
-                        Text("Project Sekai 工具台", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("PROJECT SEKAI", style = MaterialTheme.typography.labelMedium, color = SekaiTeal)
+                        Text("游戏工具台", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Row(Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+                            Box(Modifier.width(34.dp).height(4.dp).background(SekaiTeal))
+                            Box(Modifier.width(22.dp).height(4.dp).background(SekaiPink))
+                            Box(Modifier.width(16.dp).height(4.dp).background(SekaiYellow))
+                        }
                     }
                     AppSection.grouped.forEach { (group, entries) ->
-                        item { Text(group, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp), fontWeight = FontWeight.Bold) }
+                        item {
+                            Text(
+                                group.uppercase(),
+                                modifier = Modifier.padding(top = 20.dp, start = 12.dp, bottom = 6.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = androidx.compose.ui.graphics.Color(0xFF9DB0B8)
+                            )
+                        }
                         entries.forEach { item ->
                             item {
                                 NavigationDrawerItem(
                                     label = { Text(item.label) },
                                     selected = section == item,
-                                    onClick = { open(item) }
+                                    onClick = { open(item) },
+                                    colors = NavigationDrawerItemDefaults.colors(
+                                        selectedContainerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f),
+                                        selectedTextColor = androidx.compose.ui.graphics.Color.White,
+                                        unselectedTextColor = androidx.compose.ui.graphics.Color(0xFFCBD8DC)
+                                    )
                                 )
                             }
                         }
@@ -159,19 +194,70 @@ fun PjskToolsApp(
             }
         }
     ) {
-        Column(Modifier.fillMaxSize()) {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        TextButton(onClick = { scope.launch { drawerState.open() } }) { Text("功能") }
-                        Text(section.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp,
+                shadowElevation = 3.dp
+            ) {
+                Column {
+                    Row(Modifier.fillMaxWidth().height(4.dp)) {
+                        Box(Modifier.weight(5f).fillMaxSize().background(SekaiTeal))
+                        Box(Modifier.weight(2f).fillMaxSize().background(SekaiPink))
+                        Box(Modifier.weight(1f).fillMaxSize().background(SekaiYellow))
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        (regions.ifEmpty { listOf(Region(region, region.uppercase())) }).forEach { item ->
-                            TextButton(onClick = { region = item.id }, enabled = item.id != region) { Text(item.name) }
+                    Column(
+                        Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            FilledTonalButton(
+                                onClick = { scope.launch { drawerState.open() } },
+                                contentPadding = ButtonDefaults.TextButtonContentPadding
+                            ) { Text("功能") }
+                            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                                Text(
+                                    "PROJECT SEKAI · ${region.uppercase()}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    section.label,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            (regions.ifEmpty { listOf(Region(region, region.uppercase())) }).forEach { item ->
+                                val selected = item.id == region
+                                TextButton(
+                                    onClick = { region = item.id },
+                                    enabled = !selected,
+                                    colors = ButtonDefaults.textButtonColors(
+                                        containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        disabledContainerColor = MaterialTheme.colorScheme.primary,
+                                        disabledContentColor = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                ) { Text(item.id.uppercase(), fontWeight = FontWeight.Bold) }
+                            }
+                        }
+                        regionError?.let {
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Text(it, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
-                    regionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {

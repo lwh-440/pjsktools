@@ -7,11 +7,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import com.pjsktools.app.ui.theme.PjskToolsTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         authDeepLink.value = intent?.data
         setContent {
             val deepLink by authDeepLink.collectAsState()
-            MaterialTheme {
+            PjskToolsTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     PjskToolsApp(
                         deepLink = deepLink,
