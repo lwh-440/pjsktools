@@ -476,6 +476,11 @@ export function App() {
     return window.sessionStorage.getItem("pjsktools:region") ?? "jp";
   });
   const [songs, setSongs] = useState<Song[]>([]);
+  const [toolSongsStatus, setToolSongsStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [toolSongsError, setToolSongsError] = useState("");
+  const [toolDataLoading, setToolDataLoading] = useState(false);
+  const [toolDataError, setToolDataError] = useState("");
+  const [toolSongSearch, setToolSongSearch] = useState("");
   const [cards, setCards] = useState<Card[]>([]);
   const [catalogTotals, setCatalogTotals] = useState<{ songs: number | null; cards: number | null }>({ songs: null, cards: null });
   const [events, setEvents] = useState<EventInfo[]>([]);
@@ -495,6 +500,10 @@ export function App() {
   const regionRef = useRef(region);
   const baseRequest = useRef<{ id: number; region: string; controller: AbortController } | null>(null);
   const baseRequestId = useRef(0);
+  const toolSongsRequestId = useRef(0);
+  const toolDataRequestId = useRef(0);
+  const toolSongsRegion = useRef("");
+  const toolCardsRegion = useRef("");
   const rankingRequests = useRef(new Map<string, AbortController>());
   const rankingDetailRequest = useRef(0);
   const [message, setMessage] = useState("准备就绪");
@@ -547,10 +556,12 @@ export function App() {
   const [deckOwnedIds, setDeckOwnedIds] = useState("");
   const [deckResult, setDeckResult] = useState<any>(null);
   const [musicRecommendResult, setMusicRecommendResult] = useState<any>(null);
+  const [musicRecommendForm, setMusicRecommendForm] = useState({ targetPt: "1000000", currentPt: "0", eventBonusPercent: "150", preferredDifficulty: "expert", maxDurationSeconds: "150", minNoteCount: "", limit: "5", liveType: "multi", boost: "3", baseScore: "2000000" });
   const [areaRecommendResult, setAreaRecommendResult] = useState<any>(null);
+  const [areaRecommendForm, setAreaRecommendForm] = useState({ cardIds: "", sortBy: "coin-efficiency", includeUnaffordable: true, limit: "5" });
   const [boundToolResult, setBoundToolResult] = useState<any>(null);
   const [boundPlanResult, setBoundPlanResult] = useState<any>(null);
-  const [normalPlanForm, setNormalPlanForm] = useState({ targetPt: "1000000", currentPt: "0", remainingMinutes: "180", boost: "3", musicId: "1", difficulty: "expert", ownedCardIds: "1,2,3,4,5" });
+  const [normalPlanForm, setNormalPlanForm] = useState({ targetPt: "1000000", currentPt: "0", remainingMinutes: "180", boost: "3", musicId: "1", difficulty: "expert", liveType: "multi", baseScore: "", eventBonusPercent: "", ownedCardIds: "1,2,3,4,5" });
   const [normalPlanResult, setNormalPlanResult] = useState<any>(null);
   const [deckCompareForm, setDeckCompareForm] = useState({
     musicId: "1",
@@ -755,6 +766,13 @@ export function App() {
     const requestId = ++baseRequestId.current;
     baseRequest.current = { id: requestId, region: nextRegion, controller };
     setSongs([]);
+    toolSongsRegion.current = "";
+    toolCardsRegion.current = "";
+    setToolSongsStatus("idle");
+    setToolSongsError("");
+    setToolDataError("");
+    setToolSongSearch("");
+    setNormalPlanForm((current) => ({ ...current, musicId: "" }));
     setCards([]);
     setEvents([]);
     setEvent(null);
@@ -791,13 +809,52 @@ export function App() {
     }
   }
 
-  async function ensureFullToolData() {
-    const [nextSongs, nextCards] = await Promise.all([
-      songs.length ? Promise.resolve(songs) : apiGet<Song[]>(`/api/master/${region}/songs`),
-      cards.length ? Promise.resolve(cards) : apiGet<Card[]>(`/api/master/${region}/cards`)
-    ]);
-    setSongs(nextSongs);
-    setCards(nextCards);
+  async function loadToolSongs(force = false) {
+    if (!force && songs.length && toolSongsRegion.current === region) {
+      setToolSongsStatus("ready");
+      return songs;
+    }
+    const requestRegion = region;
+    const requestId = ++toolSongsRequestId.current;
+    setToolSongsStatus("loading");
+    setToolSongsError("");
+    try {
+      const nextSongs = await apiGet<Song[]>(`/api/master/${requestRegion}/songs`);
+      if (requestId !== toolSongsRequestId.current || regionRef.current !== requestRegion) return [];
+      setSongs(nextSongs);
+      toolSongsRegion.current = requestRegion;
+      setNormalPlanForm((current) => nextSongs.some((song) => song.id === current.musicId) ? current : { ...current, musicId: "" });
+      setToolSongsStatus("ready");
+      return nextSongs;
+    } catch (error) {
+      if (requestId !== toolSongsRequestId.current || regionRef.current !== requestRegion) return [];
+      const text = error instanceof Error ? error.message : String(error);
+      setToolSongsError(text);
+      setToolSongsStatus("error");
+      throw error;
+    }
+  }
+
+  async function ensureFullToolData(forceSongs = false) {
+    const requestId = ++toolDataRequestId.current;
+    const requestRegion = region;
+    setToolDataLoading(true);
+    setToolDataError("");
+    try {
+      const nextSongs = await loadToolSongs(forceSongs);
+      const nextCards = cards.length && toolCardsRegion.current === requestRegion ? cards : await apiGet<Card[]>(`/api/master/${requestRegion}/cards`);
+      if (requestId !== toolDataRequestId.current || regionRef.current !== requestRegion) return;
+      setSongs(nextSongs);
+      setCards(nextCards);
+      toolCardsRegion.current = requestRegion;
+    } catch (error) {
+      if (requestId !== toolDataRequestId.current || regionRef.current !== requestRegion) return;
+      const text = error instanceof Error ? error.message : String(error);
+      setToolDataError(text);
+      throw error;
+    } finally {
+      if (requestId === toolDataRequestId.current && regionRef.current === requestRegion) setToolDataLoading(false);
+    }
   }
 
   async function ensureEvents() {
@@ -1022,11 +1079,31 @@ export function App() {
   }
 
   async function calculateMusicRecommend() {
-    setMusicRecommendResult(await apiPost("/api/tools/music-recommend", { region, eventId: event?.id, targetPt: 1000000 }));
+    setMusicRecommendResult(await apiPost("/api/tools/music-recommend", {
+      region,
+      eventId: event?.id === "none" ? undefined : event?.id,
+      targetPt: Number(musicRecommendForm.targetPt),
+      currentPt: Number(musicRecommendForm.currentPt),
+      eventBonusPercent: Number(musicRecommendForm.eventBonusPercent),
+      preferredDifficulties: [musicRecommendForm.preferredDifficulty],
+      maxDurationSeconds: musicRecommendForm.maxDurationSeconds ? Number(musicRecommendForm.maxDurationSeconds) : undefined,
+      minNoteCount: musicRecommendForm.minNoteCount ? Number(musicRecommendForm.minNoteCount) : undefined,
+      limit: Number(musicRecommendForm.limit),
+      liveType: musicRecommendForm.liveType,
+      boost: Number(musicRecommendForm.boost),
+      baseScore: musicRecommendForm.baseScore ? Number(musicRecommendForm.baseScore) : undefined
+    }));
   }
 
   async function calculateAreaRecommend() {
-    setAreaRecommendResult(await apiPost("/api/tools/area-item-recommend", { region, eventId: event?.id, targetCardIds: cards.slice(0, 5).map((card) => card.id) }));
+    const cardIds = areaRecommendForm.cardIds.split(/[,\s]+/).filter(Boolean).slice(0, 5);
+    setAreaRecommendResult(await apiPost("/api/tools/area-item-recommend", {
+      region,
+      cardIds: cardIds.length ? cardIds : undefined,
+      sortBy: areaRecommendForm.sortBy,
+      includeUnaffordable: areaRecommendForm.includeUnaffordable,
+      limit: Number(areaRecommendForm.limit)
+    }));
   }
 
   function renderRelatedCardTile(card: Card, key: string) {
@@ -1136,8 +1213,48 @@ export function App() {
   async function calculateBoundTool(tool: "event-point" | "music" | "area" | "mysekai") {
     const binding = defaultBinding();
     if (!binding) return;
+    if (tool === "event-point" && binding.region !== region) return;
+    if (tool === "event-point" && !normalPlanForm.musicId) return;
     const eventId = event?.id === "none" ? undefined : event?.id;
-    const payload = { region: binding.region, bindingId: binding.id, eventId, musicId: songs[0]?.id, difficulty: "expert", targetPt: 1000000, currentPt: 0, limit: 5 };
+    const eventPointPayload = {
+      region: binding.region,
+      bindingId: binding.id,
+      eventId,
+      musicId: normalPlanForm.musicId,
+      difficulty: normalPlanForm.difficulty,
+      liveType: normalPlanForm.liveType,
+      boost: Number(normalPlanForm.boost),
+      targetPt: Number(normalPlanForm.targetPt),
+      currentPt: Number(normalPlanForm.currentPt),
+      baseScore: normalPlanForm.baseScore ? Number(normalPlanForm.baseScore) : undefined,
+      eventBonusPercent: normalPlanForm.eventBonusPercent ? Number(normalPlanForm.eventBonusPercent) : undefined,
+      limit: 5
+    };
+    const musicPayload = {
+      region: binding.region,
+      bindingId: binding.id,
+      eventId,
+      targetPt: Number(musicRecommendForm.targetPt),
+      currentPt: Number(musicRecommendForm.currentPt),
+      eventBonusPercent: musicRecommendForm.eventBonusPercent ? Number(musicRecommendForm.eventBonusPercent) : undefined,
+      preferredDifficulties: [musicRecommendForm.preferredDifficulty],
+      maxDurationSeconds: musicRecommendForm.maxDurationSeconds ? Number(musicRecommendForm.maxDurationSeconds) : undefined,
+      minNoteCount: musicRecommendForm.minNoteCount ? Number(musicRecommendForm.minNoteCount) : undefined,
+      limit: Number(musicRecommendForm.limit),
+      liveType: musicRecommendForm.liveType,
+      boost: Number(musicRecommendForm.boost),
+      baseScore: musicRecommendForm.baseScore ? Number(musicRecommendForm.baseScore) : undefined
+    };
+    const areaCardIds = areaRecommendForm.cardIds.split(/[,\s]+/).filter(Boolean).slice(0, 5);
+    const areaPayload = {
+      region: binding.region,
+      bindingId: binding.id,
+      cardIds: areaCardIds.length ? areaCardIds : undefined,
+      sortBy: areaRecommendForm.sortBy,
+      includeUnaffordable: areaRecommendForm.includeUnaffordable,
+      limit: Number(areaRecommendForm.limit)
+    };
+    const payload = tool === "music" ? musicPayload : tool === "area" ? areaPayload : eventPointPayload;
     const endpoint = tool === "event-point"
       ? "/api/me/tools/event-point-calc"
       : tool === "music"
@@ -1150,18 +1267,21 @@ export function App() {
 
   async function calculateBoundPlan() {
     const binding = defaultBinding();
-    if (!binding) return;
+    if (!binding || binding.region !== region || !normalPlanForm.musicId) return;
     const eventId = event?.id === "none" ? undefined : event?.id;
     const payload = {
       region: binding.region,
       bindingId: binding.id,
       eventId,
-      musicId: normalPlanForm.musicId || songs[0]?.id,
+      musicId: normalPlanForm.musicId,
       difficulty: normalPlanForm.difficulty,
+      liveType: normalPlanForm.liveType,
       targetPt: Number(normalPlanForm.targetPt),
       currentPt: Number(normalPlanForm.currentPt),
       remainingMinutes: Number(normalPlanForm.remainingMinutes),
       boost: Number(normalPlanForm.boost),
+      baseScore: normalPlanForm.baseScore ? Number(normalPlanForm.baseScore) : undefined,
+      eventBonusPercent: normalPlanForm.eventBonusPercent ? Number(normalPlanForm.eventBonusPercent) : undefined,
       limit: 5
     };
     const result = await apiPost("/api/me/tools/normal-event-plan", payload, auth.token);
@@ -1170,16 +1290,20 @@ export function App() {
   }
 
   async function calculatePublicNormalPlan() {
+    if (!normalPlanForm.musicId) return;
     const eventId = event?.id === "none" ? undefined : event?.id;
     const payload = {
       region,
       eventId,
-      musicId: normalPlanForm.musicId || songs[0]?.id,
+      musicId: normalPlanForm.musicId,
       difficulty: normalPlanForm.difficulty,
+      liveType: normalPlanForm.liveType,
       targetPt: Number(normalPlanForm.targetPt),
       currentPt: Number(normalPlanForm.currentPt),
       remainingMinutes: Number(normalPlanForm.remainingMinutes),
       boost: Number(normalPlanForm.boost),
+      baseScore: normalPlanForm.baseScore ? Number(normalPlanForm.baseScore) : undefined,
+      eventBonusPercent: normalPlanForm.eventBonusPercent ? Number(normalPlanForm.eventBonusPercent) : undefined,
       ownedCardIds: normalPlanForm.ownedCardIds.split(/[,\s]+/).filter(Boolean),
       limit: 5
     };
@@ -1437,11 +1561,19 @@ export function App() {
   async function estimateForecastPlanPtPerRun() {
     const binding = defaultBinding();
     if (!binding || !event?.id || event.id === "none") return;
+    if (binding.region !== region) {
+      setForecastPlanResult({ note: `当前页面区服 ${region.toUpperCase()} 与绑定区服 ${binding.region.toUpperCase()} 不一致，请先切换区服。` });
+      return;
+    }
+    if (!normalPlanForm.musicId) {
+      setForecastPlanResult({ note: "请先在计算工具中明确选择歌曲，再使用绑定 UID 估算单局收益。" });
+      return;
+    }
     const result: any = await apiPost("/api/me/tools/event-point-calc", {
       region: binding.region,
       bindingId: binding.id,
       eventId: event.id,
-      musicId: songs[0]?.id,
+      musicId: normalPlanForm.musicId,
       difficulty: "expert",
       targetPt: Number(forecastPlanForm.currentPt)
     }, auth.token);
@@ -1471,6 +1603,8 @@ export function App() {
   }
 
   function ForecastPage() {
+    const forecastBinding = defaultBinding();
+    const forecastBindingRegionMatches = !forecastBinding || forecastBinding.region === region;
     const activeLines = forecastWindow === "all" ? forecast?.lines ?? [] : forecast?.windows?.[`${forecastWindow}h`] ?? forecast?.lines ?? [];
     const windowSummary = forecast?.windowSummaries?.[forecastWindow === "all" ? "all" : `${forecastWindow}h`];
     const warnings = [...(forecast?.warnings ?? []), ...(rankingHistorySummary?.warnings ?? []), ...(rankingHistory?.warnings ?? [])];
@@ -1505,8 +1639,9 @@ export function App() {
             </div>
             <div className="button-row">
               <button type="button" onClick={calculateForecastPlan}>计算路径</button>
-              <button type="button" className="secondary" disabled={!auth.isAuthenticated} onClick={estimateForecastPlanPtPerRun}>用绑定 UID 估算收益</button>
+              <button type="button" className="secondary" disabled={!forecastBinding || !forecastBindingRegionMatches || !normalPlanForm.musicId} onClick={estimateForecastPlanPtPerRun}>用绑定 UID 估算收益</button>
             </div>
+            {forecastBinding && !forecastBindingRegionMatches && <p className="warning-text">当前页面区服 {region.toUpperCase()} 与绑定区服 {forecastBinding.region.toUpperCase()} 不一致，请先切换区服。</p>}
             {forecastPlanResult && <pre className="json-preview">{JSON.stringify(forecastPlanResult, null, 2)}</pre>}
           </article>
         </section>
@@ -1752,8 +1887,24 @@ export function App() {
 
   function ToolsPage() {
     const binding = defaultBinding();
+    const bindingRegionMatches = !binding || binding.region === region;
     const plan = normalPlanResult ?? boundPlanResult;
     const planDeckCards = plan?.deck?.recommendedDecks?.[0]?.cards ?? plan?.deck?.recommendedCards ?? [];
+    const boostRates = [1, 5, 10, 15, 20, 25, 27, 29, 31, 33, 35];
+    const difficulties = ["easy", "normal", "hard", "expert", "master", "append"];
+    const liveTypes = [["solo", "单人 Live"], ["multi", "多人 Live"], ["cheerful", "欢乐嘉年华"], ["auto", "AUTO Live"], ["challenge", "挑战 Live"]];
+    const songQuery = toolSongSearch.trim().toLowerCase();
+    const filteredToolSongs = songQuery ? songs.filter((song) => `${song.title} ${song.id}`.toLowerCase().includes(songQuery)) : songs;
+    const selectedToolSong = songs.find((song) => song.id === normalPlanForm.musicId);
+    const songSelectionReady = toolSongsStatus === "ready" && !toolDataLoading && !toolDataError && songs.length > 0 && Boolean(selectedToolSong);
+    const Field = ({ label, unit, help, children }: { label: string; unit?: string; help: string; children: any }) => <label className="tool-field"><span className="tool-field-label">{label}{unit && <small>{unit}</small>}</span>{children}<small className="tool-field-help">{help}</small></label>;
+    const JsonDetails = ({ value }: { value: any }) => value ? <details className="tool-json-details"><summary>查看完整计算详情（JSON）</summary><pre className="json-preview">{JSON.stringify(value, null, 2)}</pre></details> : null;
+    function ResultWarnings({ result }: { result: any }) {
+      const missing = result?.missingFields ?? [];
+      const warnings = result?.warnings ?? [];
+      if (!missing.length && !warnings.length) return null;
+      return <div className="tool-notice"><strong>数据完整性提示</strong><span>缺失数据会使用估算或使部分结果不可用，详细字段保留在完整结果中。</span>{missing.length > 0 && <p>缺失：{missing.slice(0, 8).join(" / ")}</p>}{warnings.length > 0 && <p>警告：{warnings.slice(0, 8).join(" / ")}</p>}</div>;
+    }
     function PlanResultView({ result }: { result: any }) {
       if (!result) return null;
       const sections = result.sections ?? {};
@@ -1803,15 +1954,34 @@ export function App() {
             <span>缺失字段</span>
             {(result.missingFields ?? []).slice(0, 12).map((item: string) => <code key={item}>{item}</code>)}
           </div>
-          <div className="result-tags">
-            <span>风险提示</span>
-            {(result.warnings ?? []).slice(0, 12).map((item: string) => <code key={item}>{item}</code>)}
-          </div>
-        </article>
-      );
+           <div className="result-tags">
+             <span>风险提示</span>
+             {(result.warnings ?? []).slice(0, 12).map((item: string) => <code key={item}>{item}</code>)}
+           </div>
+           <JsonDetails value={result} />
+         </article>
+       );
+     }
+    function BoundToolResultView() {
+      if (!boundToolResult) return null;
+      const result = boundToolResult.result;
+      const labels: Record<string, string> = { "event-point": "活动 PT", music: "歌曲推荐", area: "区域道具", mysekai: "MySekai" };
+      return <section className="bound-tool-result"><div className="panel-heading compact-heading"><div><h3>{labels[boundToolResult.tool] ?? boundToolResult.tool}结果</h3><p>先展示主要结论，未确认或缺失字段不会隐藏。</p></div></div>
+        {boundToolResult.tool === "event-point" && <div className="tool-result-metrics"><div><span>预计单局 PT</span><strong>{formatNumber(result?.estimatedPt)} pt</strong></div><div><span>到目标还需</span><strong>{formatNumber(result?.estimatedRunsToTarget)} 局</strong></div><div><span>当前火量倍率</span><strong>x{formatNumber(boostRates[Number(normalPlanForm.boost)] ?? 1)}</strong></div></div>}
+        {boundToolResult.tool === "music" && <RecommendationList items={result?.recommendations} type="music" />}
+        {boundToolResult.tool === "area" && <RecommendationList items={result?.recommendations} type="area" />}
+        {boundToolResult.tool === "mysekai" && <p className="empty-state">MySekai 计算完成，展开完整结果可查看所有字段。</p>}
+        <ResultWarnings result={result} /><JsonDetails value={result} /></section>;
+    }
+    function RecommendationList({ items = [], type }: { items?: any[]; type: "music" | "area" }) {
+      if (!items.length) return <p className="empty-state">当前没有可展示的候选，请查看数据完整性提示。</p>;
+      return <div className="tool-ranking-list">{items.map((item: any, index: number) => type === "music"
+        ? <div key={`${item.music?.id}-${item.difficulty?.difficulty}`}><b>#{index + 1}</b><strong>{item.music?.title ?? item.music?.id ?? "未知歌曲"}</strong><span>{String(item.difficulty?.difficulty ?? "-").toUpperCase()} · {formatNumber(item.music?.durationSeconds)} 秒 · {formatNumber(item.estimatedPt)} pt/局 · {formatNumber(item.estimatedPtPerMinute)} pt/min · 约 {formatNumber(item.estimatedRunsToTarget)} 局</span></div>
+        : <div key={item.areaItemId ?? index}><b>#{index + 1}</b><strong>{item.name ?? item.areaItem?.name ?? item.areaItemId}</strong><span>Lv.{formatNumber(item.fromLevel)} → Lv.{formatNumber(item.toLevel)} · 综合力 +{formatNumber(item.powerGain)} · 金币 {formatNumber(item.cost?.coin)} · {item.affordable === true ? "材料足够" : item.affordable === false ? "材料不足" : "成本未知"}</span></div>)}</div>;
     }
     return (
       <section className="tool-workspace">
+        <article className="panel wide tools-intro"><div><span className="home-kicker">按游戏结算页填写</span><h2>活动计算工具</h2><p>字段下方会说明数值从哪里获取。可留空的项目会由绑定资产或公式默认值估算，并在结果中明确标记。</p></div><div className="boost-reference"><strong>火量倍率表</strong><div>{boostRates.map((rate, fires) => <span key={fires} className={Number(normalPlanForm.boost) === fires ? "active" : ""}><b>{fires} 火</b>x{rate}</span>)}</div><small>火量是开始 Live 前选择的消耗量；这里显示的是活动 PT 倍率。</small></div></article>
         <article className="panel wide">
           <div className="panel-heading">
             <div>
@@ -1821,36 +1991,56 @@ export function App() {
             <Link className="text-link" to={auth.isAuthenticated ? "/me/assets" : "/login"}>{auth.isAuthenticated ? "管理资产" : "登录 / 注册"}</Link>
           </div>
           <div className="button-row">
-            <button type="button" disabled={!binding} onClick={calculateBoundPlan}>绑定数据普通活动规划</button>
-            <button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("event-point")}>绑定数据活动 PT</button>
+            <button type="button" disabled={!binding || !bindingRegionMatches || !songSelectionReady} onClick={calculateBoundPlan}>绑定数据普通活动规划</button>
+            <button type="button" className="secondary" disabled={!binding || !bindingRegionMatches || !songSelectionReady} onClick={() => calculateBoundTool("event-point")}>绑定数据活动 PT</button>
             <button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("music")}>绑定数据歌曲推荐</button>
             <button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("area")}>绑定数据道具建议</button>
             <button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("mysekai")}>绑定数据 MySekai</button>
           </div>
-          {boundToolResult && <details open><summary>{boundToolResult.tool} 结果</summary><pre className="json-preview">{JSON.stringify(boundToolResult.result, null, 2)}</pre></details>}
+          {binding && !bindingRegionMatches && <p className="warning-text">当前页面区服 {region.toUpperCase()} 与绑定区服 {binding.region.toUpperCase()} 不一致，请先切换区服。</p>}
+          <BoundToolResultView />
         </article>
         <article className="panel wide normal-plan-panel">
-          <h2>普通活动规划</h2>
-          <p>未登录可用手动持有卡；登录后可用绑定 UID 的库存和资产直接规划。</p>
-          <div className="two-col">
-            <input value={normalPlanForm.targetPt} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, targetPt: event.target.value })} placeholder="目标 PT" />
-            <input value={normalPlanForm.currentPt} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, currentPt: event.target.value })} placeholder="当前 PT" />
-            <input value={normalPlanForm.remainingMinutes} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, remainingMinutes: event.target.value })} placeholder="剩余分钟" />
-            <input value={normalPlanForm.boost} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, boost: event.target.value })} placeholder="火量" />
-            <input value={normalPlanForm.musicId} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, musicId: event.target.value })} placeholder="歌曲 ID" />
-            <input value={normalPlanForm.difficulty} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, difficulty: event.target.value })} placeholder="难度" />
+          <div className="panel-heading compact-heading"><div><h2>普通活动规划</h2><p>一次计算推荐卡组、单局 PT、到目标所需局数、歌曲效率和区域道具建议。</p></div><span className="status-pill">当前区服 {region.toUpperCase()}</span></div>
+          {toolDataLoading && <div className="tool-data-state"><RefreshCw size={16} className="spin" /><span>正在加载完整歌曲与卡牌数据…</span></div>}
+          {toolSongsStatus === "error" && <div className="tool-data-state error"><span>歌曲列表加载失败：{toolSongsError || toolDataError || "未知错误"}</span><button type="button" className="secondary" onClick={() => ensureFullToolData(true).catch((error) => setMessage(error instanceof Error ? error.message : String(error)))}>重试加载</button></div>}
+          {toolDataError && toolSongsStatus !== "error" && <div className="tool-data-state error"><span>完整工具数据加载失败：{toolDataError}</span><button type="button" className="secondary" onClick={() => ensureFullToolData().catch((error) => setMessage(error instanceof Error ? error.message : String(error)))}>重试加载</button></div>}
+          {toolSongsStatus === "ready" && songs.length === 0 && <div className="tool-data-state"><span>当前区服暂无歌曲数据，暂不能进行普通活动规划或活动 PT 计算。</span><button type="button" className="secondary" onClick={() => ensureFullToolData(true).catch((error) => setMessage(error instanceof Error ? error.message : String(error)))}>重新检查</button></div>}
+          <div className="tool-form-grid">
+            <Field label="目标活动 PT" unit="pt" help="活动页面右上角的目标总分，例如 1,000,000 PT。"><input type="number" min="0" value={normalPlanForm.targetPt} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, targetPt: event.target.value })} placeholder="例如 1000000" /></Field>
+            <Field label="当前活动 PT" unit="pt" help="活动页面当前已获得的累计 PT。"><input type="number" min="0" value={normalPlanForm.currentPt} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, currentPt: event.target.value })} placeholder="例如 250000" /></Field>
+            <Field label="剩余时间" unit="分钟" help="从现在到活动结束还能游玩的时间，例如 3 小时填 180。"><input type="number" min="0" value={normalPlanForm.remainingMinutes} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, remainingMinutes: event.target.value })} placeholder="例如 180" /></Field>
+            <Field label="每局消耗火量" help={`Live 开始前选择的火量；当前对应活动 PT x${boostRates[Number(normalPlanForm.boost)] ?? 1}。`}><select value={normalPlanForm.boost} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, boost: event.target.value })}>{boostRates.map((rate, fires) => <option key={fires} value={fires}>{fires} 火（PT x{rate}）</option>)}</select></Field>
+            <Field label="歌曲" help="必须明确选择准备周回的歌曲；可按歌名或 musicId 搜索，不会自动用曲库第一首代替。"><div className="song-picker"><input type="search" value={toolSongSearch} onChange={(event) => setToolSongSearch(event.target.value)} placeholder="搜索歌名或歌曲 ID" disabled={toolSongsStatus !== "ready" || songs.length === 0} /><select value={normalPlanForm.musicId} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, musicId: event.target.value })} disabled={toolSongsStatus !== "ready" || songs.length === 0}><option value="">{toolSongsStatus === "loading" || toolSongsStatus === "idle" ? "歌曲列表加载中…" : toolSongsStatus === "error" ? "歌曲列表加载失败" : songs.length === 0 ? "暂无歌曲" : filteredToolSongs.length === 0 ? "没有匹配的歌曲" : "请选择歌曲"}</option>{selectedToolSong && !filteredToolSongs.some((song) => song.id === selectedToolSong.id) && <option value={selectedToolSong.id}>{selectedToolSong.title}（ID {selectedToolSong.id}，当前选择）</option>}{filteredToolSongs.map((song) => <option key={song.id} value={song.id}>{song.title}（ID {song.id}）</option>)}</select><small>{toolSongsStatus === "ready" && songs.length > 0 ? `已加载 ${formatNumber(songs.length)} 首，当前筛选 ${formatNumber(filteredToolSongs.length)} 首。` : "歌曲加载完成后才能选择。"}</small></div></Field>
+            <Field label="难度" help="选择实际游玩的谱面难度。"><select value={normalPlanForm.difficulty} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, difficulty: event.target.value })}>{difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty.toUpperCase()}</option>)}</select></Field>
+            <Field label="Live 类型" help="多人/欢乐嘉年华会考虑队友得分与 Fever。"><select value={normalPlanForm.liveType} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, liveType: event.target.value })}>{liveTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+            <Field label="预计结算分数" unit="分" help="可留空。填最近相同队伍、歌曲和模式的结算分数；留空时由卡组或默认值估算。"><input type="number" min="0" value={normalPlanForm.baseScore} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, baseScore: event.target.value })} placeholder="可留空，例如 2000000" /></Field>
+            <Field label="活动加成" unit="%" help="可留空。编成页面显示 621% 就填 621；绑定资产时可自动推导。"><input type="number" min="0" value={normalPlanForm.eventBonusPercent} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, eventBonusPercent: event.target.value })} placeholder="可留空，例如 621" /></Field>
+            <Field label="持有卡牌 ID" help="公开模式用于推荐卡组，以逗号或空格分隔；登录后建议使用绑定 UID。"><textarea value={normalPlanForm.ownedCardIds} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, ownedCardIds: event.target.value })} placeholder="例如 1, 2, 3, 4, 5" /></Field>
           </div>
-          <textarea value={normalPlanForm.ownedCardIds} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, ownedCardIds: event.target.value })} placeholder="公开模式持有卡 ID，例如 1,2,3,4,5" />
           <div className="button-row">
-            <button type="button" onClick={calculatePublicNormalPlan}><Wand2 size={16} />手动规划</button>
-            <button type="button" className="secondary" disabled={!binding} onClick={calculateBoundPlan}>使用绑定 UID 数据</button>
+            <button type="button" disabled={!songSelectionReady} onClick={calculatePublicNormalPlan}><Wand2 size={16} />使用手动数据规划</button>
+            <button type="button" className="secondary" disabled={!binding || !bindingRegionMatches || !songSelectionReady} onClick={calculateBoundPlan}>使用绑定 UID 数据</button>
           </div>
+          {toolSongsStatus === "ready" && songs.length > 0 && !normalPlanForm.musicId && <p className="warning-text">请先明确选择一首歌曲，规划和活动 PT 按钮才会启用。</p>}
         </article>
         <PlanResultView result={plan} />
-        <article className="panel"><h2>周回 / 控分工具</h2><div className="two-col">{Object.entries(controlForm).map(([key, value]) => <input key={key} value={value} onChange={(event) => setControlForm({ ...controlForm, [key]: event.target.value })} placeholder={key} />)}</div><button type="button" onClick={calculateControl}><Check size={16} />计算</button>{controlResult && <pre className="json-preview">{JSON.stringify(controlResult, null, 2)}</pre>}</article>
-        <article className="panel"><h2>组卡推荐工具</h2><p className="warning-text">公开工具只使用手动输入的持有卡；登录后可直接使用已保存的卡牌库存。</p><textarea value={deckOwnedIds} onChange={(event) => setDeckOwnedIds(event.target.value)} placeholder="例如：1, 2, 109" /><button type="button" onClick={calculateDeck}><Wand2 size={16} />推荐</button>{deckResult && <p className="empty-state">推荐完成，请查看候选卡组。</p>}</article>
-        <article className="panel"><h2>周回歌曲推荐</h2><p>根据歌曲时长与预计收益推荐适合的周回曲目。</p><button type="button" onClick={calculateMusicRecommend}><Music size={16} />推荐歌曲</button>{musicRecommendResult && <p className="empty-state">推荐结果已生成。</p>}</article>
-        <article className="panel"><h2>区域道具升级建议</h2><p>比较当前加成与升级收益，整理优先升级项目。</p><button type="button" onClick={calculateAreaRecommend}><Package size={16} />生成建议</button>{areaRecommendResult && <p className="empty-state">升级建议已生成。</p>}</article>
+        <article className="panel tool-card-panel"><div className="panel-heading compact-heading"><div><h2>周回 / 控分</h2><p>已有可靠的单局 PT 时，计算还需局数和每小时进度要求。</p></div></div><div className="tool-form-grid compact">
+          <Field label="当前活动 PT" unit="pt" help="活动页面当前累计 PT。"><input type="number" min="0" value={controlForm.currentPt} onChange={(event) => setControlForm({ ...controlForm, currentPt: event.target.value })} /></Field>
+          <Field label="目标活动 PT" unit="pt" help="希望最终达到的累计 PT。"><input type="number" min="0" value={controlForm.targetPt} onChange={(event) => setControlForm({ ...controlForm, targetPt: event.target.value })} /></Field>
+          <Field label="剩余时间" unit="分钟" help="例如 3 小时填 180。"><input type="number" min="0" value={controlForm.remainingMinutes} onChange={(event) => setControlForm({ ...controlForm, remainingMinutes: event.target.value })} /></Field>
+          <Field label="单局活动 PT" unit="pt/局" help="填一局结算画面的活动 PT；不确定时先用上方规划估算。"><input type="number" min="0" value={controlForm.ptPerRun} onChange={(event) => setControlForm({ ...controlForm, ptPerRun: event.target.value })} placeholder="例如 55875" /></Field>
+          <Field label="最多可打局数" unit="局" help="按体力、时间或预算估算的局数上限。"><input type="number" min="0" value={controlForm.availableRuns} onChange={(event) => setControlForm({ ...controlForm, availableRuns: event.target.value })} /></Field>
+        </div><button type="button" onClick={calculateControl}><Check size={16} />计算目标路径</button>{controlResult && <><div className="tool-result-metrics"><div><span>还差 PT</span><strong>{formatNumber(controlResult.remainingPt)}</strong></div><div><span>所需局数</span><strong>{formatNumber(controlResult.requiredRuns)} 局</strong></div><div><span>每小时需打</span><strong>{typeof controlResult.requiredRunsPerHour === "number" ? controlResult.requiredRunsPerHour.toFixed(1) : "-"} 局</strong></div><div><span>计划状态</span><strong>{controlResult.feasible ? "可行" : "需调整"}</strong></div></div><ResultWarnings result={controlResult} /><JsonDetails value={controlResult} /></>}</article>
+        <article className="panel tool-card-panel"><div className="panel-heading compact-heading"><div><h2>组卡推荐</h2><p>卡牌 ID 可在卡牌图鉴详情中查看，公开模式只使用手动填写的持有卡。</p></div></div><Field label="持有卡牌 ID" help="以逗号或空格分隔，只填写真正持有的卡。"><textarea value={deckOwnedIds} onChange={(event) => setDeckOwnedIds(event.target.value)} placeholder="例如 1, 2, 109, 325" /></Field><button type="button" onClick={calculateDeck}><Wand2 size={16} />推荐卡组</button>{deckResult && <><p className="empty-state">推荐已生成；若候选为空，请查看缺失字段。</p><ResultWarnings result={deckResult} /><JsonDetails value={deckResult} /></>}</article>
+        <article className="panel wide tool-card-panel"><div className="panel-heading compact-heading"><div><h2>周回歌曲推荐</h2><p>按共享活动 PT 公式计算候选歌曲，再按每分钟 PT 排序。</p></div></div><div className="tool-form-grid">
+          <Field label="目标 / 当前 PT" help="用于估算每首歌到目标还需多少局。"><div className="inline-pair"><input type="number" min="0" value={musicRecommendForm.targetPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, targetPt: event.target.value })} placeholder="目标 PT" /><input type="number" min="0" value={musicRecommendForm.currentPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, currentPt: event.target.value })} placeholder="当前 PT" /></div></Field>
+          <Field label="活动加成" unit="%" help="编成页面显示 621% 就填 621。"><input type="number" min="0" value={musicRecommendForm.eventBonusPercent} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, eventBonusPercent: event.target.value })} /></Field>
+          <Field label="预计结算分数" unit="分" help="填最近同队伍、同模式的结算分数；可留空。"><input type="number" min="0" value={musicRecommendForm.baseScore} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, baseScore: event.target.value })} /></Field>
+          <Field label="Live 类型 / 火量" help="火量按页面上方倍率表计算。"><div className="inline-pair"><select value={musicRecommendForm.liveType} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, liveType: event.target.value })}>{liveTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select value={musicRecommendForm.boost} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, boost: event.target.value })}>{boostRates.map((rate, fires) => <option key={fires} value={fires}>{fires} 火（x{rate}）</option>)}</select></div></Field>
+          <Field label="难度 / 最长时长" help="只比较指定难度且不超过该时长的谱面。"><div className="inline-pair"><select value={musicRecommendForm.preferredDifficulty} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, preferredDifficulty: event.target.value })}>{difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty.toUpperCase()}</option>)}</select><input type="number" min="1" value={musicRecommendForm.maxDurationSeconds} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, maxDurationSeconds: event.target.value })} placeholder="最长秒数" /></div></Field>
+        </div><button type="button" onClick={calculateMusicRecommend}><Music size={16} />计算歌曲效率</button>{musicRecommendResult && <><RecommendationList items={musicRecommendResult.recommendations} type="music" /><ResultWarnings result={musicRecommendResult} /><JsonDetails value={musicRecommendResult} /></>}</article>
+        <article className="panel wide tool-card-panel"><div className="panel-heading compact-heading"><div><h2>区域道具升级建议</h2><p>对照 Moesekai 区域道具公式，比较目标卡组升级前后的综合力变化；成本数据缺失时明确标记。</p></div></div><div className="tool-form-grid"><Field label="目标卡组 ID" help="填写正在使用的 1–5 张卡牌 ID；绑定资产可结合当前区域道具等级与素材。"><textarea value={areaRecommendForm.cardIds} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, cardIds: event.target.value })} placeholder="例如 101, 205, 309, 410, 512" /></Field><Field label="排序方式" help="选择更看重金币效率、绝对综合力提升或当前材料是否足够。"><select value={areaRecommendForm.sortBy} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, sortBy: event.target.value })}><option value="coin-efficiency">金币效率优先</option><option value="power-gain">综合力提升优先</option><option value="affordable">当前可升级优先</option></select></Field><label className="tool-check-field"><input type="checkbox" checked={areaRecommendForm.includeUnaffordable} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, includeUnaffordable: event.target.checked })} /><span><strong>显示材料不足的项目</strong><small>材料数据缺失时仍会保留候选并标明成本未知。</small></span></label></div><div className="button-row"><button type="button" onClick={calculateAreaRecommend}><Package size={16} />用手动卡组生成建议</button><button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("area")}>使用绑定 UID 资产</button></div>{areaRecommendResult && <><RecommendationList items={areaRecommendResult.recommendations} type="area" /><ResultWarnings result={areaRecommendResult} /><JsonDetails value={areaRecommendResult} /></>}</article>
       </section>
     );
   }

@@ -1,5 +1,36 @@
 # Agent Context
 
+## Current Production Snapshot (2026-07-19)
+
+- Production Web: `https://sekai-tools.cn`; production API: `https://api.sekai-tools.cn`; Android releases must embed these HTTPS origins.
+- Production runs on Ubuntu Server with Docker Compose. PostgreSQL data lives in the persistent `pjsktools_postgres_data` volume. Never use `docker compose down -v` or otherwise delete/recreate that volume during ordinary deployment.
+- Production database migrations run through the `migrate` service before the API starts. Create a PostgreSQL backup before material production changes and verify the persistent volume after deployment.
+- SMTP is configured only in private local/server environment files. Never commit SMTP accounts, authorization codes, SSH keys, signing keys, `.env.production`, or anything under `.secrets/`.
+- Email registration sends a real six-digit code that is valid for five minutes. A shared, database-backed reservation enforces a 60-second cooldown per normalized email and purpose across API instances. Failed delivery releases only its own reservation and must not create a usable code.
+- SMTP failures must be logged without command payloads, server response bodies, recipient addresses, verification codes, account names, or authorization codes. Client-facing failures must remain explicit and useful.
+- Web and Android registration must both provide confirm-password input, exact password-policy guidance, six-digit code validation, five-minute validity feedback, and a visible 60-second resend countdown.
+- Registration/OpenAPI changes must keep `apps/api/openapi/openapi.json` and the committed Android generated client synchronized. Use the official generation/check scripts; do not hand-edit generated sources.
+- A code-review sub-agent must independently verify goal compliance before production deployment. A separate submission-scope review must check privacy, generated-file drift, and unrelated changes. Any blocking finding is returned to the responsible implementation before deployment or commit.
+- Current domain access may still be reset or blocked externally until the domain completes required mainland China ICP filing. Treat that network reset separately from application/API correctness.
+
+## Brand And App Icon Direction
+
+- The product identity is an original rhythm-game toolbox, not an official game client. Do not copy game logos, character art, unit marks, card frames, or other copyrighted/trademarked visual assets.
+- Preferred palette follows the product UI: teal `#00A7A5`, deep teal `#007F82`, pink `#E84C8B`, yellow `#F1C84B`, ink `#18212B`, and white.
+- Icon concepts should communicate rhythm/music plus tools, data, charts, or a portal/workbench. Favor a bold central silhouette, geometric stage-light energy, crisp edges, and strong recognition at 48 px.
+- Avoid small text, thin linework, excessive detail, photographic characters, generic wrench-only imagery, and visual similarity to any official Project Sekai application icon.
+- Keep the selected source and its exported variants in `docs/brand/icon-concepts/`. Do not replace Android launcher icons or Web favicons until the user explicitly selects a concept.
+
+## Calculation Tools UX And Song Selection (2026-07-23)
+
+- Web calculation tools must use explicit field labels and concise help text. Numeric fields should show units and useful examples where applicable; optional fields must say that they may be left blank. Select controls should explain what in-game choice or data source they represent. Prefer structured result summaries, warnings, missing-field explanations, and expandable calculation details over raw JSON-only output.
+- Event boost uses the authoritative 0-10 fire table: `0→1`, `1→5`, `2→10`, `3→15`, `4→20`, `5→25`, `6→27`, `7→29`, `8→31`, `9→33`, and `10→35`. UI copy must distinguish consumed fire from the resulting event-PT multiplier.
+- Normal-event planning, bound event-PT calculation, and forecast bound estimation require an explicitly selected song. Never silently substitute the first song in the master catalog.
+- The tool song picker must support title/musicId search and explicit loading, ready, empty, and error/retry states. Calculation actions stay disabled until the selected song exists in the current region's loaded catalog.
+- Region changes clear tool song data, search text, and selection. Ignore stale region responses. Bound calculations that depend on a song must reject page-region and binding-region mismatches with a visible explanation; unrelated bound music, area-item, and MySekai tools remain available.
+- Music recommendation and area-item recommendation forms must send their visible user inputs to the matching public and bound API payloads. Do not display controls that are ignored by the request.
+- Changes to calculation-tool behavior require a Web TypeScript check, a production build, and an independent logic review before production deployment.
+
 ## Project Positioning
 
 This project is a Project Sekai / PJSK player toolbox. Target architecture:
