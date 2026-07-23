@@ -1,20 +1,30 @@
 package com.pjsktools.app.feature.shell
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +38,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.pjsktools.core.designsystem.SekaiPink
+import com.pjsktools.core.designsystem.SekaiTeal
+import com.pjsktools.core.designsystem.SekaiYellow
 import com.pjsktools.app.feature.catalog.RemoteCatalogImage
 import kotlinx.coroutines.CancellationException
 import com.pjsktools.app.BuildConfig
@@ -68,26 +81,60 @@ fun HomeFeatureScreen(
         }
     }
 
-    LazyColumn(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(
+        modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         item {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("连接每一次 Live 与成长", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                Text("Project Sekai 工具台", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("快速查看活动、图鉴与个人资料，在移动工作台里完成计算和比较。")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    dashboard?.regions?.ifEmpty { null }?.forEach { item ->
-                        if (item.id == region) Button(onClick = {}) { Text(item.id.uppercase()) }
-                        else OutlinedButton(onClick = { onRegionChange(item.id) }) { Text(item.id.uppercase()) }
-                    } ?: listOf("jp", "en", "tw", "kr", "cn").forEach { id ->
-                        if (id == region) Button(onClick = {}) { Text(id.uppercase()) }
-                        else OutlinedButton(onClick = { onRegionChange(id) }) { Text(id.uppercase()) }
+            Surface(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                shadowElevation = 4.dp
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.fillMaxWidth().height(5.dp)) {
+                        Box(Modifier.weight(5f).fillMaxSize().background(SekaiTeal))
+                        Box(Modifier.weight(2f).fillMaxSize().background(SekaiPink))
+                        Box(Modifier.weight(1f).fillMaxSize().background(SekaiYellow))
+                    }
+                    Column(
+                        Modifier.padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("CONNECT EVERY LIVE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Text("Project Sekai\n游戏工具台", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "活动、图鉴、玩家资料与计算工具，和网页版共用同一套实时数据。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f)
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            dashboard?.regions?.ifEmpty { null }?.forEach { item ->
+                                if (item.id == region) Button(onClick = {}) { Text(item.id.uppercase()) }
+                                else OutlinedButton(onClick = { onRegionChange(item.id) }) { Text(item.id.uppercase()) }
+                            } ?: listOf("jp", "en", "tw", "kr", "cn").forEach { id ->
+                                if (id == region) Button(onClick = {}) { Text(id.uppercase()) }
+                                else OutlinedButton(onClick = { onRegionChange(id) }) { Text(id.uppercase()) }
+                            }
+                        }
                     }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MetricCard("区服", region.uppercase(), Modifier.weight(1f))
-                    MetricCard("歌曲", dashboard?.songCount?.toString() ?: "-", Modifier.weight(1f))
-                    MetricCard("卡牌", dashboard?.cardCount?.toString() ?: "-", Modifier.weight(1f))
-                }
+            }
+        }
+        item {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MetricCard("区服", region.uppercase(), SekaiTeal, Modifier.weight(1f))
+                MetricCard("歌曲", dashboard?.songCount?.toString() ?: "-", SekaiPink, Modifier.weight(1f))
+                MetricCard("卡牌", dashboard?.cardCount?.toString() ?: "-", SekaiYellow, Modifier.weight(1f))
             }
         }
         if (loading && dashboard == null) item { LoadingCard("正在加载真实仪表盘数据") }
@@ -365,28 +412,74 @@ fun ShareFeatureScreen(
 
 @Composable
 internal fun ShellCard(title: String, subtitle: String? = null, content: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            content()
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column {
+            Box(Modifier.padding(start = 16.dp).width(48.dp).height(3.dp).background(MaterialTheme.colorScheme.primary))
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                subtitle?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                content()
+            }
         }
     }
 }
 
 @Composable
-private fun MetricCard(label: String, value: String, modifier: Modifier) {
-    Card(modifier) { Column(Modifier.padding(12.dp)) { Text(label, style = MaterialTheme.typography.labelMedium); Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) } }
+private fun MetricCard(label: String, value: String, accent: androidx.compose.ui.graphics.Color, modifier: Modifier) {
+    Card(
+        modifier,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(4.dp).background(accent))
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
 }
 
 @Composable
 internal fun LoadingCard(label: String) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { CircularProgressIndicator(); Text(label) } }
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            CircularProgressIndicator()
+            Text(label)
+        }
+    }
 }
 
 @Composable
 internal fun ErrorCard(message: String, retry: () -> Unit) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(message, color = MaterialTheme.colorScheme.error); TextButton(onClick = retry) { Text("重试") } } }
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("连接暂时不可用", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            TextButton(onClick = retry) { Text("重新加载") }
+        }
+    }
 }
 
 private fun resolveImageUrl(baseUrl: String, imageUrl: String) = if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) imageUrl else "${baseUrl.trimEnd('/')}/${imageUrl.trimStart('/')}"
