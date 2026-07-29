@@ -39,6 +39,27 @@ export type RealtimeRankingSnapshot = {
   rawStatus?: string;
 };
 
+export type RealtimeWorldLinkGroupSnapshot = RealtimeRankingSnapshot & {
+  gameCharacterId: number;
+  isWorldBloomChapterAggregate: boolean;
+};
+
+export type RealtimeWorldLinkSnapshot = {
+  region: RegionId;
+  eventId: string;
+  startAt?: string;
+  endAt?: string;
+  updatedAt: string;
+  groups: RealtimeWorldLinkGroupSnapshot[];
+  sourceLine: RealtimeRankingLine;
+  sourceUrl: string;
+};
+
+export function selectRealtimeWorldLinkGroup(snapshot: RealtimeWorldLinkSnapshot | null, gameCharacterId: number | undefined) {
+  if (!snapshot || !gameCharacterId) return undefined;
+  return snapshot.groups.find((group) => group.gameCharacterId === gameCharacterId);
+}
+
 export type RealtimeTierLine = {
   rank: number;
   score: number;
@@ -162,10 +183,67 @@ function normalizeSnapshot(json: any, region: RegionId, sourceLine: RealtimeRank
   };
 }
 
-async function fetchFromLine(region: RegionId, path: "latest" | "worldlink-latest", sourceLine: RealtimeRankingLine, timeoutMs: number, gameCharacterId?: number) {
-  const query = path === "worldlink-latest" && gameCharacterId ? `?gameCharacterId=${encodeURIComponent(String(gameCharacterId))}` : "";
-  const url = `${realtimeRankingHosts[sourceLine]}/${region}/${path}${query}`;
+async function fetchFromLine(region: RegionId, path: "latest", sourceLine: RealtimeRankingLine, timeoutMs: number) {
+  const url = `${realtimeRankingHosts[sourceLine]}/${region}/${path}`;
   return normalizeSnapshot(await fetchJsonWithTimeout(url, timeoutMs), region, sourceLine, url);
+}
+
+function normalizeWorldLinkSnapshot(json: any, region: RegionId, sourceLine: RealtimeRankingLine, sourceUrl: string): RealtimeWorldLinkSnapshot {
+  const eventId = String(json?.event_id ?? json?.eventId ?? json?.event?.id ?? "");
+  if (!eventId) throw new Error("Realtime World Link response did not include event_id");
+  const responseRegion = String(json?.region ?? "").toLowerCase();
+  if (responseRegion !== region) {
+    throw new Error(`Realtime World Link region mismatch: expected ${region}, got ${responseRegion || "missing"}`);
+  }
+  const updatedAt = isoFromMaybeUnix(json?.updated_at ?? json?.updatedAt ?? json?.timestamp) ?? new Date().toISOString();
+  const seenCharacterIds = new Set<number>();
+  const groups = (Array.isArray(json?.groups) ? json.groups : [])
+    .map((group: any): RealtimeWorldLinkGroupSnapshot => {
+      const groupRegion = String(group?.region ?? "").toLowerCase();
+      const groupEventId = String(group?.event_id ?? group?.eventId ?? "");
+      if (groupRegion !== region) {
+        throw new Error(`Realtime World Link group region mismatch: expected ${region}, got ${groupRegion || "missing"}`);
+      }
+      if (groupEventId !== eventId) {
+        throw new Error(`Realtime World Link group event mismatch: expected ${eventId}, got ${groupEventId || "missing"}`);
+      }
+      const gameCharacterId = numberOrUndefined(group?.game_character_id ?? group?.gameCharacterId);
+      if (!gameCharacterId || gameCharacterId < 1) {
+        throw new Error("Realtime World Link group did not include a valid game_character_id");
+      }
+      if (seenCharacterIds.has(gameCharacterId)) {
+        throw new Error(`Realtime World Link response included duplicate character group ${gameCharacterId}`);
+      }
+      seenCharacterIds.add(gameCharacterId);
+      const normalized = normalizeSnapshot({
+        ...group,
+        event_id: groupEventId,
+        region: groupRegion,
+        start_at: group?.start_at ?? json?.start_at,
+        end_at: group?.end_at ?? json?.end_at,
+        updated_at: group?.updated_at ?? json?.updated_at
+      }, region, sourceLine, sourceUrl);
+      return {
+        ...normalized,
+        gameCharacterId,
+        isWorldBloomChapterAggregate: Boolean(group?.is_world_bloom_chapter_aggregate ?? group?.isWorldBloomChapterAggregate)
+      };
+    });
+  return {
+    region,
+    eventId,
+    startAt: isoFromMaybeUnix(json?.start_at ?? json?.startAt),
+    endAt: isoFromMaybeUnix(json?.end_at ?? json?.endAt),
+    updatedAt,
+    groups,
+    sourceLine,
+    sourceUrl
+  };
+}
+
+async function fetchWorldLinkFromLine(region: RegionId, sourceLine: RealtimeRankingLine, timeoutMs: number) {
+  const url = `${realtimeRankingHosts[sourceLine]}/${region}/worldlink-latest`;
+  return normalizeWorldLinkSnapshot(await fetchJsonWithTimeout(url, timeoutMs), region, sourceLine, url);
 }
 
 async function fetchTierSeriesFromLine(region: RegionId, tiers: number[], sourceLine: RealtimeRankingLine, timeoutMs: number): Promise<RealtimeTierLine[]> {
@@ -238,11 +316,11 @@ export async function fetchRealtimeLatest(region: RegionId) {
   }
 }
 
-export async function fetchRealtimeWorldLinkLatest(region: RegionId, timeoutMs = 30_000, gameCharacterId?: number) {
+export async function fetchRealtimeWorldLinkLatest(region: RegionId, timeoutMs = 30_000) {
   const errors: string[] = [];
   for (const line of ["main", "global"] as const) {
     try {
-      return { snapshot: await fetchFromLine(region, "worldlink-latest", line, timeoutMs, gameCharacterId), errors };
+      return { snapshot: await fetchWorldLinkFromLine(region, line, timeoutMs), errors };
     } catch (error) {
       const status = (error as Error & { status?: number }).status;
       errors.push(`${line}: ${error instanceof Error ? error.message : String(error)}`);

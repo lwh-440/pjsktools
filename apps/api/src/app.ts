@@ -49,6 +49,7 @@ import {
   qqConfigured
 } from "./qqClient.js";
 import { getLatestLiveRankingCached, getLiveRankingCached, getPlayerProfileCached, getRankingBorderCached, getRankingChurnCached, getRankingHistory, getRankingHistorySummary, getRankingPlayerDetail, getRankingTop100Cached, getRuntimeStatus } from "./runtimeData.js";
+import { validateRankingBoardContext, type RankingBoardContext } from "./rankingBoardContext.js";
 import { calculateMysekai } from "./mysekaiCalc.js";
 import { store, toPublicUser, type AuthStore } from "./store.js";
 import type { Favorite, FavoriteTargetSummary, FavoriteType, PlayerDataKind } from "./types.js";
@@ -893,6 +894,12 @@ async function resolveQqLogin(code: string, state: string) {
   };
 }
 
+function rankingBoardContextFailure(reply: any, context: Extract<RankingBoardContext, { ok: false }>) {
+  if (context.statusCode === 404) return reply.notFound(context.message);
+  if (context.statusCode === 503) return reply.serviceUnavailable(context.message);
+  return reply.badRequest(context.message);
+}
+
 export async function buildApp(options: {
   enableTestAuthRoutes?: boolean;
   shareCardProfileResolver?: typeof getPlayerProfileCached;
@@ -1449,12 +1456,13 @@ export async function buildApp(options: {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     const query = request.query as { boardType?: string; gameCharacterId?: string };
-    const boardType = query.boardType === "worldlink" ? "worldlink" : "overall";
-    const gameCharacterId = query.gameCharacterId ? Number(query.gameCharacterId) : undefined;
-    if (query.gameCharacterId && (!Number.isInteger(gameCharacterId) || (gameCharacterId ?? 0) < 1)) return reply.badRequest("Unsupported gameCharacterId");
-    if (boardType === "worldlink" && gameCharacterId == null) return reply.badRequest("gameCharacterId is required for World Link");
-    const currentEvent = await getCurrentEvent(region);
-    if (currentEvent?.id && currentEvent.id !== "none") return getLiveRankingCached(region, currentEvent.id, currentEvent, false, { boardType, gameCharacterId: gameCharacterId as number | undefined });
+    const context = await validateRankingBoardContext(region, query);
+    if (!context.ok) return rankingBoardContextFailure(reply, context);
+    const { boardType, gameCharacterId } = context;
+    const currentEvent = context.event ?? await getCurrentEvent(region);
+    if (currentEvent?.id && currentEvent.id !== "none") {
+      return getLiveRankingCached(region, currentEvent.id, currentEvent, false, { boardType, gameCharacterId: gameCharacterId as number | undefined });
+    }
     const live = await getLatestLiveRankingCached(region, currentEvent ?? { id: "unknown" });
     if (live.eventId && !["none", "unknown"].includes(live.eventId)) {
       requestMasterRegionSync(region);
@@ -1497,10 +1505,10 @@ export async function buildApp(options: {
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     if (eventId === "none") return reply.notFound("No active event");
     const query = request.query as { boardType?: string; gameCharacterId?: string; top?: string };
-    const boardType = query.boardType === "worldlink" ? "worldlink" : "overall";
-    const gameCharacterId = query.gameCharacterId ? Number(query.gameCharacterId) : undefined;
+    const context = await validateRankingBoardContext(region, query, eventId);
+    if (!context.ok) return rankingBoardContextFailure(reply, context);
+    const { boardType, gameCharacterId } = context;
     const top = query.top ? Math.min(Math.max(Number(query.top), 1), 1000) : undefined;
-    if (query.gameCharacterId && !Number.isInteger(gameCharacterId)) return reply.badRequest("Unsupported gameCharacterId");
     return getRankingChurnCached(region, eventId, { boardType, gameCharacterId, top });
   });
 
@@ -1616,11 +1624,11 @@ export async function buildApp(options: {
     const numericRank = Number(rank);
     if (!Number.isInteger(numericRank) || numericRank < 1) return reply.badRequest("Unsupported rank");
     const query = request.query as { boardType?: string; gameCharacterId?: string };
-    const boardType = query.boardType === "worldlink" ? "worldlink" : "overall";
-    const gameCharacterId = query.gameCharacterId ? Number(query.gameCharacterId) : undefined;
-    if (query.gameCharacterId && !Number.isInteger(gameCharacterId)) return reply.badRequest("Unsupported gameCharacterId");
+    const context = await validateRankingBoardContext(region, query, eventId);
+    if (!context.ok) return rankingBoardContextFailure(reply, context);
+    const { boardType, gameCharacterId } = context;
     try {
-      return await getRankingPlayerDetail(region, eventId, numericRank, { boardType, gameCharacterId });
+      return await getRankingPlayerDetail(region, eventId, numericRank, { boardType, gameCharacterId }, context.event);
     } catch (error) {
       return rankingPlayerFailure(reply, error);
     }

@@ -83,12 +83,18 @@ type RankingSourceHealth = {
   stale?: boolean;
   errors?: string[];
 };
+type RankingBoardType = "overall" | "worldlink";
+type WorldLinkCharacter = { id: number; name: string; imageCandidates?: string[] };
 type LiveRankingResponse = {
+  eventId?: string;
   currentEvent?: EventInfo;
   top100?: RankingEntry[];
   borderLines?: RankingBorder[];
   updatedAt?: string;
   sourceHealth?: RankingSourceHealth;
+  boardType?: RankingBoardType;
+  gameCharacterId?: number;
+  worldLinkCharacters?: WorldLinkCharacter[];
   worldLinkAvailable?: boolean;
   staleRanks?: number[];
   warnings?: string[];
@@ -432,6 +438,10 @@ function contentDate(value: any) {
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(time);
 }
 
+function rankingRequestKey(region: string, board: RankingBoardType, gameCharacterId: number | null) {
+  return `${region}:${board}:${board === "worldlink" ? gameCharacterId ?? "missing" : "overall"}`;
+}
+
 function contentGroups(data: any): ContentDisplayGroup[] {
   if (Array.isArray(data?.displayGroups)) return data.displayGroups;
   if (Array.isArray(data?.storyGroups)) return data.storyGroups;
@@ -495,6 +505,11 @@ export function App() {
   const [rankingUpdatedAt, setRankingUpdatedAt] = useState<string | null>(null);
   const [rankingWarnings, setRankingWarnings] = useState<string[]>([]);
   const [rankingRefreshing, setRankingRefreshing] = useState(false);
+  const [rankingLoadError, setRankingLoadError] = useState("");
+  const [rankingBoard, setRankingBoard] = useState<RankingBoardType>("overall");
+  const [worldLinkCharacterId, setWorldLinkCharacterId] = useState<number | null>(null);
+  const [worldLinkCharacters, setWorldLinkCharacters] = useState<WorldLinkCharacter[]>([]);
+  const [worldLinkAvailable, setWorldLinkAvailable] = useState(false);
   const [rankingNextRefreshAt, setRankingNextRefreshAt] = useState<number | null>(null);
   const [rankingCountdown, setRankingCountdown] = useState(10);
   const regionRef = useRef(region);
@@ -506,6 +521,8 @@ export function App() {
   const toolCardsRegion = useRef("");
   const rankingRequests = useRef(new Map<string, AbortController>());
   const rankingDetailRequest = useRef(0);
+  const rankingBoardRef = useRef<RankingBoardType>("overall");
+  const worldLinkCharacterRef = useRef<number | null>(null);
   const [message, setMessage] = useState("准备就绪");
   const [filter, setFilter] = useState("");
   const [debouncedFilter, setDebouncedFilter] = useState("");
@@ -641,9 +658,21 @@ export function App() {
   const [virtualLiveQueueWarnings, setVirtualLiveQueueWarnings] = useState<string[]>([]);
 
   regionRef.current = region;
+  rankingBoardRef.current = rankingBoard;
+  worldLinkCharacterRef.current = worldLinkCharacterId;
 
   function changeRegion(nextRegion: string) {
     if (nextRegion === region) return;
+    // Update request guards synchronously so the next region can never be
+    // combined with a World Link selection from the previous region.
+    regionRef.current = nextRegion;
+    rankingBoardRef.current = "overall";
+    worldLinkCharacterRef.current = null;
+    setRankingBoard("overall");
+    setWorldLinkCharacterId(null);
+    setWorldLinkCharacters([]);
+    setWorldLinkAvailable(false);
+    resetRankingBoardContent();
     setRegion(nextRegion);
     if (/^\/section\/stories\/.+/.test(location.pathname)) navigate("/section/stories", { replace: true });
   }
@@ -707,18 +736,20 @@ export function App() {
   }, [region]);
 
   useEffect(() => {
-    loadRankings(region).catch(() => undefined);
+    if (rankingBoard === "worldlink" && worldLinkCharacterId == null) return;
+    loadRankings(region, rankingBoard, worldLinkCharacterId).catch(() => undefined);
     setRankingNextRefreshAt(Date.now() + 10_000);
     const timer = window.setInterval(() => {
-      loadRankings(region).catch(() => undefined);
+      loadRankings(region, rankingBoard, worldLinkCharacterId).catch(() => undefined);
       setRankingNextRefreshAt(Date.now() + 10_000);
     }, 10_000);
     return () => {
       window.clearInterval(timer);
-      rankingRequests.current.get(region)?.abort();
-      rankingRequests.current.delete(region);
+      const requestKey = rankingRequestKey(region, rankingBoard, worldLinkCharacterId);
+      rankingRequests.current.get(requestKey)?.abort();
+      rankingRequests.current.delete(requestKey);
     };
-  }, [region]);
+  }, [region, rankingBoard, worldLinkCharacterId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -726,6 +757,16 @@ export function App() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [rankingNextRefreshAt]);
+
+  useEffect(() => {
+    if (rankingBoard !== "worldlink") return;
+    const validWorldLinkContext = event?.eventType === "world_bloom"
+      && worldLinkAvailable
+      && worldLinkCharacters.length > 0
+      && worldLinkCharacterId != null
+      && worldLinkCharacters.some((character) => character.id === worldLinkCharacterId);
+    if (!validWorldLinkContext) selectRankingBoard("overall");
+  }, [event?.id, event?.eventType, rankingBoard, worldLinkAvailable, worldLinkCharacters, worldLinkCharacterId]);
 
   useEffect(() => {
     if (activeSection in collectionMeta) {
@@ -784,6 +825,11 @@ export function App() {
     setRankingSourceHealth(null);
     setRankingUpdatedAt(null);
     setRankingWarnings([]);
+    setRankingLoadError("");
+    setRankingBoard("overall");
+    setWorldLinkCharacterId(null);
+    setWorldLinkCharacters([]);
+    setWorldLinkAvailable(false);
     rankingDetailRequest.current += 1;
     setRankingDetail(null);
     setRankingDetailOpen(false);
@@ -898,20 +944,104 @@ export function App() {
     setRankingHistory(nextHistory);
   }
 
-  async function loadRankings(nextRegion = region) {
-    if (rankingRequests.current.has(nextRegion)) return;
-    const controller = new AbortController();
-    rankingRequests.current.set(nextRegion, controller);
+  function resetRankingBoardContent() {
+    rankingRequests.current.forEach((controller) => controller.abort());
+    rankingRequests.current.clear();
+    rankingDetailRequest.current += 1;
+    setRanking([]);
+    setBorders([]);
+    setRankingSourceHealth(null);
+    setRankingUpdatedAt(null);
+    setRankingWarnings([]);
+    setRankingLoadError("");
+    setRankingDetail(null);
+    setRankingDetailOpen(false);
+    setRankingDetailLoading(false);
     setRankingRefreshing(true);
+  }
+
+  function selectRankingBoard(nextBoard: RankingBoardType) {
+    if (nextBoard === rankingBoard) return;
+    if (nextBoard === "worldlink") {
+      const firstCharacterId = worldLinkCharacterId ?? worldLinkCharacters[0]?.id ?? null;
+      if (firstCharacterId == null) {
+        setRankingLoadError("当前活动暂未返回可选的 World Link 角色。");
+        return;
+      }
+      worldLinkCharacterRef.current = firstCharacterId;
+      setWorldLinkCharacterId(firstCharacterId);
+    } else {
+      worldLinkCharacterRef.current = null;
+      setWorldLinkCharacterId(null);
+    }
+    rankingBoardRef.current = nextBoard;
+    setRankingBoard(nextBoard);
+    resetRankingBoardContent();
+  }
+
+  function selectWorldLinkCharacter(characterId: number) {
+    if (rankingBoard === "worldlink" && worldLinkCharacterId === characterId) return;
+    rankingBoardRef.current = "worldlink";
+    worldLinkCharacterRef.current = characterId;
+    setRankingBoard("worldlink");
+    setWorldLinkCharacterId(characterId);
+    resetRankingBoardContent();
+  }
+
+  async function loadRankings(
+    nextRegion = region,
+    nextBoard: RankingBoardType = rankingBoard,
+    nextCharacterId: number | null = worldLinkCharacterId
+  ) {
+    if (nextBoard === "worldlink" && nextCharacterId == null) {
+      setRankingLoadError("请先选择角色，再加载单角色榜。");
+      return;
+    }
+    const requestKey = rankingRequestKey(nextRegion, nextBoard, nextCharacterId);
+    if (rankingRequests.current.has(requestKey)) return;
+    const controller = new AbortController();
+    rankingRequests.current.set(requestKey, controller);
+    setRankingRefreshing(true);
+    setRankingLoadError("");
     try {
-      const live = await apiGetWithSignal<LiveRankingResponse>(`/api/events/${nextRegion}/live-ranking`, controller.signal);
-      if (controller.signal.aborted || regionRef.current !== nextRegion) return;
+      if (nextBoard === "worldlink") {
+        const confirmedEvent = await apiGetWithSignal<EventInfo>(`/api/events/${nextRegion}/current`, controller.signal);
+        const eventChanged = Boolean(event?.id && confirmedEvent.id !== event.id);
+        if (controller.signal.aborted
+          || regionRef.current !== nextRegion
+          || rankingBoardRef.current !== nextBoard
+          || worldLinkCharacterRef.current !== nextCharacterId) return;
+        if (confirmedEvent.eventType !== "world_bloom" || eventChanged) {
+          setEvent(confirmedEvent);
+          rankingBoardRef.current = "overall";
+          worldLinkCharacterRef.current = null;
+          setRankingBoard("overall");
+          setWorldLinkCharacterId(null);
+          setWorldLinkCharacters([]);
+          setWorldLinkAvailable(false);
+          resetRankingBoardContent();
+          return;
+        }
+      }
+      const params = new URLSearchParams({ boardType: nextBoard });
+      if (nextBoard === "worldlink" && nextCharacterId != null) params.set("gameCharacterId", String(nextCharacterId));
+      const live = await apiGetWithSignal<LiveRankingResponse>(`/api/events/${nextRegion}/live-ranking?${params}`, controller.signal);
+      const contextChanged = regionRef.current !== nextRegion
+        || rankingBoardRef.current !== nextBoard
+        || (nextBoard === "worldlink" && worldLinkCharacterRef.current !== nextCharacterId);
+      if (controller.signal.aborted || contextChanged) return;
+      if ((live.boardType ?? "overall") !== nextBoard || (nextBoard === "worldlink" && live.gameCharacterId !== nextCharacterId)) {
+        throw new Error("榜单响应与当前选择不一致，已拒绝显示可能串榜的数据。");
+      }
       if (live.currentEvent?.id) {
         const liveHasDetails = Boolean(live.currentEvent.startAt && live.currentEvent.endAt && !/^活动\s*#/u.test(live.currentEvent.name));
         const currentEvent = !liveHasDetails
           ? await apiGetWithSignal<EventInfo>(`/api/events/${nextRegion}/current`, controller.signal).catch(() => null)
           : null;
-        if (controller.signal.aborted || regionRef.current !== nextRegion) return;
+        if (controller.signal.aborted
+          || regionRef.current !== nextRegion
+          || rankingBoardRef.current !== nextBoard
+          || (nextBoard === "worldlink" && worldLinkCharacterRef.current !== nextCharacterId)) return;
         const resolvedEvent = currentEvent ?? (liveHasDetails ? live.currentEvent : null);
         if (resolvedEvent) setEvent(resolvedEvent);
       }
@@ -920,14 +1050,25 @@ export function App() {
       setRankingSourceHealth(live.sourceHealth ?? null);
       setRankingUpdatedAt(live.updatedAt ?? live.sourceHealth?.latestUpdatedAt ?? null);
       setRankingWarnings(live.warnings ?? []);
+      setWorldLinkCharacters(live.worldLinkCharacters ?? []);
+      setWorldLinkAvailable(Boolean(live.worldLinkAvailable));
       setRankingNextRefreshAt(Date.now() + 10_000);
       const activeEventId = live.currentEvent?.id;
       if (activeEventId && activeEventId !== "none") void loadRankingExtras(activeEventId, nextRegion);
     } catch (error) {
-      if ((error as Error).name !== "AbortError") throw error;
+      if ((error as Error).name !== "AbortError"
+        && regionRef.current === nextRegion
+        && rankingBoardRef.current === nextBoard
+        && (nextBoard !== "worldlink" || worldLinkCharacterRef.current === nextCharacterId)) {
+        setRankingLoadError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
-      if (rankingRequests.current.get(nextRegion) === controller) rankingRequests.current.delete(nextRegion);
-      if (regionRef.current === nextRegion) setRankingRefreshing(false);
+      if (rankingRequests.current.get(requestKey) === controller) rankingRequests.current.delete(requestKey);
+      if (regionRef.current === nextRegion
+        && rankingBoardRef.current === nextBoard
+        && (nextBoard !== "worldlink" || worldLinkCharacterRef.current === nextCharacterId)) {
+        setRankingRefreshing(false);
+      }
     }
   }
 
@@ -1039,16 +1180,27 @@ export function App() {
     const requestId = ++rankingDetailRequest.current;
     const requestRegion = region;
     const requestEventId = event.id;
+    const requestBoard = rankingBoard;
+    const requestCharacterId = worldLinkCharacterId;
+    if (requestBoard === "worldlink" && requestCharacterId == null) return;
     setRankingDetailOpen(true);
     setRankingDetailLoading(true);
     const listEntry = ranking.find((entry) => entry.rank === rank);
     if (listEntry) setRankingDetail(listEntry as RankingPlayerDetail);
     try {
-      const detail = await apiGet<RankingPlayerDetail>(`/api/events/${requestRegion}/${requestEventId}/ranking-player/${rank}`);
-      if (rankingDetailRequest.current !== requestId || regionRef.current !== requestRegion) return;
+      const params = new URLSearchParams({ boardType: requestBoard });
+      if (requestBoard === "worldlink" && requestCharacterId != null) params.set("gameCharacterId", String(requestCharacterId));
+      const detail = await apiGet<RankingPlayerDetail>(`/api/events/${requestRegion}/${requestEventId}/ranking-player/${rank}?${params}`);
+      if (rankingDetailRequest.current !== requestId
+        || regionRef.current !== requestRegion
+        || rankingBoardRef.current !== requestBoard
+        || (requestBoard === "worldlink" && worldLinkCharacterRef.current !== requestCharacterId)) return;
       setRankingDetail({ ...listEntry, ...detail });
     } finally {
-      if (rankingDetailRequest.current === requestId && regionRef.current === requestRegion) setRankingDetailLoading(false);
+      if (rankingDetailRequest.current === requestId
+        && regionRef.current === requestRegion
+        && rankingBoardRef.current === requestBoard
+        && (requestBoard !== "worldlink" || worldLinkCharacterRef.current === requestCharacterId)) setRankingDetailLoading(false);
     }
   }
 
@@ -1488,6 +1640,13 @@ export function App() {
   function RankingPage() {
     const keyword = filter.trim().toLowerCase();
     const filteredRanking = keyword ? ranking.filter((entry) => `${entry.rank} ${entry.playerName ?? entry.name ?? ""} ${entry.userId ?? ""}`.toLowerCase().includes(keyword)) : ranking;
+    const selectedWorldLinkCharacter = worldLinkCharacters.find((character) => character.id === worldLinkCharacterId);
+    const boardLabel = rankingBoard === "worldlink"
+      ? `${selectedWorldLinkCharacter?.name ?? `角色 ${worldLinkCharacterId ?? "-"}`}单角色榜`
+      : "总榜";
+    const showWorldLinkControls = event?.eventType === "world_bloom"
+      && worldLinkAvailable
+      && worldLinkCharacters.length > 0;
     const sourceStatus = rankingSourceHealth?.status ?? "waiting";
     const sourceLabel = sourceStatus === "fresh"
       ? "已更新"
@@ -1501,22 +1660,42 @@ export function App() {
     return (
       <section className="rank-page">
         <div className="rank-hero">
-          <div><span className="home-kicker">活动排名每 10 秒更新</span><h2>{event?.name ?? "正在加载活动"}</h2><div className="rank-meta"><span>{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</span><span>{ranking.length} 条 T100 数据</span><span>{borders.length} 条普通分数线</span><span>{sourceLabel}</span><span>更新 {formatDate(rankingUpdatedAt ?? undefined)}</span><span>{rankingRefreshing ? "刷新中" : `${rankingCountdown}s 后刷新`}</span></div></div>
-          <div className="rank-actions"><button type="button" onClick={() => loadRankings(region)} disabled={rankingRefreshing}><RefreshCw size={16} />{rankingRefreshing ? "刷新中" : "立即刷新"}</button><button type="button" className="secondary" onClick={() => goSection("forecast")}>预测线</button></div>
+          <div><span className="home-kicker">活动排名每 10 秒更新 · 当前查看 {boardLabel}</span><h2>{event?.name ?? "正在加载活动"}</h2><div className="rank-meta"><span>{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</span><span>{ranking.length} 条 T100 数据</span><span>{borders.length} 条{rankingBoard === "worldlink" ? "角色" : "总榜"}分数线</span><span>{sourceLabel}</span><span>更新 {formatDate(rankingUpdatedAt ?? undefined)}</span><span>{rankingRefreshing ? "刷新中" : `${rankingCountdown}s 后刷新`}</span></div></div>
+          <div className="rank-actions"><button type="button" onClick={() => loadRankings(region, rankingBoard, worldLinkCharacterId)} disabled={rankingRefreshing}><RefreshCw size={16} />{rankingRefreshing ? "刷新中" : "立即刷新"}</button><button type="button" className="secondary" onClick={() => goSection("forecast")}>预测线</button></div>
         </div>
+        {showWorldLinkControls && <article className="panel wide ranking-board-controls" aria-label="榜单类型和角色选择">
+          <div className="panel-heading"><div><h2>榜单范围</h2><p>总榜与单角色榜完全独立；切换角色后只显示该角色的 World Link 数据。</p></div></div>
+          <div className="ranking-board-switch" role="group" aria-label="榜单类型">
+            <button type="button" className={rankingBoard === "overall" ? "" : "secondary"} aria-pressed={rankingBoard === "overall"} onClick={() => selectRankingBoard("overall")}>总榜</button>
+            <button type="button" className={rankingBoard === "worldlink" ? "" : "secondary"} aria-pressed={rankingBoard === "worldlink"} onClick={() => selectRankingBoard("worldlink")}>单角色榜</button>
+          </div>
+          {rankingBoard === "worldlink" && (
+            <div className="world-link-character-list" role="group" aria-label="选择 World Link 角色">
+              {worldLinkCharacters.map((character) => (
+                <button type="button" key={character.id} className={worldLinkCharacterId === character.id ? "world-link-character active" : "world-link-character"} aria-pressed={worldLinkCharacterId === character.id} onClick={() => selectWorldLinkCharacter(character.id)}>
+                  <ArtImage src={character.imageCandidates?.[0]} srcCandidates={character.imageCandidates} label={character.name} variant="avatar" />
+                  <span>{character.name}</span>
+                </button>
+              ))}
+              {worldLinkCharacters.length === 0 && <p className="empty-state">当前活动暂未返回可选的 World Link 角色。</p>}
+            </div>
+          )}
+        </article>}
+        {rankingLoadError && <div className="notice compact error"><strong>榜单加载失败</strong><span>{rankingLoadError}</span></div>}
         {(rankingWarnings.length > 0 || rankingSourceHealth?.fallbackLine || rankingSourceHealth?.stale) && <div className="notice compact"><strong>更新状态</strong><span>{rankingSourceHealth?.stale ? "当前内容可能稍有延迟，正在刷新。" : "部分内容正在恢复。"}</span></div>}
         <div className="rank-stat-grid">{borders.map((line) => <div key={line.rank}><span>T{line.rank}</span><strong>{formatNumber(line.score)} pt</strong><small>{formatDate(line.updatedAt)}</small></div>)}{borders.length === 0 && <div><span>状态</span><strong>暂无分数线</strong><small>无活动或上游不可用</small></div>}</div>
         <article className="panel wide">
-          <div className="panel-heading"><h2>Top 1-100</h2><SearchBox value={filter} onChange={setFilter} placeholder="搜索排名、玩家名或 ID" /></div>
+          <div className="panel-heading"><h2>{boardLabel} Top 1-100</h2><SearchBox value={filter} onChange={setFilter} placeholder="搜索排名、玩家名或 ID" /></div>
           <div className="ranking-table">
             <div className="ranking-head"><span>排名</span><span>玩家</span><span>分数</span><span>增长</span><span>更新时间</span></div>
             {filteredRanking.map((entry) => (
-              <button key={`${region}:${entry.userId || entry.rank}`} type="button" className="ranking-row" onClick={() => openRankingDetail(entry.rank)}>
+              <button key={`${region}:${rankingBoard}:${worldLinkCharacterId ?? "overall"}:${entry.userId || entry.rank}`} type="button" className="ranking-row" onClick={() => openRankingDetail(entry.rank)}>
                 <strong>#{entry.rank}</strong>
                 <span className="ranking-player-cell"><ArtImage src={entry.leaderCardImageUrl} srcCandidates={[...(entry.leaderCardImageCandidates ?? []), ...(entry.leaderCharacterImageCandidates ?? [])]} label={`${entry.playerName ?? entry.name} 当前队长`} variant="avatar" eager={entry.rank <= 10} /><span>{entry.playerName ?? entry.name}<small>{entry.userId}</small></span></span>
                 <b>{formatNumber(entry.score)}</b><em>{entry.hourlyGrowth ? `+${formatNumber(entry.hourlyGrowth)}/h` : "-"}</em><small>{formatDate(entry.updatedAt)}</small>
               </button>
             ))}
+            {!rankingRefreshing && filteredRanking.length === 0 && <p className="empty-state">{rankingBoard === "worldlink" ? "该角色榜当前没有可显示的真实排名数据。" : "当前没有可显示的排名数据。"}</p>}
           </div>
         </article>
       </section>
