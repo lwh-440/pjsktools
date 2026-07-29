@@ -112,6 +112,27 @@ describe.sequential("public API contracts", () => {
     expect(response.json()).toEqual({ items: [], page: 1, pageSize: 12, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: false });
   });
 
+  it("rejects invalid board context consistently across ranking endpoints", async () => {
+    const endpoints = [
+      "/api/events/jp/live-ranking",
+      "/api/events/jp/211/ranking-churn",
+      "/api/events/jp/211/ranking-player/1"
+    ];
+    const invalidQueries = [
+      "boardType=invalid",
+      "boardType=overall&gameCharacterId=5",
+      "boardType=worldlink"
+    ];
+    const responses = await Promise.all(
+      endpoints.flatMap((endpoint) => invalidQueries.map((query) =>
+        app.inject({ method: "GET", url: `${endpoint}?${query}` })
+      ))
+    );
+
+    expect(responses).toHaveLength(9);
+    expect(responses.every((response) => response.statusCode === 400)).toBe(true);
+  });
+
   it("publishes concrete Android milestone catalogs", async () => {
     const [songs, cards, events] = await Promise.all([
       app.inject({ method: "GET", url: "/api/master/jp/catalogs/songs?page=1&pageSize=2&q=test&unit=piapro" }),

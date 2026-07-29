@@ -77,8 +77,9 @@ class EventsViewModel @Inject constructor(
     val selectedPage = MutableStateFlow(savedState.get<String>("events_page")?.let { runCatching { EventsPage.valueOf(it) }.getOrNull() } ?: EventsPage.CURRENT)
     val window = MutableStateFlow(savedState.get<String>("events_window")?.let { runCatching { ForecastWindow.valueOf(it) }.getOrNull() } ?: ForecastWindow.ALL)
     val selectedEventId = MutableStateFlow<String?>(null)
-    val selectedBoard = MutableStateFlow(savedState["events_board"] ?: "overall")
-    val worldLinkCharacterId = MutableStateFlow<Int?>(savedState["events_world_link_character"])
+    val selectedBoard = MutableStateFlow("overall")
+    val worldLinkCharacterId = MutableStateFlow<Int?>(null)
+    private val worldLinkSelectionRegion = MutableStateFlow<Region?>(null)
     val selectedRank = MutableStateFlow<Int?>(savedState["events_rank"])
     val traceMode = MutableStateFlow(savedState.get<String>("events_trace_mode")?.let { runCatching { RankingTraceMode.valueOf(it) }.getOrNull() } ?: RankingTraceMode.PLAYER)
     private val historyEventId = MutableStateFlow<String?>(savedState["events_history_id"])
@@ -97,7 +98,13 @@ class EventsViewModel @Inject constructor(
     val state = combine(region, contentRefresh, query) { r, token, q -> Triple(r, token, q) }
         .flatMapLatest { (r, token, q) -> repository.observe(r, q, token > 0) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DataResult())
-    val live = combine(region, liveRefresh, selectedBoard, worldLinkCharacterId) { r, token, board, character -> LiveRequest(r, token, board, character) }
+    private val boardContext = combine(selectedBoard, worldLinkCharacterId, worldLinkSelectionRegion) { board, character, selectionRegion ->
+        BoardContext(board, character, selectionRegion)
+    }
+    val live = combine(region, liveRefresh, boardContext) { r, token, context ->
+        val safeContext = resolveRegionSafeWorldLinkContext(r, context.selectionRegion, context.board, context.characterId)
+        LiveRequest(r, token, safeContext.board, safeContext.characterId)
+    }
         .flatMapLatest { request ->
             if (request.board == "worldlink" && request.characterId == null) flowOf(DataResult(phase = ContentPhase.EMPTY))
             else repository.observeLiveRanking(request.region, request.refresh > 0, request.board, request.characterId)
@@ -108,12 +115,31 @@ class EventsViewModel @Inject constructor(
     val historyDetail = combine(region, historyEventId, contentRefresh) { r, id, token -> Triple(r, id, token) }
         .flatMapLatest { (r, id, token) -> if (id == null) flowOf(DataResult<EventDetail>(phase = ContentPhase.EMPTY)) else repository.observeEventDetail(r, id, token > 0) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DataResult())
-    val rankingDetail = combine(region, selectedEventId.filterNotNull(), selectedRank, selectedBoard, worldLinkCharacterId) { r, eventId, rank, _, character -> RankingRequest(r, eventId, rank, character) }
+    val rankingDetail = combine(region, selectedEventId.filterNotNull(), selectedRank, boardContext) { r, eventId, rank, context ->
+        val safeContext = resolveRegionSafeWorldLinkContext(r, context.selectionRegion, context.board, context.characterId)
+        RankingRequest(r, eventId, rank, safeContext.characterId)
+    }
         .flatMapLatest { if (it.rank == null) flowOf(DataResult<RankingPlayerDetail>(phase = ContentPhase.EMPTY)) else repository.observeRankingDetail(it.region, it.eventId, it.rank, it.characterId) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DataResult())
 
     init {
-        viewModelScope.launch { live.mapNotNull { it.data?.event?.id }.collect { selectedEventId.value = it } }
+        savedState["events_board"] = "overall"
+        savedState["events_world_link_character"] = null
+        viewModelScope.launch {
+            var previousEventId: String? = null
+            live.mapNotNull { it.data }.collect { snapshot ->
+                val event = snapshot.event ?: return@collect
+                val eventChanged = previousEventId != null && previousEventId != event.id
+                val invalidWorldLinkSelection = selectedBoard.value == "worldlink" && (
+                    !snapshot.worldLinkAvailable
+                        || snapshot.worldLinkCharacters.none { it.id == worldLinkCharacterId.value }
+                    )
+                if (eventChanged || event.eventType != "world_bloom" || invalidWorldLinkSelection) setBoard("overall")
+                previousEventId = event.id
+                selectedEventId.value = event.id
+            }
+        }
+        viewModelScope.launch { region.drop(1).collect { setBoard("overall") } }
         viewModelScope.launch { signedIn.filter { it }.collect { bindingsRepository.refresh(); favoriteRepository.refresh() } }
     }
 
@@ -126,7 +152,8 @@ class EventsViewModel @Inject constructor(
     fun closeRankDetail() { selectedRank.value = null; savedState["events_rank"] = null }
     fun setTraceMode(value: RankingTraceMode) { traceMode.value = value; savedState["events_trace_mode"] = value.name }
     fun setBoard(value: String) { selectedBoard.value = value; savedState["events_board"] = value; closeRankDetail(); if (value == "overall") setWorldLinkCharacter(null) }
-    fun setWorldLinkCharacter(value: Int?) { worldLinkCharacterId.value = value; savedState["events_world_link_character"] = value; closeRankDetail() }
+    fun selectWorldLinkCharacter(value: Int) { worldLinkSelectionRegion.value = region.value; setWorldLinkCharacter(value); setBoard("worldlink") }
+    fun setWorldLinkCharacter(value: Int?) { worldLinkCharacterId.value = value; if (value == null) worldLinkSelectionRegion.value = null; savedState["events_world_link_character"] = value; closeRankDetail() }
     fun search(value: String) { savedState["events_query"] = value; query.value = query.value.copy(text = value, page = 1) }
     fun filter(key: String, value: String) {
         val selected = query.value.filters.selected.toMutableMap(); val values = selected[key].orEmpty().toMutableSet()
@@ -151,6 +178,7 @@ class EventsViewModel @Inject constructor(
     }
 
     private data class Quad(val region: Region, val eventId: String, val window: ForecastWindow, val refresh: Int)
+    private data class BoardContext(val board: String, val characterId: Int?, val selectionRegion: Region?)
     private data class LiveRequest(val region: Region, val refresh: Int, val board: String, val characterId: Int?)
     private data class RankingRequest(val region: Region, val eventId: String, val rank: Int?, val characterId: Int?)
 }
@@ -258,11 +286,16 @@ private fun RankingList(snapshot: LiveRankingSnapshot, board: String, selectedCh
             }
             Text(stringResource(R.string.events_updated, formatTime(snapshot.updatedAt)), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (snapshot.warnings.isNotEmpty()) AssistChip(onClick = {}, label = { Text(snapshot.warnings.first(), maxLines = 2) }, leadingIcon = { Icon(Icons.Outlined.Info, null) })
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            val showWorldLinkControls = shouldShowWorldLinkControls(event?.eventType, snapshot.worldLinkAvailable, snapshot.worldLinkCharacters)
+            if (showWorldLinkControls) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 SegmentedButton(board == "overall", { viewModel.setBoard("overall") }, SegmentedButtonDefaults.itemShape(0, 2)) { Text(stringResource(R.string.events_overall)) }
-                SegmentedButton(board == "worldlink", { viewModel.setBoard("worldlink") }, SegmentedButtonDefaults.itemShape(1, 2), enabled = snapshot.worldLinkAvailable) { Text(stringResource(R.string.events_world_link)) }
+                SegmentedButton(board == "worldlink", {
+                    val characterId = resolveWorldLinkCharacterId(selectedCharacter, snapshot.worldLinkCharacters)
+                        ?: snapshot.worldLinkCharacters.first().id
+                    viewModel.selectWorldLinkCharacter(characterId)
+                }, SegmentedButtonDefaults.itemShape(1, 2)) { Text(stringResource(R.string.events_world_link)) }
             }
-            if (board == "worldlink") WorldLinkSelector(snapshot.worldLinkCharacters, selectedCharacter, viewModel::setWorldLinkCharacter)
+            if (showWorldLinkControls && board == "worldlink") WorldLinkSelector(snapshot.worldLinkCharacters, selectedCharacter, viewModel::selectWorldLinkCharacter)
         }
         if (board == "worldlink" && selectedCharacter == null) item { Text(stringResource(R.string.events_world_link_prompt), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         else {
@@ -277,7 +310,7 @@ private fun RankingList(snapshot: LiveRankingSnapshot, board: String, selectedCh
     }
 }
 
-@Composable private fun WorldLinkSelector(characters: List<WorldLinkCharacter>, selected: Int?, onSelect: (Int?) -> Unit) {
+@Composable private fun WorldLinkSelector(characters: List<WorldLinkCharacter>, selected: Int?, onSelect: (Int) -> Unit) {
     if (characters.isEmpty()) { Text(stringResource(R.string.events_world_link_no_characters), color = MaterialTheme.colorScheme.onSurfaceVariant); return }
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         characters.forEach { character ->
@@ -575,6 +608,14 @@ private fun ForecastPage(result: DataResult<ForecastDashboard>, window: Forecast
 @Composable private fun StatusPill(text: String, modifier: Modifier = Modifier) { Surface(modifier, color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(6.dp)) { Text(text, Modifier.padding(horizontal = 8.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium) } }
 
 private fun EventsPage.labelResource() = when (this) { EventsPage.CURRENT -> R.string.events_current; EventsPage.FORECAST -> R.string.events_forecast_tab; EventsPage.HISTORY -> R.string.events_history_tab }
+internal fun shouldShowWorldLinkControls(eventType: String?, available: Boolean, characters: List<WorldLinkCharacter>) =
+    eventType == "world_bloom" && available && characters.isNotEmpty()
+internal fun resolveWorldLinkCharacterId(selected: Int?, characters: List<WorldLinkCharacter>) =
+    selected?.takeIf { id -> characters.any { it.id == id } } ?: characters.firstOrNull()?.id
+internal data class RegionSafeWorldLinkContext(val board: String, val characterId: Int?)
+internal fun resolveRegionSafeWorldLinkContext(region: Region, selectionRegion: Region?, board: String, characterId: Int?) =
+    if (board == "worldlink" && selectionRegion == region && characterId != null) RegionSafeWorldLinkContext("worldlink", characterId)
+    else RegionSafeWorldLinkContext("overall", null)
 private fun ForecastWindow.label() = when (this) { ForecastWindow.ALL -> "全部"; ForecastWindow.ONE_HOUR -> "1H"; ForecastWindow.THREE_HOURS -> "3H"; ForecastWindow.SIX_HOURS -> "6H" }
 private fun number(value: Number?): String = value?.let { NumberFormat.getNumberInstance().format(it) } ?: "-"
 private fun parseTime(value: String?): Long = value?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrDefault(0L) } ?: 0L

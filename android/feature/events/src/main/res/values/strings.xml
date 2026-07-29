@@ -18,7 +18,7 @@
     <string name="events_done">完成</string>
     <string name="events_filters_unavailable">筛选数据尚未缓存</string>
     <string name="events_overall">总榜</string>
-    <string name="events_world_link">World Link</string>
+    <string name="events_world_link">单角色榜</string>
     <string name="events_world_link_prompt">请选择活动角色后加载对应的 World Link 榜单。</string>
     <string name="events_world_link_no_characters">当前活动暂未返回可选的 World Link 角色。</string>
     <string name="events_ranking_search">搜索排名、玩家名或 UID</string>
