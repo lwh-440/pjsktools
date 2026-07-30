@@ -2,7 +2,27 @@ import type { Favorite, FavoriteFolder, ScoreRecord } from "./sharedTypes";
 
 export type AuthUser = { id: string; email?: string; nickname?: string; avatarUrl?: string; createdAt?: string };
 export type OAuthAccount = { id: string; provider: string; nickname?: string; avatarUrl?: string; createdAt?: string };
-export type PlayerBinding = { id: string; region: string; playerUid: string; displayName?: string; isDefault?: boolean; note?: string; publicProfileSnapshot?: any; refreshedAt?: string; updatedAt?: string; version?: string };
+export type PlayerBinding = {
+  id: string;
+  region: string;
+  playerUid: string;
+  displayName?: string;
+  isDefault?: boolean;
+  note?: string;
+  publicProfileSnapshot?: any;
+  refreshedAt?: string;
+  updatedAt?: string;
+  version?: string;
+  harukiBindingId?: string;
+  verified?: boolean;
+  source?: "haruki-oauth";
+  upstreamUploadedAt?: string;
+  lastSyncAttemptAt?: string;
+  lastSyncSucceededAt?: string;
+  lastSyncStatus?: "never" | "ready" | "syncing" | "success" | "needs-review" | "reauthorize" | "upstream-error" | "parse-error";
+  autoSyncDaily?: boolean;
+  pendingEmptyGroups?: string[];
+};
 export type PlayerDataRecord = { kind: string; data: unknown; updatedAt?: string; unavailableReason?: string };
 export type CompletenessSection = { ready: boolean; missingFields: string[]; uploadedKinds?: string[]; requiredKinds?: string[] };
 export type CompletenessFull = { ownedCards: number; uploadedPlayerDataKinds: string[]; sections: Record<string, CompletenessSection> };

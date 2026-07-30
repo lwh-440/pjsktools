@@ -173,10 +173,6 @@ class EventsViewModel @Inject constructor(
         planMessage.value = null; estimateResult.value = null
         repository.estimateBoundPt(region.value, eventId, bindingId, currentPt, targetPt).onSuccess { estimateResult.value = it }.onFailure { planMessage.value = it.message }
     }
-    fun createBinding(uid: String, displayName: String, isDefault: Boolean) = viewModelScope.launch {
-        bindingsRepository.create(region.value, uid, displayName.ifBlank { null }, isDefault).onSuccess { bindingsRepository.refresh() }.onFailure { planMessage.value = it.message }
-    }
-
     private data class Quad(val region: Region, val eventId: String, val window: ForecastWindow, val refresh: Int)
     private data class BoardContext(val board: String, val characterId: Int?, val selectionRegion: Region?)
     private data class LiveRequest(val region: Region, val refresh: Int, val board: String, val characterId: Int?)
@@ -448,7 +444,7 @@ private fun ForecastPage(result: DataResult<ForecastDashboard>, window: Forecast
     val bindings by viewModel.bindings.collectAsState(); val plan by viewModel.planResult.collectAsState(); val estimate by viewModel.estimateResult.collectAsState(); val message by viewModel.planMessage.collectAsState()
     var targetRank by rememberSaveable { mutableStateOf("100") }; var currentPt by rememberSaveable { mutableStateOf("0") }; var targetPt by rememberSaveable { mutableStateOf("0") }
     var minutes by rememberSaveable { mutableStateOf("60") }; var ptPerRun by rememberSaveable { mutableStateOf("1000") }; var runs by rememberSaveable { mutableStateOf("") }
-    var selectedBinding by rememberSaveable { mutableStateOf<String?>(null) }; var showBindingForm by rememberSaveable { mutableStateOf(false) }; var bindingUid by rememberSaveable { mutableStateOf("") }; var bindingName by rememberSaveable { mutableStateOf("") }
+    var selectedBinding by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(estimate?.estimatedPt) { estimate?.estimatedPt?.let { ptPerRun = it.toString() } }
     ResultContent(result, Modifier.fillMaxSize(), viewModel::refreshContent) { dashboard ->
         val summary = dashboard.summaries[window]
@@ -466,8 +462,7 @@ private fun ForecastPage(result: DataResult<ForecastDashboard>, window: Forecast
             items(dashboard.lines, key = { it.rank }) { ForecastLineCard(it) }
             item {
                 PlanningCard(
-                    signedIn, bindings, selectedBinding, onLogin, { selectedBinding = it }, showBindingForm, { showBindingForm = !showBindingForm },
-                    bindingUid, { bindingUid = it }, bindingName, { bindingName = it }, { viewModel.createBinding(bindingUid, bindingName, false) },
+                    signedIn, bindings, selectedBinding, onLogin, { selectedBinding = it },
                     targetRank, { value -> targetRank = value; dashboard.lines.find { it.rank.toString() == value }?.let { targetPt = (it.forecast3h ?: it.currentScore ?: 0).toString() } },
                     currentPt, { currentPt = it }, targetPt, { targetPt = it }, minutes, { minutes = it }, ptPerRun, { ptPerRun = it }, runs, { runs = it },
                     calculate = { viewModel.calculatePlan(ScoreControlInput(dashboard.eventId, targetRank.toIntOrNull() ?: 100, currentPt.toLongOrNull() ?: 0, targetPt.toLongOrNull() ?: 0, minutes.toIntOrNull() ?: 0, ptPerRun.toLongOrNull() ?: 0, runs.toIntOrNull(), selectedBinding)) },
@@ -523,7 +518,6 @@ private fun ForecastPage(result: DataResult<ForecastDashboard>, window: Forecast
 
 @Composable private fun PlanningCard(
     signedIn: Boolean, bindings: List<PlayerBindingSummary>, selectedBinding: String?, onLogin: () -> Unit, onBinding: (String?) -> Unit,
-    showForm: Boolean, toggleForm: () -> Unit, uid: String, setUid: (String) -> Unit, name: String, setName: (String) -> Unit, create: () -> Unit,
     rank: String, setRank: (String) -> Unit, current: String, setCurrent: (String) -> Unit, target: String, setTarget: (String) -> Unit,
     minutes: String, setMinutes: (String) -> Unit, perRun: String, setPerRun: (String) -> Unit, runs: String, setRuns: (String) -> Unit,
     calculate: () -> Unit, estimate: (() -> Unit)?, result: ScoreControlResult?, estimateResult: EventPointEstimate?, message: String?
@@ -532,8 +526,6 @@ private fun ForecastPage(result: DataResult<ForecastDashboard>, window: Forecast
     if (!signedIn) { Text(stringResource(R.string.events_login_for_binding)); OutlinedButton(onLogin) { Text(stringResource(R.string.events_login)) } }
     else {
         Text(stringResource(R.string.events_binding_label)); Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { bindings.forEach { binding -> FilterChip(selectedBinding == binding.id, { onBinding(if (selectedBinding == binding.id) null else binding.id) }, label = { Text(binding.displayName ?: binding.playerUid) }) } }
-        OutlinedButton(toggleForm) { Text(stringResource(R.string.events_add_binding)) }
-        if (showForm) { PlanField(stringResource(R.string.events_uid), uid, setUid); OutlinedTextField(name, setName, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.events_display_name)) }); Button(create, enabled = uid.length in 10..20) { Text(stringResource(R.string.events_save_binding)) } }
     }
     PlanField(stringResource(R.string.events_target_rank), rank, setRank); PlanField(stringResource(R.string.events_current_pt), current, setCurrent); PlanField(stringResource(R.string.events_target_pt), target, setTarget)
     PlanField(stringResource(R.string.events_remaining_minutes), minutes, setMinutes); PlanField(stringResource(R.string.events_pt_per_run), perRun, setPerRun); PlanField(stringResource(R.string.events_available_runs), runs, setRuns)

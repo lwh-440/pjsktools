@@ -21,7 +21,7 @@ afterEach(async () => {
 });
 
 describe("public player profile failures", () => {
-  it("reports an expected missing upload as 404 for read, refresh, and binding refresh", async () => {
+  it("reports an expected missing upload as 404 for public read and refresh", async () => {
     vi.spyOn(harukiClient, "getPlayerProfile").mockRejectedValue(new HarukiProfileRequestError("not-found", 404));
     const app = await buildApp();
     const uid = "990000000000000001";
@@ -31,22 +31,6 @@ describe("public player profile failures", () => {
       expect(read.statusCode).toBe(404);
       expect(refresh.statusCode).toBe(404);
       expect(read.json().message).toContain("not in the public database");
-
-      const account = await register(app, "missing-profile");
-      const bindingResponse = await app.inject({
-        method: "POST",
-        url: "/api/me/player-bindings",
-        headers: { authorization: `Bearer ${account.token}` },
-        payload: { region: "jp", playerUid: uid, isDefault: true }
-      });
-      expect(bindingResponse.statusCode).toBe(200);
-      const bindingRefresh = await app.inject({
-        method: "POST",
-        url: `/api/me/player-bindings/${bindingResponse.json().id}/refresh-public-profile`,
-        headers: { authorization: `Bearer ${account.token}` }
-      });
-      expect(bindingRefresh.statusCode).toBe(404);
-      expect(bindingRefresh.json().message).toContain("not in the public database");
     } finally {
       await app.close();
     }

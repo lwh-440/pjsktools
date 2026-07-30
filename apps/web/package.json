@@ -21,7 +21,6 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.18.1",
-    "tesseract.js": "^6.0.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"
   },

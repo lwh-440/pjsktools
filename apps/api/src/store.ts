@@ -55,6 +55,7 @@ export type AuthStore = {
   consumeEmailVerificationCode(input: { email: string; purpose: EmailVerificationPurpose; code: string }): Promise<boolean>;
   verifyUser(email: string, password: string): Promise<UserAccount | null>;
   getUser(id: string): Promise<UserAccount | null>;
+  deleteUserById(id: string): Promise<boolean>;
   deleteUserByEmail(email: string): Promise<boolean>;
   findOAuthAccount(provider: OAuthProvider, providerUserId: string): Promise<OAuthAccount | null>;
   linkOAuthAccount(userId: string, input: CreateOAuthInput): Promise<OAuthAccount>;
@@ -98,6 +99,7 @@ export type AuthStore = {
   getIdempotencyRecord(scope: string, key: string): Promise<IdempotencyRecord | null>;
   reserveIdempotencyRecord(record: IdempotencyRecord): Promise<"reserved" | IdempotencyRecord>;
   saveIdempotencyRecord(record: IdempotencyRecord): Promise<void>;
+  cleanupIdempotencyRecords(): Promise<void>;
 };
 
 export function toPublicUser(user: UserAccount): PublicUser {
@@ -245,8 +247,14 @@ export class MemoryStore implements AuthStore {
     const normalized = normalizeEmail(email);
     const id = this.usersByEmail.get(normalized);
     if (!id) return false;
+    return this.deleteUserById(id);
+  }
+
+  async deleteUserById(id: string) {
+    const user = this.users.get(id);
+    if (!user) return false;
     this.users.delete(id);
-    this.usersByEmail.delete(normalized);
+    if (user.email) this.usersByEmail.delete(normalizeEmail(user.email));
     for (const [key, value] of [...this.oauthAccounts]) if (value.userId === id) this.oauthAccounts.delete(key);
     for (const [key, value] of [...this.sessions]) if (value.userId === id) this.sessions.delete(key);
     for (const [key, value] of [...this.favoriteFolders]) if (value.userId === id) this.favoriteFolders.delete(key);
@@ -256,6 +264,7 @@ export class MemoryStore implements AuthStore {
     for (const [key, value] of [...this.inventory]) if (value.userId === id) this.inventory.delete(key);
     for (const [key, value] of [...this.deckConfigs]) if (value.userId === id) this.deckConfigs.delete(key);
     for (const [key, value] of [...this.playerData]) if (value.userId === id) this.playerData.delete(key);
+    for (const [key, value] of [...this.idempotencyRecords]) if (value.scope.startsWith(`${id}:`)) this.idempotencyRecords.delete(key);
     return true;
   }
 
@@ -555,7 +564,20 @@ export class MemoryStore implements AuthStore {
   async deletePlayerBinding(userId: string, id: string) {
     const binding = this.playerBindings.get(id);
     if (!binding || binding.userId !== userId) return false;
-    return this.playerBindings.delete(id);
+    this.playerBindings.delete(id);
+    for (const [key, item] of this.inventory) if (item.userId === userId && item.bindingId === id) this.inventory.delete(key);
+    for (const [key, item] of this.playerData) if (item.userId === userId && item.bindingId === id) this.playerData.delete(key);
+    for (const [key, item] of this.deckConfigs) if (item.userId === userId && item.bindingId === id) this.deckConfigs.delete(key);
+    if (binding.isDefault) {
+      const replacement = [...this.playerBindings.values()]
+        .filter((item) => item.userId === userId && item.region === binding.region)
+        .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0];
+      if (replacement) {
+        replacement.isDefault = true;
+        replacement.updatedAt = nowIso();
+      }
+    }
+    return true;
   }
 
   async listInventory(userId: string, bindingId?: string) {
@@ -670,6 +692,13 @@ export class MemoryStore implements AuthStore {
 
   async saveIdempotencyRecord(record: IdempotencyRecord) {
     this.idempotencyRecords.set(`${record.scope}:${record.key}`, record);
+  }
+
+  async cleanupIdempotencyRecords() {
+    const now = Date.now();
+    for (const [key, value] of this.idempotencyRecords) {
+      if (Date.parse(value.expiresAt) <= now) this.idempotencyRecords.delete(key);
+    }
   }
 
   async reserveIdempotencyRecord(record: IdempotencyRecord) {

@@ -22,17 +22,25 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param region 
- * @param playerUid 
- * @param displayName 
- * @param isDefault 
- * @param note 
+ *
+ * @param id
+ * @param bindingKey
+ * @param region
+ * @param playerUid
+ * @param verified
+ * @param upstreamBindingId
+ * @param displayName
  */
 @Serializable
 
-data class PlayerBindingCreateRequest (
+data class HarukiAvailableBinding (
+
+    @SerialName(value = "id")
+    val id: kotlin.String,
+
+    @SerialName(value = "bindingKey")
+    val bindingKey: kotlin.String,
 
     @Contextual @SerialName(value = "region")
     val region: RegionId,
@@ -40,14 +48,14 @@ data class PlayerBindingCreateRequest (
     @SerialName(value = "playerUid")
     val playerUid: kotlin.String,
 
+    @SerialName(value = "verified")
+    val verified: kotlin.Boolean,
+
+    @SerialName(value = "upstreamBindingId")
+    val upstreamBindingId: kotlin.String? = null,
+
     @SerialName(value = "displayName")
-    val displayName: kotlin.String? = null,
-
-    @SerialName(value = "isDefault")
-    val isDefault: kotlin.Boolean? = null,
-
-    @SerialName(value = "note")
-    val note: kotlin.String? = null
+    val displayName: kotlin.String? = null
 
 ) {
 

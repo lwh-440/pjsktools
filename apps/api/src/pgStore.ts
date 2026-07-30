@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { hashToken } from "./authCrypto.js";
 import { config, type RegionId } from "./config.js";
 import type { AuthStore, CreateOAuthInput, OAuthHandoff, OAuthHandoffKind } from "./store.js";
@@ -105,10 +105,20 @@ function rowToPlayerBinding(row: any): PlayerBinding {
   return {
     id: row.id,
     userId: row.user_id,
+    harukiConnectionId: row.haruki_connection_id ?? undefined,
+    harukiBindingId: row.haruki_binding_id ?? undefined,
     region: row.region,
     playerUid: row.player_uid,
     displayName: row.display_name ?? undefined,
     isDefault: Boolean(row.is_default),
+    verified: Boolean(row.verified),
+    source: row.source ?? undefined,
+    upstreamUploadedAt: row.upstream_uploaded_at ? new Date(row.upstream_uploaded_at).toISOString() : undefined,
+    lastSyncAttemptAt: row.last_sync_attempt_at ? new Date(row.last_sync_attempt_at).toISOString() : undefined,
+    lastSyncSucceededAt: row.last_sync_succeeded_at ? new Date(row.last_sync_succeeded_at).toISOString() : undefined,
+    lastSyncStatus: row.last_sync_status ?? undefined,
+    pendingEmptyGroups: Array.isArray(row.pending_empty_groups) ? row.pending_empty_groups : [],
+    autoSyncDaily: Boolean(row.auto_sync_daily),
     note: row.note ?? undefined,
     publicProfileSnapshot: row.public_profile_snapshot ?? undefined,
     refreshedAt: row.refreshed_at ? new Date(row.refreshed_at).toISOString() : undefined,
@@ -138,6 +148,9 @@ function rowToInventory(row: any): UserCardInventoryItem {
       isNotSkipped: episode.isNotSkipped ?? episode.is_not_skipped
     })).filter((episode: any) => episode.cardEpisodeId) : undefined,
     episodesRead: row.episodes_read == null ? undefined : Boolean(row.episodes_read),
+    source: row.source ?? undefined,
+    upstreamVersion: row.upstream_version ?? undefined,
+    syncedAt: row.synced_at ? new Date(row.synced_at).toISOString() : undefined,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString()
   };
@@ -167,6 +180,9 @@ function rowToPlayerData(row: any): PlayerDataRecord {
     region: row.region,
     kind: row.kind,
     data: row.data,
+    source: row.source ?? undefined,
+    upstreamVersion: row.upstream_version ?? undefined,
+    syncedAt: row.synced_at ? new Date(row.synced_at).toISOString() : undefined,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString()
   };
@@ -234,6 +250,22 @@ function rowToRankingHistory(row: any): RankingHistorySample {
 
 export class PgStore implements AuthStore {
   private pool = new Pool({ connectionString: config.databaseUrl });
+
+  private async withPlayerUser<T>(userId: string, operation: (client: PoolClient) => Promise<T>) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(`select set_config('pjsktools.user_id', $1, true)`, [userId]);
+      const result = await operation(client);
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
   async createUser(email: string, password: string, profile: { nickname?: string; avatarUrl?: string } = {}) {
     const normalizedEmail = normalizeEmail(email);
@@ -355,6 +387,22 @@ export class PgStore implements AuthStore {
   async deleteUserByEmail(email: string) {
     const result = await this.pool.query(`delete from users where email = $1`, [normalizeEmail(email)]);
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async deleteUserById(id: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(`delete from api_idempotency_records where scope like $1`, [`${id}:%`]);
+      const result = await client.query(`delete from users where id = $1`, [id]);
+      await client.query("commit");
+      return (result.rowCount ?? 0) > 0;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async findOAuthAccount(provider: OAuthProvider, providerUserId: string) {
@@ -701,75 +749,105 @@ export class PgStore implements AuthStore {
   }
 
   async listPlayerBindings(userId: string) {
-    const result = await this.pool.query(`select * from user_player_bindings where user_id = $1 order by is_default desc, updated_at desc`, [userId]);
-    return result.rows.map(rowToPlayerBinding);
+    return this.withPlayerUser(userId, async (client) => {
+      const result = await client.query(`select * from user_player_bindings where user_id = $1 order by is_default desc, updated_at desc`, [userId]);
+      return result.rows.map(rowToPlayerBinding);
+    });
   }
 
   async addPlayerBinding(input: Omit<PlayerBinding, "id" | "createdAt" | "updatedAt">) {
-    const client = await this.pool.connect();
     try {
-      await client.query("begin");
-      if (input.isDefault) {
-        await client.query(`update user_player_bindings set is_default = false, updated_at = now() where user_id = $1 and region = $2`, [input.userId, input.region]);
-      }
-      const result = await client.query(
-        `insert into user_player_bindings
-          (user_id, region, player_uid, display_name, is_default, note, public_profile_snapshot, refreshed_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
-        [
-          input.userId,
-          input.region,
-          input.playerUid,
-          input.displayName ?? null,
-          input.isDefault,
-          input.note ?? null,
-          jsonbValue(input.publicProfileSnapshot),
-          input.refreshedAt ?? null
-        ]
-      );
-      await client.query("commit");
-      return rowToPlayerBinding(result.rows[0]);
+      return await this.withPlayerUser(input.userId, async (client) => {
+        if (input.isDefault) {
+          await client.query(`update user_player_bindings set is_default = false, updated_at = now() where user_id = $1 and region = $2`, [input.userId, input.region]);
+        }
+        const result = await client.query(
+          `insert into user_player_bindings
+            (user_id, region, player_uid, display_name, is_default, note, public_profile_snapshot, refreshed_at)
+           values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
+          [
+            input.userId,
+            input.region,
+            input.playerUid,
+            input.displayName ?? null,
+            input.isDefault,
+            input.note ?? null,
+            jsonbValue(input.publicProfileSnapshot),
+            input.refreshedAt ?? null
+          ]
+        );
+        return rowToPlayerBinding(result.rows[0]);
+      });
     } catch (error: any) {
-      await client.query("rollback");
       if (error?.code === "23505") throw new Error("PLAYER_BINDING_EXISTS");
       throw error;
-    } finally {
-      client.release();
     }
   }
 
   async updatePlayerBinding(userId: string, id: string, patch: Partial<Omit<PlayerBinding, "id" | "userId" | "createdAt" | "updatedAt">>) {
-    const current = await this.pool.query(`select * from user_player_bindings where user_id = $1 and id = $2`, [userId, id]);
-    if (!current.rows[0]) return null;
-    if (patch.isDefault) {
-      await this.pool.query(`update user_player_bindings set is_default = false, updated_at = now() where user_id = $1 and region = $2`, [userId, current.rows[0].region]);
-    }
-    const merged = { ...rowToPlayerBinding(current.rows[0]), ...patch };
-    const result = await this.pool.query(
-      `update user_player_bindings set display_name = $3, is_default = $4, note = $5, public_profile_snapshot = $6, refreshed_at = $7, updated_at = now()
-       where user_id = $1 and id = $2 returning *`,
-      [userId, id, merged.displayName ?? null, merged.isDefault, merged.note ?? null, jsonbValue(merged.publicProfileSnapshot), merged.refreshedAt ?? null]
-    );
-    return result.rows[0] ? rowToPlayerBinding(result.rows[0]) : null;
+    return this.withPlayerUser(userId, async (client) => {
+      const current = await client.query(`select * from user_player_bindings where user_id = $1 and id = $2`, [userId, id]);
+      if (!current.rows[0]) return null;
+      if (patch.isDefault) {
+        await client.query(`update user_player_bindings set is_default = false, updated_at = now() where user_id = $1 and region = $2`, [userId, current.rows[0].region]);
+      }
+      const merged = { ...rowToPlayerBinding(current.rows[0]), ...patch };
+      const result = await client.query(
+        `update user_player_bindings set display_name = $3, is_default = $4, note = $5, public_profile_snapshot = $6, refreshed_at = $7,
+         haruki_connection_id=$8, haruki_binding_id=$9, verified=$10, source=$11, upstream_uploaded_at=$12,
+         last_sync_attempt_at=$13, last_sync_succeeded_at=$14, last_sync_status=$15, pending_empty_groups=$16,
+         auto_sync_daily=$17, updated_at = now()
+         where user_id = $1 and id = $2 returning *`,
+        [userId, id, merged.displayName ?? null, merged.isDefault, merged.note ?? null, jsonbValue(merged.publicProfileSnapshot), merged.refreshedAt ?? null,
+         merged.harukiConnectionId ?? null, merged.harukiBindingId ?? null, merged.verified ?? false, merged.source ?? null,
+         merged.upstreamUploadedAt ?? null, merged.lastSyncAttemptAt ?? null, merged.lastSyncSucceededAt ?? null,
+         merged.lastSyncStatus ?? "never", merged.pendingEmptyGroups ?? [], merged.autoSyncDaily ?? false]
+      );
+      return result.rows[0] ? rowToPlayerBinding(result.rows[0]) : null;
+    });
   }
 
   async deletePlayerBinding(userId: string, id: string) {
-    const result = await this.pool.query(`delete from user_player_bindings where user_id = $1 and id = $2`, [userId, id]);
-    return (result.rowCount ?? 0) > 0;
+    return this.withPlayerUser(userId, async (client) => {
+      const result = await client.query(
+        `delete from user_player_bindings where user_id = $1 and id = $2 returning region, is_default`,
+        [userId, id]
+      );
+      const deleted = result.rows[0];
+      if (!deleted) return false;
+      if (deleted.is_default) {
+        await client.query(
+          `update user_player_bindings set is_default=true,updated_at=now()
+           where id = (
+             select id from user_player_bindings
+             where user_id=$1 and region=$2
+             order by created_at asc limit 1
+           )`,
+          [userId, deleted.region]
+        );
+      }
+      return true;
+    });
   }
 
   async listInventory(userId: string, bindingId?: string) {
-    const result = await this.pool.query(
-      `select * from user_card_inventory where user_id = $1 and ($2::uuid is null or binding_id = $2::uuid) order by updated_at desc`,
-      [userId, bindingId ?? null]
-    );
-    return result.rows.map(rowToInventory);
+    return this.withPlayerUser(userId, async (client) => {
+      const result = await client.query(
+        `select * from user_card_inventory where user_id = $1 and ($2::uuid is null or binding_id = $2::uuid) order by updated_at desc`,
+        [userId, bindingId ?? null]
+      );
+      return result.rows.map(rowToInventory);
+    });
   }
 
   async upsertInventory(inputs: Array<Omit<UserCardInventoryItem, "id" | "createdAt" | "updatedAt">>) {
-    const result: UserCardInventoryItem[] = [];
-    for (const input of inputs) {
-      const row = await this.pool.query(
+    if (!inputs.length) return [];
+    const userId = inputs[0].userId;
+    if (inputs.some((input) => input.userId !== userId)) throw new Error("PLAYER_DATA_USER_MISMATCH");
+    return this.withPlayerUser(userId, async (client) => {
+      const result: UserCardInventoryItem[] = [];
+      for (const input of inputs) {
+        const row = await client.query(
         `insert into user_card_inventory
           (user_id, binding_id, region, card_id, level, master_rank, skill_level, special_training_status, default_image, episodes_read, episodes)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -797,9 +875,10 @@ export class PgStore implements AuthStore {
           jsonbValue(input.episodes ?? [])
         ]
       );
-      result.push(rowToInventory(row.rows[0]));
-    }
-    return result;
+        result.push(rowToInventory(row.rows[0]));
+      }
+      return result;
+    });
   }
 
   async listDeckConfigs(userId: string) {
@@ -833,33 +912,39 @@ export class PgStore implements AuthStore {
   }
 
   async getPlayerData(userId: string, bindingId: string, kind: PlayerDataKind) {
-    const result = await this.pool.query(
-      `select * from user_player_data where user_id = $1 and binding_id = $2 and kind = $3`,
-      [userId, bindingId, kind]
-    );
-    return result.rows[0] ? rowToPlayerData(result.rows[0]) : null;
+    return this.withPlayerUser(userId, async (client) => {
+      const result = await client.query(
+        `select * from user_player_data where user_id = $1 and binding_id = $2 and kind = $3`,
+        [userId, bindingId, kind]
+      );
+      return result.rows[0] ? rowToPlayerData(result.rows[0]) : null;
+    });
   }
 
   async upsertPlayerData(input: Omit<PlayerDataRecord, "id" | "createdAt" | "updatedAt">) {
-    const result = await this.pool.query(
-      `insert into user_player_data (user_id, binding_id, region, kind, data)
-       values ($1, $2, $3, $4, $5)
-       on conflict (user_id, binding_id, kind) do update set
-        region = excluded.region,
-        data = excluded.data,
-        updated_at = now()
-       returning *`,
-      [input.userId, input.bindingId, input.region, input.kind, JSON.stringify(input.data)]
-    );
-    return rowToPlayerData(result.rows[0]);
+    return this.withPlayerUser(input.userId, async (client) => {
+      const result = await client.query(
+        `insert into user_player_data (user_id, binding_id, region, kind, data)
+         values ($1, $2, $3, $4, $5)
+         on conflict (user_id, binding_id, kind) do update set
+          region = excluded.region,
+          data = excluded.data,
+          updated_at = now()
+         returning *`,
+        [input.userId, input.bindingId, input.region, input.kind, JSON.stringify(input.data)]
+      );
+      return rowToPlayerData(result.rows[0]);
+    });
   }
 
   async listPlayerData(userId: string, bindingId: string) {
-    const result = await this.pool.query(
-      `select * from user_player_data where user_id = $1 and binding_id = $2 order by kind`,
-      [userId, bindingId]
-    );
-    return result.rows.map(rowToPlayerData);
+    return this.withPlayerUser(userId, async (client) => {
+      const result = await client.query(
+        `select * from user_player_data where user_id = $1 and binding_id = $2 order by kind`,
+        [userId, bindingId]
+      );
+      return result.rows.map(rowToPlayerData);
+    });
   }
 
   async saveRankingHistorySamples(inputs: RankingHistoryInput[]) {
@@ -901,11 +986,13 @@ export class PgStore implements AuthStore {
   }
 
   async deleteInventoryCard(userId: string, bindingId: string, cardId: string) {
-    const result = await this.pool.query(
-      `delete from user_card_inventory where user_id = $1 and binding_id = $2 and card_id = $3`,
-      [userId, bindingId, cardId]
-    );
-    return (result.rowCount ?? 0) > 0;
+    return this.withPlayerUser(userId, async (client) => {
+      const result = await client.query(
+        `delete from user_card_inventory where user_id = $1 and binding_id = $2 and card_id = $3`,
+        [userId, bindingId, cardId]
+      );
+      return (result.rowCount ?? 0) > 0;
+    });
   }
 
   async listRankingHistory(query: RankingHistoryQuery) {
@@ -935,6 +1022,7 @@ export class PgStore implements AuthStore {
   }
 
   async getIdempotencyRecord(scope: string, key: string) {
+    await this.pool.query(`delete from api_idempotency_records where expires_at <= now()`);
     const result = await this.pool.query(
       `select * from api_idempotency_records where scope = $1 and idempotency_key = $2 and expires_at > now()`,
       [scope, key]
@@ -966,7 +1054,12 @@ export class PgStore implements AuthStore {
     );
   }
 
+  async cleanupIdempotencyRecords() {
+    await this.pool.query(`delete from api_idempotency_records where expires_at <= now()`);
+  }
+
   async reserveIdempotencyRecord(record: IdempotencyRecord) {
+    await this.pool.query(`delete from api_idempotency_records where expires_at <= now()`);
     const reserved = await this.pool.query(
       `insert into api_idempotency_records
         (scope, idempotency_key, request_hash, status_code, response_body, created_at, expires_at)

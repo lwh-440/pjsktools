@@ -8,7 +8,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** State owner that can be observed by Compose or called directly by a host screen. */
-class AccountFeatureController(private val repository: AccountRepository) {
+class AccountFeatureController(
+    private val repository: AccountRepository,
+    private val harukiGateway: HarukiConnectionGateway,
+    private val harukiPreviewCache: HarukiPreviewCache? = null
+) {
     private val mutex = Mutex()
     private val mutableState = MutableStateFlow(AccountUiState())
     val state: StateFlow<AccountUiState> = mutableState.asStateFlow()
@@ -105,19 +109,9 @@ class AccountFeatureController(private val repository: AccountRepository) {
             authenticate("QQ 登录成功") { repository.exchangeMobileQqLogin(handoff) }
         }
     }
-    suspend fun addBinding(input: NewPlayerBinding) = bindingOperation(null) { token ->
-        if (!requireInput(input.playerUid.isNotBlank(), "请输入玩家 UID")) return@bindingOperation
-        val created = repository.addBinding(token, input)
-        val profile = repository.getProfile(token)
-        update { it.copy(profile = profile, selectedBindingId = created.id, message = "玩家 UID 已绑定") }
-    }
     suspend fun setDefault(bindingId: String) = bindingOperation(bindingId) { token ->
         repository.setDefaultBinding(token, bindingId)
         replaceProfile(token, bindingId, "已设为默认 UID")
-    }
-    suspend fun refreshPublicProfile(bindingId: String) = bindingOperation(bindingId) { token ->
-        repository.refreshPublicProfile(token, bindingId)
-        replaceProfile(token, bindingId, "公开资料已刷新")
     }
     suspend fun deleteBinding(bindingId: String) = bindingOperation(bindingId) { token ->
         repository.deleteBinding(token, bindingId)
@@ -133,27 +127,108 @@ class AccountFeatureController(private val repository: AccountRepository) {
         val session = requireSession(); val binding = state.value.selectedBinding ?: return@withLock
         loading { it.copy(deckRecommendation = repository.recommendDeck(session.accessToken, binding, eventId), session = currentSession(it.session), message = "组卡推荐已生成") }
     }
-    suspend fun loadCards() = assetOperation { token, binding -> update { it.copy(assets = it.assets.copy(cardsJson = repository.loadCards(token, binding.id))) } }
-    suspend fun saveCards(json: String) = assetOperation { token, binding -> repository.saveCards(token, binding, json); update { it.copy(assets = it.assets.copy(cardsJson = json), message = "持有卡已保存") } }
-    suspend fun deleteCard(cardId: String) = assetOperation { token, binding -> repository.deleteCard(token, binding.id, cardId); update { it.copy(assets = it.assets.copy(cardsJson = repository.loadCards(token, binding.id)), message = "持有卡已删除") } }
-    suspend fun loadPlayerData(kind: String) = assetOperation { token, binding ->
-        val record = repository.loadPlayerData(token, binding.id, kind)
-        val data = runCatching { org.json.JSONObject(record).opt("data")?.toString() }.getOrNull() ?: "[]"
-        update { it.copy(assets = it.assets.copy(kind = kind, editorJson = data, validationJson = null)) }
+    suspend fun loadCachedHarukiPreview() {
+        val userId = state.value.profile?.user?.id ?: return
+        val current = state.value.haruki
+        if (current.previewUid.isBlank()) return
+        update { it.copy(haruki = it.haruki.copy(preview = harukiPreviewCache?.load(userId, current.previewRegion, current.previewUid))) }
     }
-    suspend fun validatePlayerData(json: String) = assetOperation { token, binding ->
-        val kind = state.value.assets.kind
-        val result = repository.validatePlayerData(token, binding, kind, json)
-        update { it.copy(assets = it.assets.copy(editorJson = json, validationJson = result)) }
+    suspend fun loadHarukiConnection() = harukiOperation { token, current ->
+        current.copy(connection = harukiGateway.connection(token), pendingReview = null)
     }
-    suspend fun savePlayerData(json: String) = assetOperation { token, binding -> repository.savePlayerData(token, binding, state.value.assets.kind, json); update { it.copy(assets = it.assets.copy(editorJson = json), message = "玩家资产已保存") } }
-    suspend fun exportPlayerData() = assetOperation { token, binding ->
-        val exported = repository.exportPlayerData(token, binding.id)
-        val completeness = repository.fullCompleteness(token, binding.id)
-        update { it.copy(assets = it.assets.copy(exportJson = exported, completenessJson = completeness)) }
+    fun editHarukiPreview(region: String? = null, playerUid: String? = null) = update {
+        it.copy(haruki = it.haruki.copy(previewRegion = region ?: it.haruki.previewRegion, previewUid = playerUid ?: it.haruki.previewUid))
     }
-    suspend fun reviewImport(payload: String) = assetOperation { token, binding -> update { it.copy(assets = it.assets.copy(importPayload = payload, importReviewJson = repository.reviewImport(token, binding.id, payload))) } }
-    suspend fun confirmImport() = assetOperation { token, binding -> repository.confirmImport(token, binding.id, state.value.assets.importPayload); update { it.copy(message = "玩家资产导入完成", assets = it.assets.copy(importReviewJson = null)) } }
+    suspend fun previewHaruki() = harukiOperation { token, current ->
+        val uid = current.previewUid.trim()
+        require(uid.isNotBlank()) { "Enter a player UID" }
+        try {
+            val preview = harukiGateway.preview(token, current.previewRegion, uid)
+            state.value.profile?.user?.id?.let { harukiPreviewCache?.save(it, preview) }
+            current.copy(preview = preview)
+        } catch (error: Throwable) {
+            val cached = state.value.profile?.user?.id?.let { harukiPreviewCache?.load(it, current.previewRegion, uid) }
+            if (cached == null) throw error
+            update { it.copy(message = "刷新失败，正在显示本地缓存：${error.message ?: "未知错误"}") }
+            current.copy(preview = cached)
+        }
+    }
+    suspend fun clearHarukiPreviewCache() {
+        val userId = state.value.profile?.user?.id ?: return
+        val current = state.value.haruki
+        if (current.previewUid.isBlank()) return
+        harukiPreviewCache?.clear(userId, current.previewRegion, current.previewUid)
+        update { it.copy(haruki = it.haruki.copy(preview = null), message = "已清除当前 UID 的本地 Haruki 缓存") }
+    }
+    suspend fun startHarukiOAuth(): HarukiOAuthStart = mutex.withLock {
+        val start = harukiGateway.startOAuth(requireSession().accessToken)
+        update { it.copy(message = "Continue in your browser to connect Haruki.") }
+        start
+    }
+    suspend fun handleHarukiCallback(uri: android.net.Uri) {
+        val isCustomScheme = uri.scheme == "pjsktools" && uri.host == "auth"
+        val isVerifiedAppLink = uri.scheme == "https" && uri.host == "sekai-tools.cn"
+        val valid = (isCustomScheme || isVerifiedAppLink) && uri.path == "/haruki" &&
+            uri.port == -1 && uri.userInfo == null && uri.fragment == null &&
+            (uri.queryParameterNames == setOf("handoff") || uri.queryParameterNames == setOf("error"))
+        if (!requireInput(valid, "Invalid Haruki callback URL") || !state.value.isAuthenticated) return
+        uri.getQueryParameter("error")?.let { code ->
+            update { it.copy(message = "Haruki 连接失败：$code") }
+            return
+        }
+        val handoff = uri.getQueryParameter("handoff").orEmpty()
+        if (!requireInput(handoff.matches(Regex("[0-9a-f]{64}")), "Invalid Haruki handoff")) return
+        harukiGateway.completeMobileOAuth(requireSession().accessToken, handoff)
+        loadHarukiConnection()
+    }
+    fun toggleHarukiImport(bindingId: String) = update {
+        val selected = it.haruki.selectedSourceBindingIds
+        it.copy(haruki = it.haruki.copy(selectedSourceBindingIds = if (bindingId in selected) selected - bindingId else selected + bindingId))
+    }
+    suspend fun importHarukiBindings() = harukiOperation { token, current ->
+        val ids = current.selectedSourceBindingIds.toList()
+        require(ids.isNotEmpty()) { "Select at least one Haruki binding" }
+        harukiGateway.importBindings(token, ids)
+        val profile = repository.getProfile(token)
+        update { it.copy(profile = profile, selectedBindingId = retainSelection(it.selectedBindingId, profile)) }
+        current.copy(selectedSourceBindingIds = emptySet())
+    }
+    suspend fun reviewHarukiSync(bindingId: String) = harukiOperation { token, current ->
+        current.copy(pendingReview = harukiGateway.reviewSync(token, bindingId))
+    }
+    fun setHarukiReviewCards(action: String) = update { state ->
+        val review = state.haruki.pendingReview ?: return@update state
+        state.copy(haruki = state.haruki.copy(pendingReview = review.copy(cardAction = action)))
+    }
+    fun setHarukiReviewGroup(bindingGroup: String, action: String) = update { state ->
+        val review = state.haruki.pendingReview ?: return@update state
+        state.copy(haruki = state.haruki.copy(pendingReview = review.copy(groups = review.groups.map { if (it.id == bindingGroup) it.copy(action = action) else it })))
+    }
+    suspend fun confirmHarukiSync() = harukiOperation { token, current ->
+        val review = requireNotNull(current.pendingReview) { "Review a sync before confirming it" }
+        harukiGateway.confirmSync(token, review.bindingId, review.reviewToken, review.cardAction ?: "update", review.groups.associate { it.id to it.action })
+        current.copy(connection = harukiGateway.connection(token), pendingReview = null)
+    }
+    suspend fun syncHaruki(bindingId: String) = harukiOperation { token, current ->
+        harukiGateway.sync(token, bindingId)
+        current.copy(connection = harukiGateway.connection(token))
+    }
+    suspend fun setHarukiDailySync(bindingId: String, enabled: Boolean) = harukiOperation { token, current ->
+        harukiGateway.updateBinding(token, bindingId, dailySync = enabled)
+        current.copy(connection = harukiGateway.connection(token))
+    }
+    suspend fun setHarukiDefault(bindingId: String) = harukiOperation { token, current ->
+        harukiGateway.updateBinding(token, bindingId, isDefault = true)
+        current.copy(connection = harukiGateway.connection(token))
+    }
+    suspend fun deleteHarukiBinding(bindingId: String) = harukiOperation { token, current ->
+        harukiGateway.deleteBinding(token, bindingId)
+        current.copy(connection = harukiGateway.connection(token), selectedSourceBindingIds = current.selectedSourceBindingIds - bindingId)
+    }
+    suspend fun disconnectHaruki() = harukiOperation { token, current ->
+        harukiGateway.disconnect(token)
+        current.copy(connection = null, pendingReview = null, selectedSourceBindingIds = emptySet())
+    }
 
     private suspend fun restore(stored: StoredAccountSession): AccountSession {
         if (stored.accessToken.isNotBlank()) {
@@ -182,12 +257,18 @@ class AccountFeatureController(private val repository: AccountRepository) {
             it.copy(profile = profile, session = currentSession(it.session), message = message)
         }
     }
-    private suspend fun assetOperation(operation: suspend (String, PlayerBinding) -> Unit) = mutex.withLock {
-        val session = requireSession(); val binding = state.value.selectedBinding ?: return@withLock
+    private suspend fun harukiOperation(operation: suspend (String, HarukiUiState) -> HarukiUiState) = mutex.withLock {
+        val session = requireSession()
         update { it.copy(busy = true, error = null, message = null) }
-        try { operation(session.accessToken, binding); update { it.copy(session = currentSession(it.session)) } }
-        catch (error: Throwable) { if (error is CancellationException) throw error; fail(error) }
-        finally { update { it.copy(busy = false) } }
+        try {
+            val next = operation(session.accessToken, state.value.haruki)
+            update { it.copy(haruki = next, session = currentSession(it.session)) }
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            fail(error)
+        } finally {
+            update { it.copy(busy = false) }
+        }
     }
     private suspend fun bindingOperation(id: String?, block: suspend (String) -> Unit) = mutex.withLock {
         val token = requireSession().accessToken

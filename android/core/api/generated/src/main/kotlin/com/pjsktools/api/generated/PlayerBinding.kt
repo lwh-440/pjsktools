@@ -22,18 +22,28 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param id 
- * @param region 
- * @param playerUid 
- * @param isDefault 
- * @param createdAt 
- * @param updatedAt 
- * @param displayName 
- * @param note 
- * @param refreshedAt 
- * @param version 
+ *
+ * @param id
+ * @param region
+ * @param playerUid
+ * @param isDefault
+ * @param createdAt
+ * @param updatedAt
+ * @param displayName
+ * @param note
+ * @param refreshedAt
+ * @param harukiBindingId
+ * @param harukiBindingKey
+ * @param verified
+ * @param source
+ * @param upstreamUploadedAt
+ * @param lastSyncAttemptAt
+ * @param lastSyncSucceededAt
+ * @param lastSyncStatus
+ * @param pendingEmptyGroups
+ * @param autoSyncDaily
+ * @param version
  */
 @Serializable
 
@@ -66,11 +76,67 @@ data class PlayerBinding (
     @SerialName(value = "refreshedAt")
     val refreshedAt: kotlin.String? = null,
 
+    @SerialName(value = "harukiBindingId")
+    val harukiBindingId: kotlin.String? = null,
+
+    @SerialName(value = "harukiBindingKey")
+    val harukiBindingKey: kotlin.String? = null,
+
+    @SerialName(value = "verified")
+    val verified: kotlin.Boolean? = null,
+
+    @SerialName(value = "source")
+    val source: PlayerBinding.Source? = null,
+
+    @SerialName(value = "upstreamUploadedAt")
+    val upstreamUploadedAt: kotlin.String? = null,
+
+    @SerialName(value = "lastSyncAttemptAt")
+    val lastSyncAttemptAt: kotlin.String? = null,
+
+    @SerialName(value = "lastSyncSucceededAt")
+    val lastSyncSucceededAt: kotlin.String? = null,
+
+    @SerialName(value = "lastSyncStatus")
+    val lastSyncStatus: PlayerBinding.LastSyncStatus? = null,
+
+    @SerialName(value = "pendingEmptyGroups")
+    val pendingEmptyGroups: kotlin.collections.List<kotlin.String>? = null,
+
+    @SerialName(value = "autoSyncDaily")
+    val autoSyncDaily: kotlin.Boolean? = null,
+
     @SerialName(value = "version")
     val version: kotlin.String? = null
 
 ) {
 
+    /**
+     *
+     *
+     * Values: HARUKI_MINUS_OAUTH
+     */
+    @Serializable
+    enum class Source(val value: kotlin.String) {
+        @SerialName(value = "haruki-oauth") HARUKI_MINUS_OAUTH("haruki-oauth");
+    }
+    /**
+     *
+     *
+     * Values: NEVER,READY,SYNCING,SUCCESS,NO_MINUS_CHANGE,NEEDS_MINUS_REVIEW,REAUTHORIZE,UPSTREAM_MINUS_ERROR,PARSE_MINUS_ERROR
+     */
+    @Serializable
+    enum class LastSyncStatus(val value: kotlin.String) {
+        @SerialName(value = "never") NEVER("never"),
+        @SerialName(value = "ready") READY("ready"),
+        @SerialName(value = "syncing") SYNCING("syncing"),
+        @SerialName(value = "success") SUCCESS("success"),
+        @SerialName(value = "no-change") NO_MINUS_CHANGE("no-change"),
+        @SerialName(value = "needs-review") NEEDS_MINUS_REVIEW("needs-review"),
+        @SerialName(value = "reauthorize") REAUTHORIZE("reauthorize"),
+        @SerialName(value = "upstream-error") UPSTREAM_MINUS_ERROR("upstream-error"),
+        @SerialName(value = "parse-error") PARSE_MINUS_ERROR("parse-error");
+    }
 
 }
 

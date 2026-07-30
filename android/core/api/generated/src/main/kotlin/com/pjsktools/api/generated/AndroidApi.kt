@@ -37,6 +37,19 @@ import com.pjsktools.api.generated.Forecast
 import com.pjsktools.api.generated.GachaDetail
 import com.pjsktools.api.generated.GachaPage
 import com.pjsktools.api.generated.GetRankingChurn200Response
+import com.pjsktools.api.generated.HarukiBindingImportRequest
+import com.pjsktools.api.generated.HarukiBindingImportResponse
+import com.pjsktools.api.generated.HarukiConnection
+import com.pjsktools.api.generated.HarukiDisconnectResponse
+import com.pjsktools.api.generated.HarukiMobileCompleteRequest
+import com.pjsktools.api.generated.HarukiOAuthStartRequest
+import com.pjsktools.api.generated.HarukiOAuthStartResponse
+import com.pjsktools.api.generated.HarukiPublicPreviewRequest
+import com.pjsktools.api.generated.HarukiPublicPreviewResponse
+import com.pjsktools.api.generated.HarukiSyncConfirmRequest
+import com.pjsktools.api.generated.HarukiSyncResult
+import com.pjsktools.api.generated.HarukiSyncReviewResponse
+import com.pjsktools.api.generated.HarukiSyncSettingsRequest
 import com.pjsktools.api.generated.HonorDetail
 import com.pjsktools.api.generated.HonorPage
 import com.pjsktools.api.generated.LiveRanking
@@ -45,7 +58,6 @@ import com.pjsktools.api.generated.MaterialDetail
 import com.pjsktools.api.generated.MaterialPage
 import com.pjsktools.api.generated.OkResponse
 import com.pjsktools.api.generated.PlayerBinding
-import com.pjsktools.api.generated.PlayerBindingCreateRequest
 import com.pjsktools.api.generated.PlayerBindingPage
 import com.pjsktools.api.generated.PlayerBindingPatchRequest
 import com.pjsktools.api.generated.PlayerProfile
@@ -68,8 +80,8 @@ import com.pjsktools.api.generated.StampPage
 interface AndroidApi {
     /**
      * PATCH api/me/favorites/bulk
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -80,7 +92,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param favoriteBulkPatchRequest 
+     * @param favoriteBulkPatchRequest
      * @param idempotencyKey  (optional)
      * @return [kotlin.collections.List<Favorite>]
      */
@@ -89,8 +101,8 @@ interface AndroidApi {
 
     /**
      * POST api/me/tools/score-control
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -101,7 +113,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param scoreControlRequest 
+     * @param scoreControlRequest
      * @return [ScoreControlResult]
      */
     @POST("api/me/tools/score-control")
@@ -109,8 +121,8 @@ interface AndroidApi {
 
     /**
      * POST api/tools/score-control
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -121,16 +133,16 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param scoreControlRequest 
+     * @param scoreControlRequest
      * @return [ScoreControlResult]
      */
     @POST("api/tools/score-control")
     suspend fun calculateScoreControl(@Body scoreControlRequest: ScoreControlRequest): Response<ScoreControlResult>
 
     /**
-     * POST api/me/favorites
-     * 
-     * 
+     * POST api/me/haruki/oauth/mobile/complete
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -141,7 +153,49 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param createFavoriteRequest 
+     * @param harukiMobileCompleteRequest
+     * @return [HarukiConnection]
+     */
+    @POST("api/me/haruki/oauth/mobile/complete")
+    suspend fun completeHarukiMobileOAuth(@Body harukiMobileCompleteRequest: HarukiMobileCompleteRequest): Response<HarukiConnection>
+
+    /**
+     * POST api/me/player-bindings/{id}/sync/confirm
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param id
+     * @param harukiSyncConfirmRequest
+     * @param idempotencyKey  (optional)
+     * @return [HarukiSyncResult]
+     */
+    @POST("api/me/player-bindings/{id}/sync/confirm")
+    suspend fun confirmHarukiPlayerSync(@Path("id") id: kotlin.String, @Body harukiSyncConfirmRequest: HarukiSyncConfirmRequest, @Header("Idempotency-Key") idempotencyKey: kotlin.String? = null): Response<HarukiSyncResult>
+
+    /**
+     * POST api/me/favorites
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param createFavoriteRequest
      * @param idempotencyKey  (optional)
      * @return [Favorite]
      */
@@ -150,8 +204,8 @@ interface AndroidApi {
 
     /**
      * POST api/me/favorite-folders
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -162,7 +216,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param favoriteFolderCreateRequest 
+     * @param favoriteFolderCreateRequest
      * @param idempotencyKey  (optional)
      * @return [FavoriteFolder]
      */
@@ -170,29 +224,9 @@ interface AndroidApi {
     suspend fun createFavoriteFolder(@Body favoriteFolderCreateRequest: FavoriteFolderCreateRequest, @Header("Idempotency-Key") idempotencyKey: kotlin.String? = null): Response<FavoriteFolder>
 
     /**
-     * POST api/me/player-bindings
-     * 
-     * 
-     * Responses:
-     *  - 200: Successful response
-     *  - 400: Invalid input
-     *  - 401: Authentication required
-     *  - 404: Resource not found
-     *  - 409: Resource conflict
-     *  - 412: Optimistic concurrency check failed
-     *  - 429: Rate limit exceeded
-     *  - 503: Source unavailable
-     *
-     * @param playerBindingCreateRequest 
-     * @return [PlayerBinding]
-     */
-    @POST("api/me/player-bindings")
-    suspend fun createPlayerBinding(@Body playerBindingCreateRequest: PlayerBindingCreateRequest): Response<PlayerBinding>
-
-    /**
      * DELETE api/me/favorites/{id}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -203,7 +237,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param id 
+     * @param id
      * @param idempotencyKey  (optional)
      * @param ifMatch  (optional)
      * @return [OkResponse]
@@ -213,8 +247,8 @@ interface AndroidApi {
 
     /**
      * DELETE api/me/favorite-folders/{id}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -225,7 +259,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param id 
+     * @param id
      * @param idempotencyKey  (optional)
      * @param ifMatch  (optional)
      * @return [OkResponse]
@@ -234,9 +268,9 @@ interface AndroidApi {
     suspend fun deleteFavoriteFolder(@Path("id") id: kotlin.String, @Header("Idempotency-Key") idempotencyKey: kotlin.String? = null, @Header("If-Match") ifMatch: kotlin.String? = null): Response<OkResponse>
 
     /**
-     * DELETE api/me/player-bindings/{id}
-     * 
-     * 
+     * DELETE api/me/haruki/connection
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -247,7 +281,46 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param id 
+     * @param idempotencyKey  (optional)
+     * @return [HarukiDisconnectResponse]
+     */
+    @DELETE("api/me/haruki/connection")
+    suspend fun deleteHarukiConnection(@Header("Idempotency-Key") idempotencyKey: kotlin.String? = null): Response<HarukiDisconnectResponse>
+
+    /**
+     * DELETE api/me/account
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @return [OkResponse]
+     */
+    @DELETE("api/me/account")
+    suspend fun deleteMyAccount(): Response<OkResponse>
+
+    /**
+     * DELETE api/me/player-bindings/{id}
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param id
      * @param ifMatch  (optional)
      * @return [OkResponse]
      */
@@ -256,8 +329,8 @@ interface AndroidApi {
 
     /**
      * POST api/me/tools/event-point-calc
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -268,7 +341,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param eventPointEstimateRequest 
+     * @param eventPointEstimateRequest
      * @return [EventPointEstimateResult]
      */
     @POST("api/me/tools/event-point-calc")
@@ -276,8 +349,8 @@ interface AndroidApi {
 
     /**
      * POST api/tools/event-point-calc
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -288,7 +361,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param eventPointEstimateRequest 
+     * @param eventPointEstimateRequest
      * @return [EventPointEstimateResult]
      */
     @POST("api/tools/event-point-calc")
@@ -296,8 +369,8 @@ interface AndroidApi {
 
     /**
      * GET api/assets/{region}/config
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -308,7 +381,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @return [AssetConfig]
      */
     @GET("api/assets/{region}/config")
@@ -329,8 +402,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/cards
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -341,7 +414,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @param q  (optional)
@@ -364,8 +437,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/cards/{cardId}/full
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -376,8 +449,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param cardId 
+     * @param region
+     * @param cardId
      * @return [CardDetail]
      */
     @GET("api/master/{region}/cards/{cardId}/full")
@@ -398,8 +471,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/comics
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -410,7 +483,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @param q  (optional)
@@ -442,8 +515,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/comics/{itemId}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -454,8 +527,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param itemId 
+     * @param region
+     * @param itemId
      * @return [ComicDetail]
      */
     @GET("api/master/{region}/catalogs/comics/{itemId}")
@@ -476,8 +549,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/costumes
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -488,7 +561,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @param q  (optional)
@@ -520,8 +593,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/costumes/{itemId}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -532,8 +605,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param itemId 
+     * @param region
+     * @param itemId
      * @return [CostumeDetail]
      */
     @GET("api/master/{region}/catalogs/costumes/{itemId}")
@@ -541,8 +614,8 @@ interface AndroidApi {
 
     /**
      * GET api/events/{region}/current
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -553,7 +626,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @return [EventSummary]
      */
     @GET("api/events/{region}/current")
@@ -574,8 +647,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/events
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -586,7 +659,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @param q  (optional)
@@ -603,8 +676,8 @@ interface AndroidApi {
 
     /**
      * GET api/events/{region}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -615,7 +688,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @return [kotlin.collections.List<EventSummary>]
      */
     @GET("api/events/{region}")
@@ -623,8 +696,8 @@ interface AndroidApi {
 
     /**
      * GET api/me/favorite-folders
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -642,8 +715,8 @@ interface AndroidApi {
 
     /**
      * GET api/me/favorites
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -668,8 +741,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/events/{eventId}/full
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -680,8 +753,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param eventId 
+     * @param region
+     * @param eventId
      * @return [EventFullDetail]
      */
     @GET("api/master/{region}/events/{eventId}/full")
@@ -702,8 +775,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/gachas
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -714,7 +787,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @param q  (optional)
@@ -746,8 +819,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/gachas/{itemId}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -758,12 +831,31 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param itemId 
+     * @param region
+     * @param itemId
      * @return [GachaDetail]
      */
     @GET("api/master/{region}/catalogs/gachas/{itemId}")
     suspend fun getGachaCatalogItem(@Path("region") region: RegionId, @Path("itemId") itemId: kotlin.String): Response<GachaDetail>
+
+    /**
+     * GET api/me/haruki/connection
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @return [HarukiConnection]
+     */
+    @GET("api/me/haruki/connection")
+    suspend fun getHarukiConnection(): Response<HarukiConnection>
 
 
     /**
@@ -780,8 +872,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/honors
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -792,7 +884,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @param q  (optional)
@@ -824,8 +916,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/honors/{itemId}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -836,8 +928,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param itemId 
+     * @param region
+     * @param itemId
      * @return [HonorDetail]
      */
     @GET("api/master/{region}/catalogs/honors/{itemId}")
@@ -854,8 +946,8 @@ interface AndroidApi {
 
     /**
      * GET api/events/{region}/live-ranking
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -866,7 +958,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @param boardType  (optional, default to overall)
      * @param gameCharacterId  (optional)
      * @return [LiveRanking]
@@ -889,8 +981,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/materials
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -901,7 +993,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @param q  (optional)
@@ -933,8 +1025,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/materials/{itemId}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -945,8 +1037,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param itemId 
+     * @param region
+     * @param itemId
      * @return [MaterialDetail]
      */
     @GET("api/master/{region}/catalogs/materials/{itemId}")
@@ -954,8 +1046,8 @@ interface AndroidApi {
 
     /**
      * GET api/me/player-bindings
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -975,8 +1067,8 @@ interface AndroidApi {
 
     /**
      * GET api/players/{region}/{userId}/profile
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -987,8 +1079,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param userId 
+     * @param region
+     * @param userId
      * @return [PlayerProfile]
      */
     @GET("api/players/{region}/{userId}/profile")
@@ -996,8 +1088,8 @@ interface AndroidApi {
 
     /**
      * GET api/events/{region}/{eventId}/ranking-border
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1008,8 +1100,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param eventId 
+     * @param region
+     * @param eventId
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @return [RankingEntryPage]
@@ -1028,8 +1120,8 @@ interface AndroidApi {
 
     /**
      * GET api/events/{region}/{eventId}/ranking-churn
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1040,8 +1132,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param eventId 
+     * @param region
+     * @param eventId
      * @param boardType  (optional)
      * @param gameCharacterId  (optional)
      * @param top  (optional)
@@ -1062,8 +1154,8 @@ interface AndroidApi {
 
     /**
      * GET api/events/{region}/{eventId}/ranking-forecast
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1074,8 +1166,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param eventId 
+     * @param region
+     * @param eventId
      * @param windowHours  (optional)
      * @return [Forecast]
      */
@@ -1103,8 +1195,8 @@ interface AndroidApi {
 
     /**
      * GET api/events/{region}/{eventId}/ranking-history
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1115,8 +1207,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param eventId 
+     * @param region
+     * @param eventId
      * @param sampleType  (optional)
      * @param rank  (optional)
      * @param from  (optional)
@@ -1149,8 +1241,8 @@ interface AndroidApi {
 
     /**
      * GET api/events/{region}/{eventId}/ranking-history/summary
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1161,8 +1253,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param eventId 
+     * @param region
+     * @param eventId
      * @param sampleType  (optional)
      * @param rank  (optional)
      * @param limit  (optional)
@@ -1183,8 +1275,8 @@ interface AndroidApi {
 
     /**
      * GET api/events/{region}/{eventId}/ranking-player/{rank}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1195,9 +1287,9 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param eventId 
-     * @param rank 
+     * @param region
+     * @param eventId
+     * @param rank
      * @param boardType  (optional)
      * @param gameCharacterId  (optional)
      * @return [RankingPlayerDetail]
@@ -1207,8 +1299,8 @@ interface AndroidApi {
 
     /**
      * GET api/events/{region}/{eventId}/ranking-top100
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1219,8 +1311,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param eventId 
+     * @param region
+     * @param eventId
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @return [RankingEntryPage]
@@ -1230,8 +1322,8 @@ interface AndroidApi {
 
     /**
      * GET api/regions
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1249,8 +1341,8 @@ interface AndroidApi {
 
     /**
      * GET api/runtime/status
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1281,8 +1373,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/songs
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1293,7 +1385,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @param q  (optional)
@@ -1309,8 +1401,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/music/{musicId}/charts/{difficulty}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1321,9 +1413,9 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param musicId 
-     * @param difficulty 
+     * @param region
+     * @param musicId
+     * @param difficulty
      * @return [ChartDetail]
      */
     @GET("api/master/{region}/music/{musicId}/charts/{difficulty}")
@@ -1331,8 +1423,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/music/{musicId}/full
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1343,8 +1435,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param musicId 
+     * @param region
+     * @param musicId
      * @return [SongDetail]
      */
     @GET("api/master/{region}/music/{musicId}/full")
@@ -1365,8 +1457,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/stamps
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1377,7 +1469,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
+     * @param region
      * @param page  (optional, default to 1)
      * @param pageSize  (optional, default to 24)
      * @param q  (optional)
@@ -1409,8 +1501,8 @@ interface AndroidApi {
 
     /**
      * GET api/master/{region}/catalogs/stamps/{itemId}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1421,17 +1513,17 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param itemId 
+     * @param region
+     * @param itemId
      * @return [StampDetail]
      */
     @GET("api/master/{region}/catalogs/stamps/{itemId}")
     suspend fun getStampCatalogItem(@Path("region") region: RegionId, @Path("itemId") itemId: kotlin.String): Response<StampDetail>
 
     /**
-     * POST api/auth/login
-     * 
-     * 
+     * POST api/me/haruki/bindings/import
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1442,7 +1534,28 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param loginRequest 
+     * @param harukiBindingImportRequest
+     * @param idempotencyKey  (optional)
+     * @return [HarukiBindingImportResponse]
+     */
+    @POST("api/me/haruki/bindings/import")
+    suspend fun importHarukiBindings(@Body harukiBindingImportRequest: HarukiBindingImportRequest, @Header("Idempotency-Key") idempotencyKey: kotlin.String? = null): Response<HarukiBindingImportResponse>
+
+    /**
+     * POST api/auth/login
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param loginRequest
      * @return [AuthResponse]
      */
     @POST("api/auth/login")
@@ -1450,8 +1563,8 @@ interface AndroidApi {
 
     /**
      * POST api/auth/logout
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1462,16 +1575,16 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param refreshTokenRequest 
+     * @param refreshTokenRequest
      * @return [OkResponse]
      */
     @POST("api/auth/logout")
     suspend fun logout(@Body refreshTokenRequest: RefreshTokenRequest): Response<OkResponse>
 
     /**
-     * POST api/players/{region}/{userId}/refresh
-     * 
-     * 
+     * POST api/me/haruki/public/preview
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1482,8 +1595,50 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param region 
-     * @param userId 
+     * @param harukiPublicPreviewRequest
+     * @return [HarukiPublicPreviewResponse]
+     */
+    @POST("api/me/haruki/public/preview")
+    suspend fun previewHarukiPublicSuite(@Body harukiPublicPreviewRequest: HarukiPublicPreviewRequest): Response<HarukiPublicPreviewResponse>
+
+    /**
+     * POST api/integrations/haruki/webhook/{region}/{dataType}/{playerUid}
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param region
+     * @param dataType
+     * @param playerUid
+     * @return [OkResponse]
+     */
+    @POST("api/integrations/haruki/webhook/{region}/{dataType}/{playerUid}")
+    suspend fun receiveHarukiWebhook(@Path("region") region: RegionId, @Path("dataType") dataType: kotlin.String, @Path("playerUid") playerUid: kotlin.String): Response<OkResponse>
+
+    /**
+     * POST api/players/{region}/{userId}/refresh
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param region
+     * @param userId
      * @return [PlayerProfile]
      */
     @POST("api/players/{region}/{userId}/refresh")
@@ -1491,8 +1646,8 @@ interface AndroidApi {
 
     /**
      * POST api/auth/refresh
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1503,7 +1658,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param refreshTokenRequest 
+     * @param refreshTokenRequest
      * @return [AuthResponse]
      */
     @POST("api/auth/refresh")
@@ -1511,8 +1666,8 @@ interface AndroidApi {
 
     /**
      * POST api/auth/register
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 201: Successful response
      *  - 400: Invalid input
@@ -1523,7 +1678,7 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param registerRequest 
+     * @param registerRequest
      * @return [AuthResponse]
      */
     @POST("api/auth/register")
@@ -1531,8 +1686,8 @@ interface AndroidApi {
 
     /**
      * GET api/assets/resolve
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Resolved image asset
      *  - 400: Invalid input
@@ -1550,9 +1705,9 @@ interface AndroidApi {
     suspend fun resolveAsset(@Query("url") url: @JvmSuppressWildcards kotlin.collections.List<java.net.URI>? = null): Response<ResponseBody>
 
     /**
-     * POST api/auth/email-code/start
-     * 
-     * 
+     * POST api/me/player-bindings/{id}/sync/review
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1563,16 +1718,36 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param emailCodeRequest 
+     * @param id
+     * @return [HarukiSyncReviewResponse]
+     */
+    @POST("api/me/player-bindings/{id}/sync/review")
+    suspend fun reviewHarukiPlayerSync(@Path("id") id: kotlin.String): Response<HarukiSyncReviewResponse>
+
+    /**
+     * POST api/auth/email-code/start
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param emailCodeRequest
      * @return [EmailCodeResponse]
      */
     @POST("api/auth/email-code/start")
     suspend fun startEmailVerification(@Body emailCodeRequest: EmailCodeRequest): Response<EmailCodeResponse>
 
     /**
-     * PATCH api/me/favorite-folders/{id}
-     * 
-     * 
+     * POST api/me/haruki/oauth/start
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1583,8 +1758,49 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param id 
-     * @param favoriteFolderPatchRequest 
+     * @param harukiOAuthStartRequest
+     * @return [HarukiOAuthStartResponse]
+     */
+    @POST("api/me/haruki/oauth/start")
+    suspend fun startHarukiOAuth(@Body harukiOAuthStartRequest: HarukiOAuthStartRequest): Response<HarukiOAuthStartResponse>
+
+    /**
+     * POST api/me/player-bindings/{id}/sync
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param id
+     * @param idempotencyKey  (optional)
+     * @return [HarukiSyncResult]
+     */
+    @POST("api/me/player-bindings/{id}/sync")
+    suspend fun syncHarukiPlayerData(@Path("id") id: kotlin.String, @Header("Idempotency-Key") idempotencyKey: kotlin.String? = null): Response<HarukiSyncResult>
+
+    /**
+     * PATCH api/me/favorite-folders/{id}
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param id
+     * @param favoriteFolderPatchRequest
      * @param idempotencyKey  (optional)
      * @param ifMatch  (optional)
      * @return [FavoriteFolder]
@@ -1594,8 +1810,8 @@ interface AndroidApi {
 
     /**
      * PATCH api/me/favorites/{id}
-     * 
-     * 
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1606,8 +1822,8 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param id 
-     * @param favoriteFoldersPatchRequest 
+     * @param id
+     * @param favoriteFoldersPatchRequest
      * @param idempotencyKey  (optional)
      * @param ifMatch  (optional)
      * @return [Favorite]
@@ -1616,9 +1832,9 @@ interface AndroidApi {
     suspend fun updateFavoriteFolders(@Path("id") id: kotlin.String, @Body favoriteFoldersPatchRequest: FavoriteFoldersPatchRequest, @Header("Idempotency-Key") idempotencyKey: kotlin.String? = null, @Header("If-Match") ifMatch: kotlin.String? = null): Response<Favorite>
 
     /**
-     * PATCH api/me/player-bindings/{id}
-     * 
-     * 
+     * PATCH api/me/player-bindings/{id}/sync-settings
+     *
+     *
      * Responses:
      *  - 200: Successful response
      *  - 400: Invalid input
@@ -1629,8 +1845,31 @@ interface AndroidApi {
      *  - 429: Rate limit exceeded
      *  - 503: Source unavailable
      *
-     * @param id 
-     * @param playerBindingPatchRequest 
+     * @param id
+     * @param harukiSyncSettingsRequest
+     * @param idempotencyKey  (optional)
+     * @param ifMatch  (optional)
+     * @return [PlayerBinding]
+     */
+    @PATCH("api/me/player-bindings/{id}/sync-settings")
+    suspend fun updateHarukiSyncSettings(@Path("id") id: kotlin.String, @Body harukiSyncSettingsRequest: HarukiSyncSettingsRequest, @Header("Idempotency-Key") idempotencyKey: kotlin.String? = null, @Header("If-Match") ifMatch: kotlin.String? = null): Response<PlayerBinding>
+
+    /**
+     * PATCH api/me/player-bindings/{id}
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param id
+     * @param playerBindingPatchRequest
      * @param ifMatch  (optional)
      * @return [PlayerBinding]
      */

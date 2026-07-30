@@ -358,10 +358,11 @@ function normalizeSuiteChallenge(payload: Record<string, unknown>) {
   return {
     characterId,
     cardIds,
-    decks,
-    results,
-    stages: asArray(payload.userChallengeLiveSoloStages),
-    highScoreRewards: asArray(payload.userChallengeLiveSoloHighScoreRewards),
+    highScore: valueNumber(bestResult, ["highScore", "score"]),
+    deckCount: decks.length,
+    resultCount: results.length,
+    stageCount: asArray(payload.userChallengeLiveSoloStages).length,
+    highScoreRewardCount: asArray(payload.userChallengeLiveSoloHighScoreRewards).length,
     source: "Haruki Suite userChallengeLiveSolo*",
     unavailableReason: cardIds.length ? undefined : "Suite payload did not include userChallengeLiveSoloDecks; retained results/stages/rewards for diagnostics"
   };
@@ -374,8 +375,7 @@ function normalizeSuiteWorldBloom(payload: Record<string, unknown>) {
     return {
       eventId: valueString(row, ["eventId"]),
       gameCharacterId: valueString(row, ["gameCharacterId", "characterId"]),
-      cardIds: deckCardIds(record, 25),
-      raw: record
+      cardIds: deckCardIds(record, 25)
     };
   });
 }
@@ -406,30 +406,27 @@ export function normalizeSuitePlayerDataImport(region: RegionId, source: Record<
     deckId: valueString(deck, ["deckId", "id"]),
     name: valueString(deck, ["name"]),
     leaderCardId: valueString(deck, ["leader", "member1"]),
-    cardIds: deckCardIds(deck, 5),
-    raw: asRecord(deck)
+    cardIds: deckCardIds(deck, 5)
   })).filter((deck) => deck.cardIds.length);
   const honors = [...asArray(source.userHonors), ...asArray(source.userBonds)].map((item) => ({
     honorId: valueString(item, ["honorId", "bondsHonorId", "id"]),
     level: valueNumber(item, ["level", "honorLevel", "bondsHonorLevel"]) ?? 1,
-    kind: valueString(item, ["profileHonorType", "kind", "type"]) ?? (valueString(item, ["bondsHonorId"]) ? "bonds" : "normal"),
-    raw: asRecord(item)
+    kind: valueString(item, ["profileHonorType", "kind", "type"]) ?? (valueString(item, ["bondsHonorId"]) ? "bonds" : "normal")
   })).filter((item) => item.honorId);
   const mysekaiCanvas = asArray(source.userMysekaiCanvases).map((item) => ({
     cardId: valueString(item, ["cardId", "id"]),
-    raw: asRecord(item)
+    powerBonusRate: valueNumber(item, ["powerBonusRate", "bonusRate"])
   })).filter((item) => item.cardId);
   const mysekaiGates = asArray(source.userMysekaiGates).map((item) => ({
     gateId: valueString(item, ["gateId", "mysekaiGateId", "id"]),
     unit: valueString(item, ["unit", "unitType"]),
     level: valueNumber(item, ["level"]) ?? 0,
-    raw: asRecord(item)
+    powerBonusRate: valueNumber(item, ["powerBonusRate", "bonusRate"])
   })).filter((item) => item.gateId || item.unit);
   const mysekaiFixtures = asArray(source.userMysekaiFixtureGameCharacterPerformanceBonuses).map((item) => ({
     fixtureId: valueString(item, ["fixtureId", "mysekaiFixtureId", "id"]),
     characterId: valueString(item, ["gameCharacterId", "characterId"]),
-    totalBonusRate: valueNumber(item, ["totalBonusRate", "bonusRate", "performanceBonusRate"]) ?? 0,
-    raw: asRecord(item)
+    totalBonusRate: valueNumber(item, ["totalBonusRate", "bonusRate", "performanceBonusRate"]) ?? 0
   }));
   const playerData = [
     { kind: "area-items", data: areaItems },
@@ -451,7 +448,7 @@ export function normalizeSuitePlayerDataImport(region: RegionId, source: Record<
     "userChallengeLiveSoloStages", "userChallengeLiveSoloHighScoreRewards", "userWorldBloomSupportDecks", "userHonors",
     "userBonds", "userMysekaiCanvases", "userMysekaiGates", "userMysekaiFixtureGameCharacterPerformanceBonuses"
   ]);
-  const unmapped = Object.fromEntries(Object.entries(source).filter(([key]) => !mappedKeys.has(key) && key !== "upload_time" && key !== "uploadTime"));
+  const unmapped = Object.keys(source).filter((key) => !mappedKeys.has(key) && key !== "upload_time" && key !== "uploadTime").sort();
   return {
     schemaVersion: 2,
     importSource: "haruki-suite-public",

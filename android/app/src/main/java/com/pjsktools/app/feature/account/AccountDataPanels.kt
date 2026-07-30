@@ -30,7 +30,7 @@ fun AccountDataPanels(
     modifier: Modifier = Modifier
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        AccountAssetsPanel(state, controller, launch)
+        HarukiConnectionPanel(state, controller, launch)
         state.profileAnalysis?.let { analysis ->
             Panel("玩家档案") {
                 Text(analysis.nickname ?: state.selectedBinding?.title ?: "-")

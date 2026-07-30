@@ -4,6 +4,23 @@ $tempName = ".openapi-check-" + [guid]::NewGuid().ToString("N")
 $temp = Join-Path $root $tempName
 $spec = Join-Path $temp "openapi.json"
 $generated = Join-Path $temp "generated"
+
+function Remove-GeneratedTrailingWhitespace([string]$path) {
+    $utf8 = [System.Text.UTF8Encoding]::new($false)
+    Get-ChildItem -LiteralPath $path -File -Recurse -Filter "*.kt" |
+        Where-Object { $_.Name -like "Haruki*.kt" -or $_.Name -in @("AndroidApi.kt", "PlayerBinding.kt") } |
+        ForEach-Object {
+        $content = [System.IO.File]::ReadAllText($_.FullName)
+        $normalized = [System.Text.RegularExpressions.Regex]::Replace(
+            $content,
+            "[ `t]+(?=`r?$)",
+            "",
+            [System.Text.RegularExpressions.RegexOptions]::Multiline
+        )
+        [System.IO.File]::WriteAllText($_.FullName, $normalized, $utf8)
+        }
+}
+
 New-Item -ItemType Directory -Path $temp | Out-Null
 try {
 npm run build -w apps/api
@@ -19,6 +36,7 @@ try {
     Pop-Location
 }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Remove-GeneratedTrailingWhitespace $generated
 $currentSpec = [System.IO.File]::ReadAllBytes((Join-Path $root "apps/api/openapi/openapi.json"))
 $exportedSpec = [System.IO.File]::ReadAllBytes($spec)
 if (-not [System.Linq.Enumerable]::SequenceEqual($currentSpec, $exportedSpec)) { throw "Committed OpenAPI file differs from runtime export." }

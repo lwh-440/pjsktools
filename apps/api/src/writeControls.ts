@@ -22,7 +22,13 @@ function stableJson(value: unknown): string {
 
 function shouldProtect(request: FastifyRequest) {
   const path = request.url.split("?", 1)[0];
-  return mutationMethods.has(request.method) && path.startsWith("/api/me/") && !path.startsWith("/api/me/tools/") && !path.endsWith("/validate") && !path.endsWith("/review");
+  return mutationMethods.has(request.method) && path.startsWith("/api/me/")
+    && path !== "/api/me/account"
+    // These responses contain short-lived OAuth state or player data and must
+    // never be persisted in the generic idempotency response table.
+    && path !== "/api/me/haruki/public/preview"
+    && path !== "/api/me/haruki/oauth/start"
+    && !path.startsWith("/api/me/tools/") && !path.endsWith("/validate") && !path.endsWith("/review");
 }
 
 export function entityTag(value: unknown) {

@@ -128,7 +128,10 @@ fun PjskToolsApp(
     LaunchedEffect(deepLink, accountState.initialized) {
         if (deepLink != null && accountState.initialized) {
             section = AppSection.ACCOUNT
-            accountController.handleQqCallback(deepLink)
+            when (deepLink.path) {
+                "/qq" -> accountController.handleQqCallback(deepLink)
+                "/haruki" -> accountController.handleHarukiCallback(deepLink)
+            }
             onDeepLinkConsumed()
         }
     }
