@@ -5044,7 +5044,7 @@ code {
 }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.binding-selector-strip, .visual-inventory-stack, .screenshot-import-panel { display: grid; gap: 12px; min-width: 0; }
+.binding-selector-strip, .visual-inventory-stack { display: grid; gap: 12px; min-width: 0; }
 .binding-selector-strip { max-height: 280px; overflow: auto; }
 .binding-selector-strip button { width: 100%; min-width: 0; justify-content: flex-start; text-align: left; }
 .binding-selector-strip button.active { background: #2f6f88; color: #fff; }
@@ -5076,16 +5076,7 @@ code {
 .card-attr { left: 6px; top: 6px; padding: 3px 5px; border-radius: 4px; font-size: 10px; }
 .card-rarity { left: 6px; bottom: 28px; padding: 2px 4px; color: #ffe58b; font-size: 11px; }
 .card-level-line { inset: auto 0 0; display: flex; justify-content: space-between; padding: 5px 7px; font-size: 11px; }
-.screenshot-import-panel { border-top: 1px solid #d9e3ee; padding-top: 16px; }
-.screenshot-import-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; align-items: end; }
-.screenshot-import-controls .file-picker { grid-column: span 2; }
-.screenshot-import-controls label { display: grid; gap: 5px; color: #42566a; font-size: 13px; }
-.screenshot-import-controls .check-row { display: flex; align-items: center; }
 .file-picker { border: 1px dashed #9cb7c9; border-radius: 8px; padding: 10px; }
-.screenshot-review-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(190px,1fr)); gap: 10px; }
-.screenshot-result { display: grid; gap: 8px; min-width: 0; padding: 10px; border: 1px solid #d7e2ec; border-radius: 8px; background: #fbfdff; }
-.screenshot-result.matched { border-color: #70ad8d; } .screenshot-result.ambiguous { border-color: #d7a94a; } .screenshot-result.unknown { border-color: #c97979; }
-.screenshot-result > img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; }
 .inventory-modal-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(16,27,38,.58); }
 
 .timeline-card-button {
@@ -5400,8 +5391,7 @@ code {
     grid-auto-flow: row;
   }
 
-  .inventory-filter-bar,
-  .screenshot-import-controls {
+  .inventory-filter-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -5631,14 +5621,12 @@ code {
   }
 
   .inventory-filter-bar,
-  .screenshot-import-controls,
   .inventory-edit-fields,
   .inventory-edit-head {
     grid-template-columns: 1fr;
   }
 
-  .inventory-search,
-  .screenshot-import-controls .file-picker {
+  .inventory-search {
     grid-column: auto;
   }
 
@@ -5722,5 +5710,374 @@ code {
   .deck-compare-table-wrap,
   .json-preview {
     max-width: 100%;
+  }
+}
+.haruki-center {
+  display: grid;
+  gap: 18px;
+}
+
+.haruki-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  background:
+    radial-gradient(circle at 95% 10%, rgba(0, 167, 165, .18), transparent 34%),
+    linear-gradient(135deg, #ffffff 0%, #f5fbfb 100%);
+}
+
+.haruki-hero > div:first-child {
+  max-width: 760px;
+}
+
+.haruki-hero h2 {
+  margin: 4px 0 8px;
+}
+
+.haruki-hero p,
+.haruki-help {
+  color: #536579;
+}
+
+.haruki-hero .eyebrow {
+  color: #007f82;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.haruki-global-message {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #97d7c2;
+  border-radius: 12px;
+  color: #195b48;
+  background: #f1fbf7;
+}
+
+.haruki-global-message.error {
+  border-color: #efb5b5;
+  color: #8a2e2e;
+  background: #fff6f6;
+}
+
+.haruki-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.haruki-mode-grid > .panel {
+  min-width: 0;
+}
+
+.haruki-mode-grid .panel-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.haruki-public-form {
+  display: grid;
+  grid-template-columns: minmax(130px, .45fr) minmax(190px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.haruki-public-form label {
+  display: grid;
+  gap: 6px;
+  color: #42566a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.haruki-public-form button {
+  min-height: 42px;
+}
+
+.haruki-help {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+.haruki-connection-summary,
+.haruki-account-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.haruki-connection-summary {
+  margin: 12px 0;
+  padding: 14px;
+  border-radius: 12px;
+  color: #116b64;
+  background: #eaf8f6;
+}
+
+.haruki-connection-summary > div,
+.haruki-account-title > div {
+  display: grid;
+  min-width: 0;
+}
+
+.haruki-connection-summary span,
+.haruki-account-title span {
+  overflow: hidden;
+  color: #617286;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.haruki-benefit-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 16px;
+  padding-left: 22px;
+  color: #42566a;
+}
+
+.haruki-public-list,
+.haruki-binding-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.haruki-public-card,
+.haruki-binding-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #d9e4ed;
+  border-radius: 12px;
+  background: #fbfdff;
+}
+
+.haruki-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.haruki-card-heading .status-pill {
+  flex: 0 0 auto;
+}
+
+.status-pill.warning {
+  color: #865c13;
+  background: #fff4cf;
+}
+
+.haruki-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.haruki-meta-grid > div {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: #f1f6f9;
+}
+
+.haruki-meta-grid dt {
+  color: #6b7c8f;
+  font-size: 12px;
+}
+
+.haruki-meta-grid dd {
+  overflow: hidden;
+  margin: 0;
+  color: #26394c;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.haruki-inline-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  color: #8a5f17;
+  font-size: 13px;
+}
+
+.haruki-import-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 10px;
+}
+
+.haruki-import-list label {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d6e3ea;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.haruki-import-list label:has(input:checked) {
+  border-color: #00a7a5;
+  background: #eefafa;
+}
+
+.haruki-import-list span {
+  display: grid;
+}
+
+.haruki-import-list small {
+  color: #66798c;
+}
+
+.haruki-auto-sync {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.haruki-auto-sync span {
+  display: grid;
+}
+
+.haruki-auto-sync small {
+  color: #6b7c8f;
+}
+
+.haruki-review-panel {
+  position: fixed;
+  z-index: 80;
+  right: 24px;
+  bottom: 24px;
+  display: grid;
+  gap: 10px;
+  width: min(640px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 18px;
+  overflow: auto;
+  border: 1px solid #b9d8dc;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(25, 48, 65, .24);
+}
+
+.haruki-review-panel h3 {
+  margin: 0;
+}
+
+.haruki-review-row {
+  display: grid;
+  grid-template-columns: 1fr minmax(135px, auto);
+  align-items: center;
+  gap: 14px;
+  padding: 11px 12px;
+  border: 1px solid #e0e8ee;
+  border-radius: 10px;
+}
+
+.haruki-review-row.needs-attention {
+  border-color: #ead39f;
+  background: #fffaf0;
+}
+
+.haruki-review-row > div {
+  display: grid;
+  gap: 3px;
+}
+
+.haruki-review-row span,
+.haruki-review-row small {
+  color: #68798b;
+  font-size: 12px;
+}
+
+.haruki-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  grid-column: 1 / -1;
+  padding: 32px 20px;
+  color: #637486;
+  text-align: center;
+}
+
+.haruki-empty-state p {
+  max-width: 520px;
+  margin: 0;
+}
+
+.danger-button {
+  color: #9a3b3b;
+}
+
+@keyframes haruki-spin {
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: haruki-spin .85s linear infinite;
+}
+
+@media (max-width: 860px) {
+  .haruki-hero,
+  .haruki-mode-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .haruki-hero {
+    display: grid;
+  }
+
+  .haruki-public-form {
+    grid-template-columns: 1fr;
+  }
+
+  .haruki-review-panel {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+}
+
+@media (max-width: 560px) {
+  .haruki-public-list,
+  .haruki-binding-list {
+    grid-template-columns: 1fr;
+  }
+
+  .haruki-card-heading,
+  .haruki-review-row {
+    grid-template-columns: 1fr;
+  }
+
+  .haruki-card-heading {
+    display: grid;
+  }
+
+  .haruki-global-message {
+    grid-template-columns: auto 1fr;
+  }
+
+  .haruki-global-message button {
+    grid-column: 1 / -1;
   }
 }

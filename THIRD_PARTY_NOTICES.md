@@ -26,7 +26,9 @@ upstream copyright and license notices in derived source files.
 - Local reference revision: `6165a76ca0f832c98ad550087dd440bf4192e258`
 - License: GNU Affero General Public License, version 3.0
 - Use in this project: reference and source of derived or adapted behavior in
-  calculators, master-data models, recommendation flows, charts, and tooling.
+  calculators, master-data models, recommendation flows, charts, tooling, and
+  the Haruki OAuth endpoint/PKCE contract. pjsktools uses its own server-side
+  token custody and cross-device persistence architecture.
 
 Any modified or derived AGPL-covered work must remain available to users of a
 public network deployment under AGPL-3.0-or-later.
@@ -36,6 +38,7 @@ public network deployment under AGPL-3.0-or-later.
 ### Team-Haruki projects
 
 - `Team-Haruki/Haruki-Sekai-API`
+- `Team-Haruki/Haruki-Toolbox-Backend`
 - `Team-Haruki/haruki-sekai-*-master`
 - `Team-Haruki/Haruki-Sekai-Asset-Updater`
 

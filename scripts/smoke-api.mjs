@@ -436,128 +436,24 @@ try {
     return response.json();
   }
 
-  const binding = await authed("POST", "/api/me/player-bindings", { region: "jp", playerUid: `smoke-${Date.now()}`, isDefault: true });
-  const secondBinding = await authed("POST", "/api/me/player-bindings", { region: "jp", playerUid: `smoke-alt-${Date.now()}`, isDefault: false, note: "second binding" });
-  const bindings = await authed("GET", "/api/me/player-bindings");
-  if (bindings.length < 2 || !bindings.some((item) => item.id === secondBinding.id)) throw new Error("multiple player bindings not listed");
-  await authed("PATCH", `/api/me/player-bindings/${secondBinding.id}`, { note: "patched", isDefault: false });
-  await authed("PUT", `/api/me/player-data/${secondBinding.id}/cards`, { region: "jp", cards: [{ cardId: "1", level: 1 }] });
-  await authed("DELETE", `/api/me/player-data/${secondBinding.id}/cards/1`);
-  const deletedInventory = await authed("GET", `/api/me/player-data/${secondBinding.id}/cards`);
-  if (deletedInventory.length) throw new Error("explicit inventory card delete failed");
-  await authed("PUT", `/api/me/player-data/${binding.id}/area-items`, { data: [{ areaItemId: "1", level: 10 }] });
-  await authed("PUT", `/api/me/player-data/${binding.id}/character-ranks`, { data: [{ characterId: "1", rank: 30 }] });
-  await authed("PUT", `/api/me/player-data/${binding.id}/honors`, { data: [{ honorId: "1" }] });
-  await authed("PUT", `/api/me/player-data/${binding.id}/materials`, { data: [{ materialId: "1", quantity: 1000 }] });
-  await authed("PUT", `/api/me/player-data/${binding.id}/challenge-live`, { data: { stages: [{ characterId: "1", rank: 25 }], results: [{ characterId: "1", highScore: 1234567 }], highScoreRewards: [], decks: [{ characterId: "1" }] } });
-  await authed("PUT", `/api/me/player-data/${binding.id}/mysekai-canvas`, { data: [{ canvasId: "1" }] });
-  await authed("PUT", `/api/me/player-data/${binding.id}/cards`, { region: "jp", cards: ["1", "2", "3", "4", "5"].map((cardId) => ({ cardId, level: 60, masterRank: 0, skillLevel: 1 })) });
-  const asset = await authed("GET", `/api/me/player-data/${binding.id}/area-items`);
-  if (!asset.data) throw new Error("player data asset not returned");
-  const validation = await authed("POST", `/api/me/player-data/${binding.id}/validate`, { kind: "honors", data: [{ honorId: "1" }] });
-  if (!validation.valid) throw new Error("player data validation unexpectedly failed");
-  if (!Array.isArray(validation.lookupResults) || !Array.isArray(validation.fieldHelp) || !Array.isArray(validation.toolImpact) || !Array.isArray(validation.normalizedPreview)) {
-    throw new Error("player data validation missing lookup/help/impact preview fields");
-  }
-  const review = await authed("POST", `/api/me/player-data/${binding.id}/import/review`, {
-    cards: [{ cardId: "1", level: 60 }, { cardId: "6", level: 1 }, { cardId: "999999", level: 1 }],
-    playerData: [
-      { kind: "music-results", data: [{ musicId: "1", difficulty: "easy", clearStatus: "clear", score: 100000 }] },
-      { kind: "challenge-live", data: { characterId: "1", cardIds: ["1", "2"] } }
-    ]
-  });
-  if (!review.valid || review.importReview?.cards?.count !== 3 || review.importReview?.playerDataGroups?.length !== 2) {
-    throw new Error("player data import review returned invalid shape");
-  }
-  if (!review.normalizedPreview?.cards || !Array.isArray(review.toolImpact) || !review.fieldHelp?.cards) {
-    throw new Error("player data import review missing preview/help/impact fields");
-  }
-  if (!review.importReview?.cardDiff?.updated?.length || !review.importReview?.cardDiff?.added?.length || !review.importReview?.cardDiff?.unresolved?.length || !Array.isArray(review.postSaveImpact)) {
-    throw new Error("player data import review missing card diff/post-save impact");
-  }
-  const reviewedOnlyMusic = await authed("GET", `/api/me/player-data/${binding.id}/music-results`);
-  if (reviewedOnlyMusic.data) throw new Error("player data import review wrote data unexpectedly");
-  const rejectedReview = await authed("POST", `/api/me/player-data/${binding.id}/import/review`, {
-    cards: [],
-    playerData: [{ kind: "unsupported-kind", data: [] }]
-  });
-  if (rejectedReview.valid || !rejectedReview.importReview?.unsupportedKinds?.length) {
-    throw new Error("player data import review did not report unsupported kind");
+  const connection = await authed("GET", "/api/me/haruki/connection");
+  if (connection.connected !== false || !Array.isArray(connection.availableBindings)) {
+    throw new Error("Haruki connection status returned invalid shape");
   }
   const profile = await authed("GET", "/api/me/profile");
-  if (!profile.user || !Array.isArray(profile.bindings)) throw new Error("me profile returned invalid shape");
-  const summary = await authed("GET", `/api/me/player-bindings/${binding.id}/summary`);
-  if (!summary.completeness) throw new Error("binding summary missing completeness");
-  const profileAnalysis = await authed("GET", `/api/me/player-bindings/${binding.id}/profile-analysis`);
-  if (!profileAnalysis.profileSummary || !profileAnalysis.characterRankAnalysis || !profileAnalysis.challengeAnalysis || !profileAnalysis.powerBonusAnalysis || !profileAnalysis.areaItemUpgradeAnalysis) {
-    throw new Error("profile analysis returned invalid shape");
+  if (!profile.user || !Array.isArray(profile.bindings) || profile.bindings.length !== 0) {
+    throw new Error("new account unexpectedly contains persistent player bindings");
   }
-  if (profileAnalysis.binding.region !== "jp" || profileAnalysis.sourceDiagnostics?.crossRegionFallback !== false) {
-    throw new Error("profile analysis did not preserve region isolation");
+  for (const [method, url, payload] of [
+    ["POST", "/api/me/player-bindings", { region: "jp", playerUid: "123456789" }],
+    ["PUT", "/api/me/player-data/missing/cards", { region: "jp", cards: [] }],
+    ["POST", "/api/me/player-data/missing/validate", { kind: "honors", data: [] }],
+    ["GET", "/api/me/player-data/missing/export", undefined]
+  ]) {
+    const response = await app.inject({ method, url, payload, headers: { authorization: `Bearer ${token}` } });
+    if (response.statusCode !== 404) throw new Error(`${method} ${url} should remain removed`);
   }
-  if (!profileAnalysis.characterRankAnalysis.items.length || !profileAnalysis.challengeAnalysis.items.length) {
-    throw new Error("profile analysis did not consume uploaded character/challenge data");
-  }
-  if (profileAnalysis.powerBonusAnalysis.formulaVersion !== "normal-event-v4.2-reference" || !Array.isArray(profileAnalysis.powerBonusAnalysis.missingFields)) {
-    throw new Error("profile analysis missing shared CardCalculator diagnostics");
-  }
-  if (profileAnalysis.areaItemUpgradeAnalysis.areaItemVersion !== "area-item-v1-reference") {
-    throw new Error("profile analysis does not reuse shared area item recommendation");
-  }
-  const completeness = await authed("GET", `/api/me/player-data/${binding.id}/completeness/full`);
-  if (!completeness.sections?.deckRecommend) throw new Error("full completeness missing sections");
-  const exported = await authed("GET", `/api/me/player-data/${binding.id}/export`);
-  if (exported.schemaVersion !== 2 || !Array.isArray(exported.playerData) || exported.playerData.length < 4) {
-    throw new Error("export missing player data");
-  }
-  if (!exported.formulaReadiness || !Array.isArray(exported.toolContextWarnings)) {
-    throw new Error("export missing formula readiness fields");
-  }
-  const boundDeck = await authed("POST", "/api/me/tools/deck-recommend", { region: "jp", bindingId: binding.id, limit: 1 });
-  if (!Array.isArray(boundDeck.recommendedCards) && !Array.isArray(boundDeck.decks)) {
-    throw new Error("bound deck recommend returned invalid shape");
-  }
-  if (!boundDeck.sharedFormulaVersion || !boundDeck.formulaContext || !boundDeck.recommendedCards?.[0]?.cardContributionBreakdown) {
-    throw new Error("bound deck recommend missing contribution breakdown");
-  }
-  const savedA = await authed("POST", "/api/me/deck-configs", { region: "jp", bindingId: binding.id, name: "Compare A", cardIds: ["1", "2", "3", "4", "5"] });
-  const savedB = await authed("POST", "/api/me/deck-configs", { region: "jp", bindingId: binding.id, name: "Compare B", cardIds: ["5", "4", "3", "2", "1"] });
-  const boundCompare = await authed("POST", "/api/me/tools/deck-compare", {
-    region: "jp", bindingId: binding.id, musicId: "1", difficulty: "easy",
-    candidates: [{ deckConfigId: savedA.id }, { deckConfigId: savedB.id }],
-    teammates: [
-      { power: 200000, effectiveness: 200 }, { power: 210000, effectiveness: 210 },
-      { power: 220000, effectiveness: 220 }, { power: 230000, effectiveness: 230 }
-    ]
-  });
-  if (boundCompare.comparisons?.length !== 2 || boundCompare.comparisons.some((item) => item.source !== "CardCalculator/DeckCalculator")) {
-    throw new Error("bound deck-compare did not resolve saved decks through inventory");
-  }
-  const boundMysekai = await authed("POST", "/api/me/tools/mysekai-calc", { region: "jp", bindingId: binding.id });
-  if (!Array.isArray(boundMysekai.candidates)) throw new Error("bound mysekai calc returned invalid shape");
-  const toolContext = await authed("GET", `/api/me/player-bindings/${binding.id}/tool-context`);
-  if (!toolContext.toolAvailability) throw new Error("tool-context missing toolAvailability");
-  if (typeof toolContext.toolAvailability.deckRecommend?.ready !== "boolean" || !Array.isArray(toolContext.toolAvailability.deckRecommend?.missingFields)) {
-    throw new Error("tool-context missing structured tool availability");
-  }
-  if (!toolContext.sharedFormulaVersion || !toolContext.assetReadiness || !toolContext.formulaImpact) {
-    throw new Error("tool-context missing shared formula readiness");
-  }
-  if (typeof toolContext.toolAvailability.normalEventPlan?.ready !== "boolean" || typeof toolContext.normalEventPlan?.ready !== "boolean") {
-    throw new Error("tool-context missing normal-event-plan availability");
-  }
-  const boundEventPoint = await authed("POST", "/api/me/tools/event-point-calc", { region: "jp", bindingId: binding.id, eventId: "1", musicId: "1", difficulty: "easy" });
-  if (!boundEventPoint.realDataRequired || !boundEventPoint.assetReadiness) throw new Error("bound event-point-calc returned invalid shape");
-  const boundMusic = await authed("POST", "/api/me/tools/music-recommend", { region: "jp", bindingId: binding.id, limit: 2 });
-  if (!Array.isArray(boundMusic.recommendations) || !boundMusic.assetReadiness) throw new Error("bound music-recommend returned invalid shape");
-  const boundArea = await authed("POST", "/api/me/tools/area-item-recommend", { region: "jp", bindingId: binding.id, limit: 2 });
-  if (!Array.isArray(boundArea.recommendations) || !boundArea.assetReadiness) throw new Error("bound area-item-recommend returned invalid shape");
-  const boundPlan = await authed("POST", "/api/me/tools/normal-event-plan", { region: "jp", bindingId: binding.id, eventId: "1", musicId: "1", difficulty: "easy", targetPt: 100000, currentPt: 0, remainingMinutes: 120, limit: 2 });
-  if (!boundPlan.sharedFormulaVersion || !boundPlan.assetReadiness || !boundPlan.deck?.recommendedCards || !boundPlan.eventPoint?.realDataRequired) {
-    throw new Error("bound normal-event-plan returned invalid shape");
-  }
-  await authed("DELETE", `/api/me/player-bindings/${secondBinding.id}`);
-  console.log("player data asset APIs ok");
+  console.log("Haruki-only persistent player data contract ok");
 
   const liveRanking = await request("GET", "/api/events/jp/live-ranking");
   if (!Array.isArray(liveRanking.top100) || !Array.isArray(liveRanking.borderLines) || !liveRanking.sourceHealth) {

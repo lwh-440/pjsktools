@@ -30,12 +30,6 @@ data class ToolContext(val inventoryCount: Int, val playerDataKinds: List<String
 data class ProfileAnalysis(val nickname: String?, val rank: Int?, val comment: String?, val rawJson: String)
 data class DeckRecommendation(val rawJson: String)
 data class QqAuthStart(val state: String, val authorizeUrl: String, val expiresInSeconds: Long? = null)
-val PlayerDataKinds = listOf("area-items", "character-ranks", "music-results", "materials", "honors", "profile-honors", "challenge-live", "world-bloom-support", "mysekai-canvas", "mysekai-gates", "mysekai-fixtures")
-data class PlayerAssetWorkspace(
-    val kind: String = PlayerDataKinds.first(), val editorJson: String = "[]", val cardsJson: String = "[]",
-    val validationJson: String? = null, val importPayload: String = "{}", val importReviewJson: String? = null,
-    val exportJson: String? = null, val completenessJson: String? = null
-)
 data class MeProfile(
     val user: AccountUser, val oauthAccounts: List<OAuthAccount> = emptyList(),
     val bindings: List<PlayerBinding> = emptyList(), val bindingSummaries: List<BindingSummary> = emptyList(),
@@ -49,7 +43,6 @@ data class RegistrationCodeResult(
     val resendAfterSeconds: Long? = null,
     val developmentCode: String? = null
 )
-data class NewPlayerBinding(val region: String, val playerUid: String, val displayName: String = "", val note: String = "", val isDefault: Boolean = false)
 enum class AccountEntryMode { LOGIN, REGISTER }
 
 data class AccountUiState(
@@ -58,7 +51,8 @@ data class AccountUiState(
     val entryMode: AccountEntryMode = AccountEntryMode.LOGIN, val message: String? = null,
     val error: String? = null, val registrationCode: RegistrationCodeResult? = null,
     val profileAnalysis: ProfileAnalysis? = null, val toolContext: ToolContext? = null,
-    val deckRecommendation: DeckRecommendation? = null, val assets: PlayerAssetWorkspace = PlayerAssetWorkspace(),
+    val deckRecommendation: DeckRecommendation? = null,
+    val haruki: HarukiUiState = HarukiUiState(),
     val qqAuthStart: QqAuthStart? = null
 ) {
     val isAuthenticated get() = session != null

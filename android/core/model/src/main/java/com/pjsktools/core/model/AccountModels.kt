@@ -53,7 +53,6 @@ data class PlayerBindingSummary(
 interface PlayerBindingRepository {
     val bindings: Flow<List<PlayerBindingSummary>>
     suspend fun refresh(): Result<Unit>
-    suspend fun create(region: Region, playerUid: String, displayName: String?, isDefault: Boolean): Result<PlayerBindingSummary>
 }
 
 enum class FavoriteType(val apiName: String) {

@@ -1,10 +1,7 @@
-import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
-import { playerInterfaceCases, rankingRegions, suiteCases } from "./player-interface-cases.mjs";
+import { playerInterfaceCases, rankingRegions } from "./player-interface-cases.mjs";
 
-const execFileAsync = promisify(execFile);
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 1) {
   const token = process.argv[index];
@@ -22,7 +19,6 @@ for (let index = 2; index < process.argv.length; index += 1) {
 const suiteBase = args.get("suite-base") ?? "https://suite-api.haruki.seiunx.com/public";
 const toolboxBase = args.get("toolbox-base") ?? "https://toolbox-api-direct.haruki.seiunx.com";
 const reportDir = path.resolve(args.get("report-dir") ?? path.join("artifacts", "player-interface"));
-const skipCn = args.get("skip-cn") === "true";
 
 process.env.PJSKTOOLS_FORCE_MEMORY_STORE = "true";
 process.env.PJSKTOOLS_FAST_MASTER_REFRESH = "true";
@@ -101,62 +97,6 @@ function check(checks, id, passed, severity, detail) {
   checks.push({ id, passed: Boolean(passed), severity, detail });
 }
 
-function parseChildJson(stdout) {
-  const trimmed = stdout.trim();
-  if (!trimmed) throw new Error("CN verifier returned no JSON");
-  return JSON.parse(trimmed);
-}
-
-async function runCnCase(item, options = {}) {
-  const commandArgs = [
-    "scripts/verify-real-uid.mjs",
-    "--region", item.region,
-    "--uid", item.uid,
-    "--suite-base", suiteBase,
-    "--toolbox-base", toolboxBase
-  ];
-  if (options.profileAnalysis) commandArgs.push("--profile-analysis", "run");
-  const startedAt = Date.now();
-  try {
-    const { stdout, stderr } = await execFileAsync(process.execPath, commandArgs, {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        PJSKTOOLS_FORCE_MEMORY_STORE: "true",
-        PJSKTOOLS_FAST_MASTER_REFRESH: "true",
-        PJSKTOOLS_SILENT_APP_LOGS: "true",
-        DATABASE_URL: ""
-      },
-      timeout: 10 * 60_000,
-      maxBuffer: 10 * 1024 * 1024
-    });
-    return { ok: true, durationMs: Date.now() - startedAt, report: parseChildJson(stdout), stderr: stderr.trim() || undefined };
-  } catch (error) {
-    let report;
-    try {
-      report = parseChildJson(error.stdout ?? "");
-    } catch {
-      report = undefined;
-    }
-    const stderr = String(error.stderr ?? "");
-    const failureType = /heap out of memory/i.test(stderr)
-      ? "out-of-memory"
-      : /timed out|timeout/i.test(error instanceof Error ? error.message : String(error))
-        ? "timeout"
-        : "child-process-failure";
-    return {
-      ok: false,
-      durationMs: Date.now() - startedAt,
-      failureType,
-      error: failureType === "out-of-memory"
-        ? "profile-analysis exceeded the default Node heap limit"
-        : (error instanceof Error ? error.message : String(error)).slice(0, 1000),
-      stderr: stderr.slice(-1500) || undefined,
-      report
-    };
-  }
-}
-
 function markdown(report) {
   const lines = [
     "# Player interface verification report",
@@ -180,10 +120,6 @@ function markdown(report) {
   for (const item of report.players) {
     lines.push(`| ${item.region} | ${item.uid} | ${item.role} | ${item.profile.status} | ${item.refresh.status} | ${item.sources.suite.status} |`);
   }
-  lines.push("", "## CN full-chain runs", "");
-  for (const item of report.cnRuns) {
-    lines.push(`- ${item.caseId} [${item.kind}]: ${item.ok ? "PASS" : "FAIL"} (${item.durationMs} ms)`);
-  }
   lines.push("");
   return `${lines.join("\n")}\n`;
 }
@@ -192,7 +128,6 @@ const app = await buildApp();
 const checks = [];
 const ranking = [];
 const players = [];
-const cnRuns = [];
 
 try {
   for (const region of rankingRegions) {
@@ -326,58 +261,6 @@ try {
   check(checks, "negative.invalid-rank", invalidRank.status === 400, "release-blocking", compactEndpoint(invalidRank));
   check(checks, "negative.unauthorized", unauthorized.status === 401, "release-blocking", compactEndpoint(unauthorized));
 
-  if (!skipCn) {
-    for (const item of suiteCases) {
-      const result = await runCnCase(item);
-      cnRuns.push({ caseId: `${item.region}:${item.uid}`, kind: "full-chain", ...result });
-      const checksSummary = result.report?.interfaceChecks;
-      const interfacesPassed = result.ok
-        && checksSummary?.unauthorizedSummary?.status === 401
-        && checksSummary?.missingBinding?.status === 404
-        && checksSummary?.wrongRegion?.status === 400
-        && checksSummary?.duplicateBinding?.status === 409
-        && checksSummary?.playerDataConcurrency?.readStatus === 200
-        && checksSummary?.playerDataConcurrency?.etagPresent === true
-        && checksSummary?.playerDataConcurrency?.updateStatus === 200
-        && checksSummary?.playerDataConcurrency?.staleUpdateStatus === 412
-        && checksSummary?.profileShare?.metadataStatus === 200
-        && checksSummary?.profileShare?.pngStatus === 200
-        && checksSummary?.profileShare?.notModifiedStatus === 304
-        && checksSummary?.profileShare?.dimensions?.width === 1200
-        && checksSummary?.profileShare?.dimensions?.height === 630
-        && [
-          "deckRecommend", "deckCompare", "scoreControl", "worldBloomSupportFallback",
-          "eventPointCalc", "normalEventPlan", "musicRecommend", "areaItemRecommend", "mysekaiCalc"
-        ].every((key) => result.report?.toolRunResults?.[key])
-        && result.report?.toolRunResults?.worldBloomSupportFallback?.supportDeckSource === "recommended-from-inventory"
-        && result.report?.toolRunResults?.mysekaiCalc?.referenceParityStatus === "matched";
-      check(checks, `cn.full-chain.${item.uid}`, interfacesPassed, "release-blocking", {
-        ok: result.ok,
-        durationMs: result.durationMs,
-        interfaceChecks: checksSummary,
-        error: result.error
-      });
-      const profileAnalysisResult = await runCnCase(item, { profileAnalysis: true });
-      cnRuns.push({ caseId: `${item.region}:${item.uid}`, kind: "profile-analysis", ...profileAnalysisResult });
-      check(checks, `cn.profile-analysis.${item.uid}`, profileAnalysisResult.ok && profileAnalysisResult.report?.profileAnalysis?.status === "completed", "release-blocking", {
-        ok: profileAnalysisResult.ok,
-        durationMs: profileAnalysisResult.durationMs,
-        error: profileAnalysisResult.error,
-        failureType: profileAnalysisResult.failureType,
-        stderr: profileAnalysisResult.stderr
-      });
-    }
-    const fullCnRuns = cnRuns.filter((item) => item.kind === "full-chain");
-    const isolated = fullCnRuns.length === suiteCases.length
-      && new Set(fullCnRuns.map((item) => item.report?.toolContext?.binding?.id)).size === suiteCases.length
-      && fullCnRuns.every((item) => item.report?.realUidCaseId === item.caseId
-        && item.report?.toolContext?.binding?.playerUid === item.caseId.split(":")[1]);
-    check(checks, "cn.binding-isolation", isolated, "release-blocking", fullCnRuns.map((item) => ({
-      caseId: item.caseId,
-      bindingUid: item.report?.toolContext?.binding?.playerUid,
-      inventoryCount: item.report?.bindingSummary?.inventoryCount
-    })));
-  }
 } finally {
   await app.close();
 }
@@ -394,22 +277,12 @@ const report = {
     databaseUrlRemoved: true,
     suiteBase,
     toolboxBase,
-    rawPlayerPayloadsPersisted: false,
-    skipCn
+    rawPlayerPayloadsPersisted: false
   },
   summary: { releaseBlockingFailures, expectedMissingProfiles, knownSourceGaps, checks: checks.length },
   checks,
   ranking,
-  players,
-  cnRuns: cnRuns.map((item) => ({
-    caseId: item.caseId,
-    kind: item.kind,
-    ok: item.ok,
-    durationMs: item.durationMs,
-    error: item.error,
-    failureType: item.failureType,
-    report: item.report
-  }))
+  players
 };
 
 await mkdir(reportDir, { recursive: true });

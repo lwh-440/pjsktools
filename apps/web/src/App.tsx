@@ -42,7 +42,8 @@ import { ArtImage, DetailDrawer, Pagination, SearchBox } from "./components/ui";
 import { CatalogFilterPanel, type CatalogFilterMeta } from "./components/CatalogFilterPanel";
 import { FavoriteButton } from "./components/FavoriteButton";
 import type { StoryPlaybackContext } from "./components/StoryPlaybackPlayer";
-import { AssetsPage, BindingsPage, BoundDeckPage, LoginPage, MeHomePage, MeProfileAnalysisPage, RegisterPage, RequireAuth, ScoresPage } from "./pages/account";
+import { BoundDeckPage, LoginPage, MeHomePage, MeProfileAnalysisPage, RegisterPage, RequireAuth, ScoresPage } from "./pages/account";
+import { HarukiConnectionCenter } from "./components/HarukiConnectionCenter";
 import { RealChartPreview } from "./RealChartPreview";
 import type { RankingEntry, RankingPlayerDetail } from "./components/RankingDetailPanel";
 import { RankingDetailPanel } from "./components/RankingDetailPanel";
@@ -1615,7 +1616,7 @@ export function App() {
             <div className="mini-rank-list">{topRanks.map((entry) => <div key={entry.rank}><span>#{entry.rank}</span><strong>{entry.playerName ?? entry.name}</strong><small>{formatNumber(entry.score)} pt</small></div>)}{topRanks.length === 0 && <p className="empty-state">等待分数线数据。</p>}</div>
           </article>
           <article className="panel status-panel">
-            <div className="panel-heading"><div><h2>账号状态</h2><p>{auth.isAuthenticated ? "可使用绑定 UID 与上传资产" : "登录后启用资产联动"}</p></div></div>
+            <div className="panel-heading"><div><h2>账号状态</h2><p>{auth.isAuthenticated ? "可使用 Haruki 绑定与跨端玩家快照" : "登录后连接玩家数据"}</p></div></div>
             <Link className="feature-link" to={auth.isAuthenticated ? "/me" : "/login"}>{auth.isAuthenticated ? "进入个人信息管理" : "登录 / 注册"}</Link>
           </article>
           <article className="panel android-download-panel">
@@ -1892,7 +1893,7 @@ export function App() {
   function ProfilePage() {
     return (
       <section className="panel wide">
-        <div className="panel-heading"><div><h2>玩家档案查询</h2><p>公开 UID 仅展示公开资料；登录后可使用已导入资产进行完整分析。</p></div><Link className="button-link" to="/me/profile">打开我的档案分析</Link></div>
+        <div className="panel-heading"><div><h2>玩家档案查询</h2><p>公开 UID 仅展示公开资料；登录并通过 Haruki 同步后可进行完整分析。</p></div><Link className="button-link" to="/me/profile">打开我的档案分析</Link></div>
         <div className="inline-form"><input value={profileId} onChange={(event) => setProfileId(event.target.value)} placeholder="玩家 UID" /><button type="button" onClick={loadProfile}><Search size={16} />查询</button></div>
         {profile && <div className="profile"><strong>{profile.nickname}</strong><span>Lv.{profile.rank} / {profile.region.toUpperCase()} / {profile.source}</span><p>{profile.comment || "暂无公开签名"}</p></div>}
       </section>
@@ -2165,9 +2166,9 @@ export function App() {
           <div className="panel-heading">
             <div>
               <h2>登录态资产联动</h2>
-              <p>{binding ? `当前使用 ${binding.region.toUpperCase()} / ${binding.displayName || binding.playerUid}` : "登录并绑定 UID 后，可直接用上传资产驱动计算工具。"}</p>
+              <p>{binding ? `当前使用 ${binding.region.toUpperCase()} / ${binding.displayName || binding.playerUid}` : "登录并连接 Haruki 后，可直接用跨端玩家快照驱动计算工具。"}</p>
             </div>
-            <Link className="text-link" to={auth.isAuthenticated ? "/me/assets" : "/login"}>{auth.isAuthenticated ? "管理资产" : "登录 / 注册"}</Link>
+            <Link className="text-link" to={auth.isAuthenticated ? "/me/assets" : "/login"}>{auth.isAuthenticated ? "连接玩家数据" : "登录 / 注册"}</Link>
           </div>
           <div className="button-row">
             <button type="button" disabled={!binding || !bindingRegionMatches || !songSelectionReady} onClick={calculateBoundPlan}>绑定数据普通活动规划</button>
@@ -2341,7 +2342,7 @@ export function App() {
             <button type="button" onClick={calculateMysekai}><Wand2 size={16} />手动输入计算</button>
             <button type="button" className="secondary" disabled={!binding} onClick={calculateBoundMysekai}>使用绑定 UID 数据</button>
           </div>
-          {!binding && <p className="empty-state">登录并绑定 UID 后，可直接使用上传的 MySekai 资产计算。</p>}
+          {!binding && <p className="empty-state">登录并通过 Haruki 同步 UID 后，可直接使用跨端 MySekai 数据计算。</p>}
         </article>
         <article className="panel wide mysekai-result-panel">
           <h3>计算结果</h3>
@@ -3029,8 +3030,8 @@ export function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/me" element={<RequireAuth><MeHomePage /></RequireAuth>} />
           <Route path="/me/profile" element={<RequireAuth><MeProfileAnalysisPage /></RequireAuth>} />
-          <Route path="/me/bindings" element={<RequireAuth><BindingsPage /></RequireAuth>} />
-          <Route path="/me/assets" element={<RequireAuth><AssetsPage /></RequireAuth>} />
+          <Route path="/me/bindings" element={<RequireAuth><HarukiConnectionCenter /></RequireAuth>} />
+          <Route path="/me/assets" element={<RequireAuth><HarukiConnectionCenter /></RequireAuth>} />
           <Route path="/me/deck" element={<RequireAuth><BoundDeckPage eventId={event?.id === "none" ? undefined : event?.id} /></RequireAuth>} />
           <Route path="/me/scores" element={<RequireAuth><ScoresPage songs={songs} region={region} /></RequireAuth>} />
           <Route path="/me/favorites" element={<RequireAuth><FavoritesPage /></RequireAuth>} />

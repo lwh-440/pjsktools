@@ -27,7 +27,6 @@ interface ApiContractAdapter {
     suspend fun calculateScoreControl(request: ScoreControlRequest): ScoreControlResultDto
     suspend fun estimateEventPoint(request: EventPointEstimateRequest): EventPointEstimateResultDto
     suspend fun getPlayerBindings(): PlayerBindingPageDto
-    suspend fun createPlayerBinding(request: PlayerBindingCreateRequest): PlayerBindingDto
     suspend fun getPlayerProfile(region: String, userId: String): PlayerProfileDto
     suspend fun refreshPlayerProfile(region: String, userId: String): PlayerProfileDto
     suspend fun getGachaCatalog(region: String, page: Int, pageSize: Int, q: String? = null, sort: String? = null, category: String? = null, rarity: String? = null, characterId: Int? = null, partType: String? = null, source: String? = null, gender: String? = null, filters: CatalogFilterState = CatalogFilterState()): GachaPageDto
@@ -117,7 +116,6 @@ class GeneratedApiBridge(
     override suspend fun calculateScoreControl(request: ScoreControlRequest) = call<com.pjsktools.api.generated.ScoreControlResult, ScoreControlResultDto> { generated.calculateScoreControl(request) }
     override suspend fun estimateEventPoint(request: EventPointEstimateRequest) = call<com.pjsktools.api.generated.EventPointEstimateResult, EventPointEstimateResultDto> { generated.estimateEventPoint(request) }
     override suspend fun getPlayerBindings() = call<PlayerBindingPage, PlayerBindingPageDto> { generated.getPlayerBindings(1, 100) }
-    override suspend fun createPlayerBinding(request: PlayerBindingCreateRequest) = call<PlayerBinding, PlayerBindingDto> { generated.createPlayerBinding(request) }
     override suspend fun getPlayerProfile(region: String, userId: String) = call<PlayerProfile, PlayerProfileDto> { generated.getPlayerProfile(region(region), userId) }
     override suspend fun refreshPlayerProfile(region: String, userId: String) = call<PlayerProfile, PlayerProfileDto> { generated.refreshPlayerProfile(region(region), userId) }
     override suspend fun getGachaCatalog(region: String, page: Int, pageSize: Int, q: String?, sort: String?, category: String?, rarity: String?, characterId: Int?, partType: String?, source: String?, gender: String?, filters: CatalogFilterState) = call<GachaPage, GachaPageDto> {

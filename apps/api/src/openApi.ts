@@ -324,16 +324,18 @@ const schemas: Record<string, Schema> = {
     properties: {
       id: { type: "string" }, region: ref("RegionId"), playerUid: { type: "string" }, displayName: nullable({ type: "string" }),
       isDefault: { type: "boolean" }, note: nullable({ type: "string" }), refreshedAt: nullable({ type: "string" }),
+      harukiBindingId: nullable({ type: "string" }), harukiBindingKey: nullable({ type: "string" }), verified: { type: "boolean" }, source: nullable({ type: "string", enum: ["haruki-oauth"] }),
+      upstreamUploadedAt: nullable({ type: "string", format: "date-time" }),
+      lastSyncAttemptAt: nullable({ type: "string", format: "date-time" }),
+      lastSyncSucceededAt: nullable({ type: "string", format: "date-time" }),
+      lastSyncStatus: nullable({ type: "string", enum: ["never", "ready", "syncing", "success", "no-change", "needs-review", "reauthorize", "upstream-error", "parse-error"] }),
+      pendingEmptyGroups: stringArray, autoSyncDaily: { type: "boolean" },
       createdAt: { type: "string" }, updatedAt: { type: "string" }, version: nullable({ type: "string" })
     }
   },
   PlayerBindingPage: {
     type: "object", required: ["items", "page", "pageSize", "total", "totalPages"],
     properties: { items: { type: "array", items: ref("PlayerBinding") }, page: { type: "integer" }, pageSize: { type: "integer" }, total: { type: "integer" }, totalPages: { type: "integer" }, hasNextPage: { type: "boolean" }, hasPreviousPage: { type: "boolean" } }
-  },
-  PlayerBindingCreateRequest: {
-    type: "object", required: ["region", "playerUid"],
-    properties: { region: ref("RegionId"), playerUid: { type: "string", minLength: 1, maxLength: 32 }, displayName: nullable({ type: "string" }), isDefault: { type: "boolean" }, note: nullable({ type: "string" }) }
   },
   PlayerBindingPatchRequest: {
     type: "object", minProperties: 1,
@@ -343,6 +345,174 @@ const schemas: Record<string, Schema> = {
     type: "object", required: ["region", "userId", "nickname", "rank", "updatedAt", "source"],
     properties: { region: ref("RegionId"), userId: { type: "string" }, nickname: { type: "string" }, rank: { type: "integer" }, comment: nullable({ type: "string" }), titles: stringArray, updatedAt: { type: "string" }, source: { type: "string" } }
   }
+};
+
+schemas.HarukiAvailableBinding = {
+  type: "object", additionalProperties: false, required: ["id", "bindingKey", "region", "playerUid", "verified"],
+  properties: {
+    id: { type: "string" }, bindingKey: { type: "string" }, upstreamBindingId: nullable({ type: "string" }), region: ref("RegionId"), playerUid: { type: "string" },
+    displayName: nullable({ type: "string" }), verified: { type: "boolean" }
+  }
+};
+schemas.HarukiConnection = {
+  type: "object", additionalProperties: false, required: ["connected", "oauthConfigured", "availableBindings"],
+  properties: {
+    connected: { type: "boolean" }, oauthConfigured: { type: "boolean" },
+    status: nullable({ type: "string", enum: ["active", "reauthorize"] }), scope: stringArray,
+    availableBindings: { type: "array", items: ref("HarukiAvailableBinding") },
+    createdAt: nullable({ type: "string", format: "date-time" }), updatedAt: nullable({ type: "string", format: "date-time" })
+  }
+};
+schemas.HarukiPublicPreviewRequest = {
+  type: "object", additionalProperties: false, required: ["region", "playerUid"],
+  properties: { region: ref("RegionId"), playerUid: { type: "string", pattern: "^[0-9]{5,32}$" } }
+};
+schemas.HarukiPublicCardEpisode = {
+  type: "object", additionalProperties: false, required: ["cardEpisodeId", "scenarioStatus", "scenarioStatusReasons", "isNotSkipped"],
+  properties: {
+    cardEpisodeId: { type: "string" }, scenarioStatus: { type: "string" },
+    scenarioStatusReasons: stringArray, isNotSkipped: { type: "boolean" }
+  }
+};
+schemas.HarukiPublicCard = {
+  type: "object", additionalProperties: false, required: ["cardId", "specialTrainingStatus", "defaultImage", "episodes", "episodesRead"],
+  properties: {
+    cardId: { type: "string" }, level: nullable({ type: "number" }), masterRank: nullable({ type: "number" }),
+    skillLevel: nullable({ type: "number" }),
+    specialTrainingStatus: { type: "string", enum: ["not_doing", "done", "unknown"] },
+    defaultImage: { type: "string", enum: ["original", "after_training"] },
+    episodes: { type: "array", items: ref("HarukiPublicCardEpisode") }, episodesRead: { type: "boolean" }
+  }
+};
+schemas.HarukiPublicDataItem = {
+  type: "object", additionalProperties: false,
+  properties: {
+    areaId: nullable({ type: "string" }), areaItemId: nullable({ type: "string" }),
+    characterId: nullable({ type: "string" }), rank: nullable({ type: "number" }),
+    musicId: nullable({ type: "string" }), difficulty: nullable({ type: "string" }),
+    clearStatus: nullable({ type: "string" }), score: nullable({ type: "number" }),
+    materialId: nullable({ type: "string" }), quantity: nullable({ type: "number" }), source: nullable({ type: "string" }),
+    deckId: nullable({ type: "string" }), name: nullable({ type: "string" }),
+    leaderCardId: nullable({ type: "string" }), cardIds: stringArray,
+    highScore: nullable({ type: "number" }), stageCount: nullable({ type: "number" }),
+    claimedHighScoreRewardCount: nullable({ type: "number" }),
+    eventId: nullable({ type: "string" }), gameCharacterId: nullable({ type: "string" }),
+    honorId: nullable({ type: "string" }), level: nullable({ type: "number" }),
+    kind: nullable({ type: "string" }), slot: nullable({ type: "number" }),
+    cardId: nullable({ type: "string" }), powerBonusRate: nullable({ type: "number" }),
+    gateId: nullable({ type: "string" }), unit: nullable({ type: "string" }),
+    fixtureId: nullable({ type: "string" }), totalBonusRate: nullable({ type: "number" })
+  }
+};
+schemas.HarukiPublicDataGroup = {
+  type: "object", additionalProperties: false, required: ["kind", "data"],
+  properties: {
+    kind: { type: "string", enum: [
+      "area-items", "character-ranks", "music-results", "materials", "challenge-live",
+      "world-bloom-support", "honors", "profile-honors", "decks", "mysekai-canvas",
+      "mysekai-gates", "mysekai-fixtures"
+    ] },
+    data: { type: "array", items: ref("HarukiPublicDataItem") }
+  }
+};
+schemas.HarukiPublicCompletenessGroup = {
+  type: "object", additionalProperties: false, required: ["present", "count"],
+  properties: { present: { type: "boolean" }, count: { type: "integer" } }
+};
+schemas.HarukiPublicSnapshot = {
+  type: "object", additionalProperties: false,
+  required: ["schemaVersion", "source", "region", "playerUid", "fetchedAt", "cards", "playerData", "completeness", "diagnostics"],
+  properties: {
+    schemaVersion: { type: "integer" }, source: { type: "string", enum: ["haruki-public"] },
+    region: ref("RegionId"), playerUid: { type: "string" }, fetchedAt: { type: "string", format: "date-time" },
+    upstreamUploadedAt: { type: "string", format: "date-time" },
+    profile: {
+      type: "object", additionalProperties: false,
+      properties: { name: { type: "string" }, rank: { type: "number" } }
+    },
+    cards: { type: "array", items: ref("HarukiPublicCard") },
+    playerData: { type: "array", items: ref("HarukiPublicDataGroup") },
+    completeness: {
+      type: "object", additionalProperties: false, required: ["cardsPresent", "cardCount", "groups"],
+      properties: {
+        cardsPresent: { type: "boolean" }, cardCount: { type: "integer" },
+        groups: { type: "object", additionalProperties: ref("HarukiPublicCompletenessGroup") }
+      }
+    },
+    diagnostics: {
+      type: "object", additionalProperties: false, required: ["unknownKeyNames", "invalidGroupNames"],
+      properties: { unknownKeyNames: stringArray, invalidGroupNames: stringArray }
+    }
+  }
+};
+schemas.HarukiPublicPreviewResponse = {
+  type: "object", additionalProperties: false, required: ["snapshot"], properties: { snapshot: ref("HarukiPublicSnapshot") }
+};
+schemas.HarukiOAuthStartRequest = {
+  type: "object", additionalProperties: false, required: ["client"],
+  properties: { client: { type: "string", enum: ["web", "android"] }, redirectUri: { type: "string", maxLength: 500 } }
+};
+schemas.HarukiOAuthStartResponse = {
+  type: "object", additionalProperties: false, required: ["authorizationUrl", "expiresIn"],
+  properties: { authorizationUrl: { type: "string", format: "uri" }, expiresIn: { type: "integer" } }
+};
+schemas.HarukiMobileCompleteRequest = {
+  type: "object", additionalProperties: false, required: ["handoff"], properties: { handoff: { type: "string", minLength: 32, maxLength: 200 } }
+};
+schemas.HarukiBindingImportRequest = {
+  type: "object", additionalProperties: false, required: ["bindingIds"],
+  properties: { bindingIds: { type: "array", minItems: 1, maxItems: 20, items: { type: "string" } } }
+};
+schemas.HarukiBindingImportResponse = {
+  type: "object", additionalProperties: false, required: ["bindings"],
+  properties: { bindings: { type: "array", items: ref("PlayerBinding") } }
+};
+schemas.HarukiDisconnectResponse = {
+  type: "object", additionalProperties: false, required: ["ok", "revokeStatus"],
+  properties: { ok: { type: "boolean" }, revokeStatus: { type: "string", enum: ["complete", "partial-failure", "not-connected"] } }
+};
+schemas.HarukiSyncReviewResponse = {
+  type: "object", required: ["reviewToken", "expiresIn", "review"],
+  properties: {
+    reviewToken: nullable({ type: "string" }), expiresIn: { type: "integer" }, noChange: { type: "boolean" },
+    review: nullable({ type: "object", properties: {
+      upstreamVersion: { type: "string" },
+      sourceSummary: { type: "object", properties: {
+        name: nullable({ type: "string" }), rank: nullable({ type: "number" }),
+        uploadTime: nullable({ type: "string", format: "date-time" })
+      } },
+      cards: { type: "object", properties: {
+        present: { type: "boolean" }, incomingCount: { type: "integer" },
+        addedCount: { type: "integer" }, changedCount: { type: "integer" },
+        missingCardsWillBePreserved: { type: "boolean" }
+      } },
+      groups: { type: "object", additionalProperties: {
+        type: "object", required: ["present", "incomingCount", "currentCount", "emptyRequiresConfirmation"],
+        properties: {
+          present: { type: "boolean" }, incomingCount: { type: "integer" },
+          currentCount: { type: "integer" }, emptyRequiresConfirmation: { type: "boolean" }
+        }
+      } }
+    } })
+  }
+};
+schemas.HarukiSyncConfirmRequest = {
+  type: "object", additionalProperties: false, required: ["reviewToken"],
+  properties: {
+    reviewToken: { type: "string" }, cards: { type: "string", enum: ["update", "keep"], default: "update" },
+    groups: { type: "object", additionalProperties: { type: "string" } }
+  }
+};
+schemas.HarukiSyncResult = {
+  type: "object", required: ["ok", "upstreamVersion", "updatedGroups", "cardsUpdated"],
+  properties: {
+    ok: { type: "boolean" }, upstreamVersion: { type: "string" }, updatedGroups: stringArray,
+    pendingEmptyGroups: stringArray, cardsUpdated: { type: "boolean" }, noChange: { type: "boolean" }
+  }
+};
+schemas.HarukiSyncSettingsRequest = {
+  type: "object", additionalProperties: false, required: ["autoSyncDaily"],
+  properties: { autoSyncDaily: { type: "boolean" } }
 };
 
 const catalogAssetSchema: Schema = {
@@ -556,10 +726,21 @@ const overrides: Record<string, OperationOverride> = {
   "POST /api/tools/event-point-calc": { operationId: "estimateEventPoint", response: ref("EventPointEstimateResult"), request: ref("EventPointEstimateRequest") },
   "POST /api/me/tools/score-control": { operationId: "calculateBoundScoreControl", response: ref("ScoreControlResult"), request: ref("ScoreControlRequest"), security: true },
   "POST /api/me/tools/event-point-calc": { operationId: "estimateBoundEventPoint", response: ref("EventPointEstimateResult"), request: ref("EventPointEstimateRequest"), security: true },
+  "POST /api/me/haruki/public/preview": { operationId: "previewHarukiPublicSuite", response: ref("HarukiPublicPreviewResponse"), request: ref("HarukiPublicPreviewRequest"), security: true },
+  "POST /api/me/haruki/oauth/start": { operationId: "startHarukiOAuth", response: ref("HarukiOAuthStartResponse"), request: ref("HarukiOAuthStartRequest"), security: true },
+  "POST /api/me/haruki/oauth/mobile/complete": { operationId: "completeHarukiMobileOAuth", response: ref("HarukiConnection"), request: ref("HarukiMobileCompleteRequest"), security: true },
+  "GET /api/me/haruki/connection": { operationId: "getHarukiConnection", response: ref("HarukiConnection"), security: true },
+  "DELETE /api/me/account": { operationId: "deleteMyAccount", response: ref("OkResponse"), security: true },
+  "POST /api/me/haruki/bindings/import": { operationId: "importHarukiBindings", response: ref("HarukiBindingImportResponse"), request: ref("HarukiBindingImportRequest"), security: true, parameters: [headerRef("IdempotencyKey")] },
+  "DELETE /api/me/haruki/connection": { operationId: "deleteHarukiConnection", response: ref("HarukiDisconnectResponse"), security: true, parameters: [headerRef("IdempotencyKey")] },
+  "POST /api/integrations/haruki/webhook/:region/:dataType/:playerUid": { operationId: "receiveHarukiWebhook", response: ref("OkResponse") },
   "GET /api/me/player-bindings": { operationId: "getPlayerBindings", response: ref("PlayerBindingPage"), security: true, parameters: [query("page", { type: "integer" }), query("pageSize", { type: "integer" })] },
-  "POST /api/me/player-bindings": { operationId: "createPlayerBinding", response: ref("PlayerBinding"), request: ref("PlayerBindingCreateRequest"), security: true },
   "PATCH /api/me/player-bindings/:id": { operationId: "updatePlayerBinding", response: ref("PlayerBinding"), request: ref("PlayerBindingPatchRequest"), security: true, parameters: [headerRef("IfMatch")] },
   "DELETE /api/me/player-bindings/:id": { operationId: "deletePlayerBinding", response: ref("OkResponse"), security: true, parameters: [headerRef("IfMatch")] },
+  "POST /api/me/player-bindings/:id/sync/review": { operationId: "reviewHarukiPlayerSync", response: ref("HarukiSyncReviewResponse"), security: true },
+  "POST /api/me/player-bindings/:id/sync/confirm": { operationId: "confirmHarukiPlayerSync", response: ref("HarukiSyncResult"), request: ref("HarukiSyncConfirmRequest"), security: true, parameters: [headerRef("IdempotencyKey")] },
+  "POST /api/me/player-bindings/:id/sync": { operationId: "syncHarukiPlayerData", response: ref("HarukiSyncResult"), security: true, parameters: [headerRef("IdempotencyKey")] },
+  "PATCH /api/me/player-bindings/:id/sync-settings": { operationId: "updateHarukiSyncSettings", response: ref("PlayerBinding"), request: ref("HarukiSyncSettingsRequest"), security: true, parameters: [headerRef("IdempotencyKey"), headerRef("IfMatch")] },
   "GET /api/me/favorite-folders": { operationId: "getFavoriteFolders", response: { type: "array", items: ref("FavoriteFolder") }, security: true },
   "POST /api/me/favorite-folders": { operationId: "createFavoriteFolder", response: ref("FavoriteFolder"), request: ref("FavoriteFolderCreateRequest"), security: true, parameters: [headerRef("IdempotencyKey")] },
   "PATCH /api/me/favorite-folders/:id": { operationId: "updateFavoriteFolder", response: ref("FavoriteFolder"), request: ref("FavoriteFolderPatchRequest"), security: true, parameters: [headerRef("IdempotencyKey"), headerRef("IfMatch")] },

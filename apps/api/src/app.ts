@@ -3,10 +3,10 @@ import compress from "@fastify/compress";
 import jwt from "@fastify/jwt";
 import sensible from "@fastify/sensible";
 import Fastify from "fastify";
-import { createHash, randomInt, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
 import { z } from "zod";
-import { encryptSecret } from "./authCrypto.js";
+import { decryptHarukiSecret, encryptHarukiSecret, encryptSecret } from "./authCrypto.js";
 import { getCardImportManifest } from "./cardImportManifest.js";
 import { getAssetConfig, getCardAssetDetail, getChartAssetDetail, getEventAssetDetail, getMusicAssetDetail } from "./assets.js";
 import { AssetResolveError, AssetResolver } from "./assetResolver.js";
@@ -15,6 +15,23 @@ import { estimateEventPoint, getCalculationContext, getCalculationSchema, getDec
 import { sendVerificationEmail, smtpConfigured } from "./emailService.js";
 import { getExternalContext, getLive2dModel3Proxy, getLive2dModelDetail, getLive2dModels, getMysekaiFullContext, getStoriesContext, getStoryCatalog, getStoryFullContext, getStoryPlaybackContext, getVirtualLivePlaybackContext, getVirtualLiveStepContext, informationCollection, isAllowedExternalAssetUrl } from "./externalData.js";
 import { harukiClient } from "./harukiClient.js";
+import {
+  buildHarukiAuthorizeUrl,
+  deriveHarukiBindingKey,
+  exchangeHarukiCode,
+  fetchHarukiBindings,
+  fetchHarukiProfile,
+  fetchOAuthHarukiSuite,
+  fetchPublicHarukiSuite,
+  HarukiPlayerDataError,
+  harukiOAuthConfigured,
+  revokeHarukiToken,
+  validateHarukiEndpointConfiguration
+} from "./harukiOAuthClient.js";
+import { HarukiSuiteValidationError, harukiGroupIsEmpty, hashHarukiCandidate, normalizeHarukiSuite, publicSnapshot } from "./harukiPlayerData.js";
+import { harukiStore } from "./harukiStore.js";
+import { ensureHarukiAccessToken } from "./harukiTokenManager.js";
+import { nextPendingEmptyGroups } from "./harukiSyncState.js";
 import { playerProfileFailure, playerUidPattern, rankingDataFailure, rankingPlayerFailure } from "./playerProfileHttp.js";
 import {
   getAndroidCatalog,
@@ -630,6 +647,30 @@ const playerBindingSchema = z.object({
 
 const playerBindingPatchSchema = playerBindingSchema.partial().omit({ playerUid: true, region: true });
 
+const harukiPublicPreviewSchema = z.object({
+  region: z.string().refine(isRegion),
+  playerUid: z.string().trim().regex(/^\d{5,32}$/)
+}).strict();
+
+const harukiOAuthStartSchema = z.object({
+  client: z.enum(["web", "android"]),
+  redirectUri: z.string().max(500).optional()
+}).strict();
+
+const harukiBindingImportSchema = z.object({
+  bindingIds: z.array(z.string().min(1).max(200)).min(1).max(20)
+}).strict();
+
+const harukiSyncConfirmSchema = z.object({
+  reviewToken: z.string().min(32).max(200),
+  groups: z.record(z.enum(["update", "keep"])).default({}),
+  cards: z.enum(["update", "keep"]).default("update")
+}).strict();
+
+const harukiSyncSettingsSchema = z.object({
+  autoSyncDaily: z.boolean()
+}).strict();
+
 const inventoryBulkSchema = z.object({
   region: z.string().refine(isRegion),
   cards: z.array(inventoryItemSchema).max(1000)
@@ -900,6 +941,174 @@ function rankingBoardContextFailure(reply: any, context: Extract<RankingBoardCon
   return reply.badRequest(context.message);
 }
 
+function publicHarukiConnection(connection: Awaited<ReturnType<typeof harukiStore.getConnection>>) {
+  if (!connection) return { connected: false, oauthConfigured: harukiOAuthConfigured(), availableBindings: [] };
+  return {
+    connected: true,
+    oauthConfigured: harukiOAuthConfigured(),
+    status: connection.status,
+    scope: connection.scope,
+    availableBindings: connection.availableBindings,
+    createdAt: connection.createdAt,
+    updatedAt: connection.updatedAt
+  };
+}
+
+function harukiFailure(reply: any, error: unknown) {
+  if (!(error instanceof HarukiPlayerDataError)) throw error;
+  if (error.retryAfterSeconds != null) reply.header("Retry-After", String(error.retryAfterSeconds));
+  const messages = {
+    "not-configured": "Haruki OAuth is not configured",
+    "not-found": "Haruki player data was not found",
+    "public-disabled": "Haruki Public API is not enabled for this player",
+    "reauthorize": "Haruki authorization expired; reconnect Haruki",
+    "rate-limited": "Haruki rate limit reached; retry later",
+    "upstream-error": "Haruki is temporarily unavailable",
+    "invalid-response": "Haruki returned player data that pjsktools could not safely process"
+  } as const;
+  return reply.code(error.statusCode).send({
+    statusCode: error.statusCode,
+    code: `HARUKI_${error.code.replaceAll("-", "_").toUpperCase()}`,
+    message: messages[error.code],
+    retryable: ["rate-limited", "upstream-error"].includes(error.code)
+  });
+}
+
+async function enforceHarukiRateLimit(request: any, reply: any, bucket: string, limit: number) {
+  const keys = [`${bucket}:ip:${request.ip}`];
+  if (request.user?.sub) keys.push(`${bucket}:user:${request.user.sub}`);
+  let allowed: boolean;
+  try {
+    allowed = await harukiStore.consumeRateLimit(keys, limit, 60);
+  } catch {
+    reply.code(503).send({ statusCode: 503, code: "HARUKI_RATE_LIMIT_UNAVAILABLE", message: "Haruki request protection is unavailable", retryable: true });
+    return false;
+  }
+  if (!allowed) {
+    reply.header("Retry-After", "60");
+    reply.code(429).send({ statusCode: 429, code: "HARUKI_RATE_LIMITED", message: "Too many Haruki requests", retryable: true });
+    return false;
+  }
+  return true;
+}
+
+async function revokeHarukiTokens(tokens: Array<{ token?: string; hint: "access_token" | "refresh_token" }>) {
+  const unique = new Map<string, "access_token" | "refresh_token">();
+  for (const item of tokens) if (item.token) unique.set(item.token, item.hint);
+  const entries = [...unique];
+  const results = await Promise.allSettled(entries.map(([token, hint]) => revokeHarukiToken(token, hint)));
+  return results.flatMap((result, index) => result.status === "rejected" ? [entries[index]![1]] : []);
+}
+
+async function revokeStoredHarukiConnection(connection: Awaited<ReturnType<typeof harukiStore.getConnection>>) {
+  if (!connection) return [];
+  const failedHints = await revokeHarukiTokens([
+    { token: decryptHarukiSecret(connection.accessTokenEncrypted), hint: "access_token" },
+    { token: connection.refreshTokenEncrypted ? decryptHarukiSecret(connection.refreshTokenEncrypted) : undefined, hint: "refresh_token" }
+  ]);
+  if (failedHints.length) await harukiStore.saveRevokeAudit({ userId: connection.userId, connectionId: connection.id, subjectHash: createHash("sha256").update(connection.subject).digest("hex"), failedHints, status: "pending", createdAt: new Date().toISOString() });
+  return failedHints;
+}
+
+function normalizeHarukiCandidate(region: RegionId, value: unknown) {
+  try {
+    return normalizeHarukiSuite(region, value);
+  } catch (error) {
+    if (error instanceof HarukiSuiteValidationError) throw new HarukiPlayerDataError("invalid-response", 502);
+    throw error;
+  }
+}
+
+function harukiSyncFailureStatus(error: unknown) {
+  return error instanceof HarukiPlayerDataError && error.code === "reauthorize"
+    ? "reauthorize" as const
+    : error instanceof HarukiPlayerDataError && error.code === "invalid-response"
+      ? "parse-error" as const
+      : "upstream-error" as const;
+}
+
+function requireHarukiReadScopes(scopes: string[]) {
+  const granted = new Set(scopes);
+  const required = config.harukiOAuthScope.split(/\s+/).filter(Boolean);
+  if (required.some((scope) => !granted.has(scope))) throw new HarukiPlayerDataError("reauthorize", 401);
+}
+
+async function markHarukiConnectionForReauthorization(userId: string, error: unknown) {
+  if (!(error instanceof HarukiPlayerDataError) || error.code !== "reauthorize") return;
+  const connection = await harukiStore.getConnection(userId);
+  if (!connection || connection.status === "reauthorize") return;
+  const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...input } = connection;
+  await harukiStore.saveConnection({ ...input, userId, status: "reauthorize" });
+}
+
+async function activeHarukiAccessToken(userId: string) {
+  return ensureHarukiAccessToken(userId);
+}
+
+async function fetchBindingCandidate(userId: string, binding: Awaited<ReturnType<typeof requireBinding>>) {
+  if (!binding?.verified || binding.source !== "haruki-oauth") throw new Error("PLAYER_BINDING_NOT_VERIFIED");
+  const { accessToken } = await activeHarukiAccessToken(userId);
+  const fetched = await fetchOAuthHarukiSuite(accessToken, binding.region, binding.playerUid, binding.upstreamUploadedAt);
+  if (fetched.notModified) {
+    await harukiStore.updateSyncFailure(userId, binding.id, "no-change", fetched.uploadTime);
+    return null;
+  }
+  const candidate = normalizeHarukiCandidate(binding.region, fetched.suite);
+  if (!candidate.sourceSummary.userId || !candidate.sourceSummary.region
+    || candidate.sourceSummary.userId !== binding.playerUid
+    || candidate.sourceSummary.region !== binding.region) {
+    throw new HarukiPlayerDataError("invalid-response", 502);
+  }
+  return candidate;
+}
+
+function harukiReview(candidate: NonNullable<Awaited<ReturnType<typeof fetchBindingCandidate>>>, currentCards: any[], currentData: any[]) {
+  const currentCardsById = new Map(currentCards.map((card) => [card.cardId, card]));
+  const changedCards = candidate.cards.filter((card) => {
+    const current = currentCardsById.get(card.cardId);
+    return !current || ["level", "masterRank", "skillLevel", "specialTrainingStatus", "defaultImage", "episodesRead", "episodes"]
+      .some((field) => JSON.stringify((current as any)?.[field] ?? null) !== JSON.stringify((card as any)[field] ?? null));
+  });
+  const currentByKind = new Map(currentData.map((item) => [item.kind, item.data]));
+  return {
+    upstreamVersion: candidate.upstreamVersion,
+    sourceSummary: candidate.sourceSummary,
+    cards: {
+      present: candidate.cardsPresent,
+      incomingCount: candidate.cards.length,
+      addedCount: candidate.cards.filter((card) => !currentCardsById.has(card.cardId)).length,
+      changedCount: changedCards.length,
+      missingCardsWillBePreserved: true
+    },
+    groups: Object.fromEntries(candidate.playerData.map((group) => [group.kind, {
+      present: true,
+      incomingCount: Array.isArray(group.data) ? group.data.length : group.data && typeof group.data === "object" ? 1 : 0,
+      currentCount: Array.isArray(currentByKind.get(group.kind)) ? currentByKind.get(group.kind).length
+        : currentByKind.get(group.kind) && typeof currentByKind.get(group.kind) === "object" ? 1 : 0,
+      emptyRequiresConfirmation: harukiGroupIsEmpty(group.data)
+    }]))
+  };
+}
+
+function parseHarukiWebhook(value: unknown, rawBody: string, path?: { region?: string; playerUid?: string; dataType?: string }, headers?: Record<string, unknown>) {
+  if (rawBody.trim().length > 0 && rawBody.trim() !== "{}") throw new Error("INVALID_HARUKI_WEBHOOK_BODY");
+  const source: Record<string, unknown> = {};
+  const subject = "";
+  const region = String(path?.region ?? "").trim().toLowerCase();
+  const playerUid = String(path?.playerUid ?? "").trim();
+  const dataType = String(path?.dataType ?? "").trim().toLowerCase();
+  const eventHeader = Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === "x-haruki-delivery-id")?.[1];
+  const eventId = String(eventHeader ?? "").trim();
+  if (!eventId || eventId.length > 200) throw new Error("MISSING_HARUKI_DELIVERY_ID");
+  if (!isRegion(region) || !/^\d{5,32}$/.test(playerUid) || !["suite", "mysekai"].includes(dataType)) throw new Error("INVALID_HARUKI_WEBHOOK");
+  return {
+    eventId, subject, bindingKey: "", dataType: dataType as "suite" | "mysekai", region, playerUid,
+    uploadTime: typeof source.upload_time === "string" ? source.upload_time : typeof source.uploadTime === "string" ? source.uploadTime : undefined,
+    payloadHash: createHash("sha256").update(rawBody).digest("hex"), status: "pending" as const,
+    receivedAt: new Date().toISOString()
+  };
+}
+
 export async function buildApp(options: {
   enableTestAuthRoutes?: boolean;
   shareCardProfileResolver?: typeof getPlayerProfileCached;
@@ -907,8 +1116,24 @@ export async function buildApp(options: {
   smtpAvailable?: boolean;
   authStore?: AuthStore;
 } = {}) {
+  validateHarukiEndpointConfiguration();
   const app = Fastify({
-    logger: process.env.PJSKTOOLS_SILENT_APP_LOGS === "true" ? false : true,
+    logger: process.env.PJSKTOOLS_SILENT_APP_LOGS === "true" ? false : {
+      serializers: {
+        req: (incoming: { method?: string; url?: string }) => ({
+          method: incoming.method,
+          url: String(incoming.url ?? "").split("?", 1)[0]
+        })
+      },
+      redact: {
+        paths: [
+          "req.headers.authorization", "req.headers.cookie", "res.headers.set-cookie",
+          "req.body.code", "req.body.token", "req.body.accessToken", "req.body.refreshToken",
+          "req.body.handoff", "req.body.reviewToken"
+        ],
+        censor: "[REDACTED]"
+      }
+    },
     bodyLimit: 8 * 1024 * 1024
   });
   const buildOpenApiDocument = installOpenApi(app);
@@ -926,6 +1151,14 @@ export async function buildApp(options: {
     return writeControls.before(request, reply, request.user.sub);
   });
   app.addHook("onSend", (request, reply, payload) => writeControls.after(request, reply, payload));
+  app.addHook("onSend", async (request, reply, payload) => {
+    if (request.url.startsWith("/api/me/haruki") || request.url.startsWith("/api/me/player-") || request.url.startsWith("/api/auth/haruki")) {
+      reply.header("Cache-Control", "private, no-store");
+      reply.header("Pragma", "no-cache");
+    }
+    if (config.nodeEnv === "production") reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    return payload;
+  });
 
   app.get("/health", async () => ({
     status: "ok",
@@ -2105,18 +2338,186 @@ export async function buildApp(options: {
     return deleted ? { ok: true } : reply.notFound("Score not found");
   });
 
-  app.get("/api/me/player-bindings", { preHandler: (app as any).authenticate }, async (request: any) => {
-    return paginatedList(request, (await store.listPlayerBindings(request.user.sub)).map(withEntityVersion));
+  app.post("/api/me/haruki/public/preview", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    if (!await enforceHarukiRateLimit(request, reply, "public", 12)) return reply;
+    const body = harukiPublicPreviewSchema.parse(request.body);
+    try {
+      const candidate = normalizeHarukiCandidate(body.region as RegionId, await fetchPublicHarukiSuite(body.region as RegionId, body.playerUid));
+      if ((candidate.sourceSummary.userId && candidate.sourceSummary.userId !== body.playerUid)
+        || (candidate.sourceSummary.region && candidate.sourceSummary.region !== body.region)) {
+        throw new HarukiPlayerDataError("invalid-response", 502);
+      }
+      return { snapshot: publicSnapshot(body.region as RegionId, body.playerUid, candidate) };
+    } catch (error) {
+      return harukiFailure(reply, error);
+    }
   });
 
-  app.post("/api/me/player-bindings", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const body = playerBindingSchema.parse(request.body);
+  app.post("/api/integrations/haruki/webhook/:region/:dataType/:playerUid", async (request: any, reply) => {
+    if (!config.harukiWebhookEnabled || !config.harukiWebhookSecret) {
+      return reply.code(200).send({ ok: true, ignored: true, reason: "disabled" });
+    }
     try {
-      return setEntityTag(reply, await store.addPlayerBinding({ ...body, region: body.region as RegionId, userId: request.user.sub }));
+      if (!await harukiStore.consumeRateLimit([`webhook:ip:${request.ip}`], 120, 60)) {
+        return reply.code(200).send({ ok: true, ignored: true, reason: "rate-limited" });
+      }
+    } catch {
+      return reply.code(200).send({ ok: true, ignored: true, reason: "protection-unavailable" });
+    }
+    // Haruki's production contract authenticates service callbacks with a bearer secret.
+    const authorization = String(request.headers.authorization ?? "");
+    const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? "";
+    const bearerValid = bearer.length === config.harukiWebhookSecret.length
+      && timingSafeEqual(Buffer.from(bearer), Buffer.from(config.harukiWebhookSecret));
+    const contentLength = Number(request.headers["content-length"] ?? 0);
+    if (contentLength > 0 || request.body != null) return reply.code(400).send({ code: "HARUKI_WEBHOOK_BODY_NOT_ALLOWED" });
+    const rawBody = "";
+    if (!bearerValid) {
+      return reply.code(200).send({ ok: true, ignored: true, reason: "unauthorized" });
+    }
+    try {
+      const event = parseHarukiWebhook(request.body, rawBody, request.params, request.headers);
+      const accepted = await harukiStore.saveWebhookEvent(event);
+      return reply.code(accepted ? 202 : 200).send({ ok: true, duplicate: !accepted });
+    } catch {
+      return reply.code(200).send({ ok: true, ignored: true, reason: "invalid-target" });
+    }
+  });
+
+  app.post("/api/me/haruki/oauth/start", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    if (!await enforceHarukiRateLimit(request, reply, "oauth", 6)) return reply;
+    const body = harukiOAuthStartSchema.parse(request.body);
+    if (!harukiOAuthConfigured()) return harukiFailure(reply, new HarukiPlayerDataError("not-configured", 503));
+    if (body.redirectUri) {
+      const allowed = body.client === "android"
+        ? body.redirectUri === config.harukiAndroidReturnUri
+        : normalizeRedirectTo(body.redirectUri) === body.redirectUri;
+      if (!allowed) return reply.badRequest("Unsupported OAuth return URI");
+    }
+    const verifier = `${randomUUID()}${randomUUID()}`.replaceAll("-", "");
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    const state = `${randomUUID()}${randomUUID()}`.replaceAll("-", "");
+    await harukiStore.saveOAuthState(state, {
+      userId: request.user.sub,
+      client: body.client,
+      redirectUri: body.redirectUri,
+      codeVerifierEncrypted: encryptHarukiSecret(verifier),
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString()
+    });
+    return { authorizationUrl: buildHarukiAuthorizeUrl(state, challenge), expiresIn: 600 };
+  });
+
+  app.get("/api/auth/haruki/callback", async (request: any, reply) => {
+    const query = z.object({
+      code: z.string().min(1).optional(),
+      state: z.string().min(8),
+      error: z.string().max(100).optional()
+    }).parse(request.query);
+    const state = await harukiStore.consumeOAuthState(query.state);
+    const webError = (code: string) => reply.redirect(`${config.publicWebBaseUrl}/me/assets?haruki=error&code=${encodeURIComponent(code)}`);
+    const androidRedirect = (parameters: Record<string, string>) => {
+      const target = new URL(state?.redirectUri ?? config.harukiAndroidReturnUri);
+      for (const [key, value] of Object.entries(parameters)) target.searchParams.set(key, value);
+      return reply.redirect(target.toString());
+    };
+    if (!state) return webError("invalid_state");
+    if (query.error || !query.code) return state.client === "android"
+      ? androidRedirect({ error: query.error ?? "missing_code" })
+      : webError(query.error ?? "missing_code");
+    let issuedTokens: Array<{ token?: string; hint: "access_token" | "refresh_token" }> = [];
+    try {
+      const previousConnection = await harukiStore.getConnection(state.userId);
+      const token = await exchangeHarukiCode(query.code, decryptHarukiSecret(state.codeVerifierEncrypted));
+      issuedTokens = [
+        { token: token.accessToken, hint: "access_token" },
+        { token: token.refreshToken, hint: "refresh_token" }
+      ];
+      requireHarukiReadScopes(token.scope);
+      const profile = await fetchHarukiProfile(token.accessToken);
+      const bindings = await fetchHarukiBindings(token.accessToken, profile.subject);
+      if (!token.refreshToken) throw new HarukiPlayerDataError("reauthorize", 401);
+      await harukiStore.saveConnection({
+        userId: state.userId,
+        subject: profile.subject,
+        scope: token.scope,
+        accessTokenEncrypted: encryptHarukiSecret(token.accessToken),
+        refreshTokenEncrypted: token.refreshToken ? encryptHarukiSecret(token.refreshToken) : undefined,
+        tokenExpiresAt: token.expiresAt,
+        encryptionKeyVersion: config.harukiTokenEncryptionKeyVersion,
+        status: "active",
+        availableBindings: bindings
+      });
+      if (previousConnection) {
+        const filtered = ([
+          { token: decryptHarukiSecret(previousConnection.accessTokenEncrypted), hint: "access_token" as const },
+          { token: previousConnection.refreshTokenEncrypted ? decryptHarukiSecret(previousConnection.refreshTokenEncrypted) : undefined, hint: "refresh_token" as const }
+        ]).filter((item) => item.token && !issuedTokens.some((issued) => issued.token === item.token));
+        const failedHints = await revokeHarukiTokens(filtered);
+        if (failedHints.length) await harukiStore.saveRevokeAudit({ userId: previousConnection.userId, connectionId: previousConnection.id, subjectHash: createHash("sha256").update(previousConnection.subject).digest("hex"), failedHints, status: "pending", createdAt: new Date().toISOString() });
+      }
+      if (state.client === "android") {
+        const handoff = `${randomUUID()}${randomUUID()}`.replaceAll("-", "");
+        await harukiStore.saveMobileHandoff(handoff, state.userId, new Date(Date.now() + 2 * 60_000).toISOString());
+        return androidRedirect({ handoff });
+      }
+      return reply.redirect(`${config.publicWebBaseUrl}/me/assets?haruki=connected`);
     } catch (error) {
-      if ((error as Error).message === "PLAYER_BINDING_EXISTS") return reply.conflict("Player UID already bound to this account");
+      await revokeHarukiTokens(issuedTokens);
+      if (error instanceof Error && ["HARUKI_SUBJECT_EXISTS", "HARUKI_SUBJECT_MISMATCH"].includes(error.message)) {
+        return state.client === "android" ? androidRedirect({ error: "subject_conflict" }) : webError("subject_conflict");
+      }
+      return state.client === "android" ? androidRedirect({ error: "exchange_failed" }) : webError("exchange_failed");
+    }
+  });
+
+  app.post("/api/me/haruki/oauth/mobile/complete", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const body = z.object({ handoff: z.string().min(32).max(200) }).strict().parse(request.body);
+    if (!await harukiStore.consumeMobileHandoff(body.handoff, request.user.sub)) {
+      return reply.unauthorized("Invalid or expired Haruki mobile handoff");
+    }
+    return publicHarukiConnection(await harukiStore.getConnection(request.user.sub));
+  });
+
+  app.get("/api/me/haruki/connection", { preHandler: (app as any).authenticate }, async (request: any) => {
+    return publicHarukiConnection(await harukiStore.getConnection(request.user.sub));
+  });
+
+  app.delete("/api/me/account", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const connection = await harukiStore.getConnection(request.user.sub);
+    if (connection) {
+      await revokeStoredHarukiConnection(connection);
+      await harukiStore.deleteConnection(request.user.sub);
+    }
+    const deleted = await store.deleteUserById(request.user.sub);
+    return deleted ? { ok: true } : reply.notFound("Account not found");
+  });
+
+  app.post("/api/me/haruki/bindings/import", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const body = harukiBindingImportSchema.parse(request.body);
+    const connection = await harukiStore.getConnection(request.user.sub);
+    if (!connection) return reply.unauthorized("Connect Haruki before importing bindings");
+    const selected = body.bindingIds.map((id) => connection.availableBindings.find((binding) => binding.id === id));
+    if (selected.some((binding) => !binding)) return reply.badRequest("Binding is not present in the verified Haruki binding list");
+    try {
+      return { bindings: await harukiStore.importBindings(request.user.sub, connection.id, selected as any[]) };
+    } catch (error) {
+      if ((error as Error).message === "PLAYER_BINDING_EXISTS") {
+        return reply.conflict("This region and UID already belongs to another pjsktools account");
+      }
       throw error;
     }
+  });
+
+  app.delete("/api/me/haruki/connection", { preHandler: (app as any).authenticate }, async (request: any) => {
+    const connection = await harukiStore.getConnection(request.user.sub);
+    if (!connection) return { ok: true, revokeStatus: "not-connected" };
+    const failedHints = await revokeStoredHarukiConnection(connection);
+    await harukiStore.deleteConnection(request.user.sub);
+    return { ok: true, revokeStatus: failedHints.length ? "partial-failure" : "complete" };
+  });
+
+  app.get("/api/me/player-bindings", { preHandler: (app as any).authenticate }, async (request: any) => {
+    return paginatedList(request, (await store.listPlayerBindings(request.user.sub)).map(withEntityVersion));
   });
 
   app.patch("/api/me/player-bindings/:id", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
@@ -2136,6 +2537,116 @@ export async function buildApp(options: {
     return deleted ? { ok: true } : reply.notFound("Player binding not found");
   });
 
+  app.post("/api/me/player-bindings/:id/sync/review", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    if (!await enforceHarukiRateLimit(request, reply, "sync", 6)) return reply;
+    const binding = await requireBinding(request.user.sub, request.params.id);
+    if (!binding) return reply.notFound("Player binding not found");
+    try {
+      const candidate = await fetchBindingCandidate(request.user.sub, binding);
+      if (!candidate) return { reviewToken: null, expiresIn: 0, noChange: true, review: null };
+      const [currentCards, currentData] = await Promise.all([
+        store.listInventory(request.user.sub, binding.id),
+        store.listPlayerData(request.user.sub, binding.id)
+      ]);
+      const token = `${randomUUID()}${randomUUID()}`;
+      await harukiStore.saveReview(token, {
+        userId: request.user.sub,
+        bindingId: binding.id,
+        candidateHash: hashHarukiCandidate(candidate),
+        upstreamVersion: candidate.upstreamVersion,
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString()
+      });
+      return { reviewToken: token, expiresIn: 600, review: harukiReview(candidate, currentCards, currentData) };
+    } catch (error) {
+      if ((error as Error).message === "PLAYER_BINDING_NOT_VERIFIED") return reply.forbidden("Only Haruki OAuth bindings can sync");
+      await markHarukiConnectionForReauthorization(request.user.sub, error);
+      await harukiStore.updateSyncFailure(request.user.sub, binding.id,
+        harukiSyncFailureStatus(error));
+      return harukiFailure(reply, error);
+    }
+  });
+
+  app.post("/api/me/player-bindings/:id/sync/confirm", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    if (!await enforceHarukiRateLimit(request, reply, "sync", 6)) return reply;
+    const binding = await requireBinding(request.user.sub, request.params.id);
+    if (!binding) return reply.notFound("Player binding not found");
+    const body = harukiSyncConfirmSchema.parse(request.body);
+    const review = await harukiStore.consumeReview(body.reviewToken, request.user.sub, binding.id);
+    if (!review) return reply.unauthorized("Invalid, expired, or already used sync review token");
+    try {
+      const candidate = await fetchBindingCandidate(request.user.sub, binding);
+      if (!candidate) return { ok: true, noChange: true, upstreamVersion: binding.upstreamUploadedAt, updatedGroups: [], cardsUpdated: false };
+      if (hashHarukiCandidate(candidate) !== review.candidateHash || candidate.upstreamVersion !== review.upstreamVersion) {
+        return reply.code(409).send({ statusCode: 409, code: "HARUKI_SYNC_CHANGED", message: "Haruki data changed; review it again" });
+      }
+      const presentKinds = new Set(candidate.playerData.map((group) => group.kind));
+      const invalidKinds = Object.keys(body.groups).filter((kind) => !isPlayerDataKind(kind) || !presentKinds.has(kind as PlayerDataKind));
+      if (invalidKinds.length) return reply.badRequest(`Sync selection contains unavailable groups: ${invalidKinds.join(", ")}`);
+      const updateGroups = Object.entries(body.groups).flatMap(([kind, action]) => action === "update" ? [kind as PlayerDataKind] : []);
+      const pendingEmptyGroups = nextPendingEmptyGroups(binding.pendingEmptyGroups ?? [], candidate, body.groups as Partial<Record<PlayerDataKind, "update" | "keep">>);
+      await harukiStore.applySync({
+        userId: request.user.sub,
+        binding,
+        candidate,
+        updateCards: body.cards === "update" && candidate.cardsPresent,
+        updateGroups,
+        pendingEmptyGroups
+      });
+      return { ok: true, upstreamVersion: candidate.upstreamVersion, updatedGroups: updateGroups, cardsUpdated: body.cards === "update" };
+    } catch (error) {
+      await markHarukiConnectionForReauthorization(request.user.sub, error);
+      await harukiStore.updateSyncFailure(request.user.sub, binding.id,
+        harukiSyncFailureStatus(error));
+      return harukiFailure(reply, error);
+    }
+  });
+
+  app.post("/api/me/player-bindings/:id/sync", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    if (!await enforceHarukiRateLimit(request, reply, "sync", 6)) return reply;
+    const binding = await requireBinding(request.user.sub, request.params.id);
+    if (!binding) return reply.notFound("Player binding not found");
+    try {
+      const candidate = await fetchBindingCandidate(request.user.sub, binding);
+      if (!candidate) return { ok: true, noChange: true, upstreamVersion: binding.upstreamUploadedAt, updatedGroups: [], cardsUpdated: false };
+      const nonEmptyGroups = candidate.playerData.filter((group) => !harukiGroupIsEmpty(group.data)).map((group) => group.kind);
+      const pendingEmptyGroups = nextPendingEmptyGroups(
+        binding.pendingEmptyGroups ?? [],
+        candidate,
+        Object.fromEntries(candidate.playerData.map((group) => [group.kind, harukiGroupIsEmpty(group.data) ? "keep" : "update"]))
+      );
+      await harukiStore.applySync({
+        userId: request.user.sub,
+        binding,
+        candidate,
+        updateCards: candidate.cardsPresent,
+        updateGroups: nonEmptyGroups,
+        pendingEmptyGroups
+      });
+      return {
+        ok: true,
+        upstreamVersion: candidate.upstreamVersion,
+        updatedGroups: nonEmptyGroups,
+        pendingEmptyGroups,
+        cardsUpdated: candidate.cardsPresent
+      };
+    } catch (error) {
+      if ((error as Error).message === "PLAYER_BINDING_NOT_VERIFIED") return reply.forbidden("Only Haruki OAuth bindings can sync");
+      await markHarukiConnectionForReauthorization(request.user.sub, error);
+      await harukiStore.updateSyncFailure(request.user.sub, binding.id,
+        harukiSyncFailureStatus(error));
+      return harukiFailure(reply, error);
+    }
+  });
+
+  app.patch("/api/me/player-bindings/:id/sync-settings", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const body = harukiSyncSettingsSchema.parse(request.body);
+    const current = await requireBinding(request.user.sub, request.params.id);
+    if (!current) return reply.notFound("Verified player binding not found");
+    if (!assertIfMatch(request, reply, current)) return reply;
+    const updated = await harukiStore.updateSyncSettings(request.user.sub, request.params.id, body.autoSyncDaily);
+    return updated ? setEntityTag(reply, updated) : reply.notFound("Verified player binding not found");
+  });
+
   app.get("/api/me/player-bindings/:bindingId/summary", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const summary = await buildBindingSummary(request.user.sub, request.params.bindingId);
     return summary ?? reply.notFound("Player binding not found");
@@ -2151,124 +2662,8 @@ export async function buildApp(options: {
     return analysis ?? reply.notFound("Player binding not found");
   });
 
-  app.post("/api/me/player-bindings/:id/refresh-public-profile", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const binding = (await store.listPlayerBindings(request.user.sub)).find((item) => item.id === request.params.id);
-    if (!binding) return reply.notFound("Player binding not found");
-    try {
-      const profile = await getPlayerProfileCached(binding.region, binding.playerUid, true);
-      return store.updatePlayerBinding(request.user.sub, binding.id, {
-        displayName: profile.nickname ?? binding.displayName,
-        publicProfileSnapshot: {
-          ...profile,
-          sourceMetadata: { source: profile.source, refreshedAt: new Date().toISOString() },
-          realDataRequired: true
-        },
-        refreshedAt: new Date().toISOString()
-      });
-    } catch (error) {
-      return playerProfileFailure(reply, error);
-    }
-  });
-
   app.get("/api/me/player-data/:bindingId/cards", { preHandler: (app as any).authenticate }, async (request: any) => {
     return paginatedList(request, (await store.listInventory(request.user.sub, request.params.bindingId)).map(withEntityVersion), 48);
-  });
-
-  app.put("/api/me/player-data/:bindingId/cards", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const binding = (await store.listPlayerBindings(request.user.sub)).find((item) => item.id === request.params.bindingId);
-    if (!binding) return reply.notFound("Player binding not found");
-    const body = inventoryBulkSchema.parse(request.body);
-    const current = await store.listInventory(request.user.sub, binding.id);
-    if (current.length && !assertIfMatch(request, reply, current)) return reply;
-    return setEntityTag(reply, await store.upsertInventory(body.cards.map((card) => ({ ...card, userId: request.user.sub, bindingId: binding.id, region: body.region as RegionId }))));
-  });
-
-  app.post("/api/me/player-data/import", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const body = z.object({ bindingId: z.string(), region: z.string().refine(isRegion), cards: z.array(inventoryItemSchema).max(2000) }).parse(request.body);
-    const binding = (await store.listPlayerBindings(request.user.sub)).find((item) => item.id === body.bindingId);
-    if (!binding) return reply.notFound("Player binding not found");
-    const items = await store.upsertInventory(body.cards.map((card) => ({ ...card, userId: request.user.sub, bindingId: binding.id, region: body.region as RegionId })));
-    return { imported: items.length, items };
-  });
-
-  app.get("/api/me/player-data/:bindingId/export", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const binding = (await store.listPlayerBindings(request.user.sub)).find((item) => item.id === request.params.bindingId);
-    if (!binding) return reply.notFound("Player binding not found");
-    const [cards, deckConfigs, scores, playerData] = await Promise.all([
-      store.listInventory(request.user.sub, binding.id),
-      store.listDeckConfigs(request.user.sub),
-      store.listScores(request.user.sub),
-      store.listPlayerData(request.user.sub, binding.id)
-    ]);
-    const completeness = await buildBindingCompleteness(binding, cards, playerData);
-    const toolContext = await buildToolContext(request.user.sub, binding.id);
-    return {
-      schemaVersion: 2,
-      exportSource: "pjsktools-api",
-      exportedAt: new Date().toISOString(),
-      binding,
-      publicProfileSnapshot: binding.publicProfileSnapshot ?? null,
-      cards,
-      playerData,
-      deckConfigs: deckConfigs.filter((item) => item.bindingId === binding.id),
-      scores: scores.filter((item) => item.region === binding.region),
-      formulaReadiness: toolContext?.formulaReadiness ?? completeness.sections,
-      toolContextWarnings: toolContext?.toolContextWarnings ?? [],
-      realDataRequired: true
-    };
-  });
-
-  app.delete("/api/me/player-data/:bindingId/cards/:cardId", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const binding = (await store.listPlayerBindings(request.user.sub)).find((item) => item.id === request.params.bindingId);
-    if (!binding) return reply.notFound("Player binding not found");
-    const current = (await store.listInventory(request.user.sub, binding.id)).find((item) => item.cardId === String(request.params.cardId));
-    if (!current) return reply.notFound("Inventory card not found");
-    if (!assertIfMatch(request, reply, current)) return reply;
-    const deleted = await store.deleteInventoryCard(request.user.sub, binding.id, String(request.params.cardId));
-    return deleted ? { deleted: true, cardId: String(request.params.cardId) } : reply.notFound("Inventory card not found");
-  });
-
-  app.post("/api/me/player-data/:bindingId/import", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const binding = (await store.listPlayerBindings(request.user.sub)).find((item) => item.id === request.params.bindingId);
-    if (!binding) return reply.notFound("Player binding not found");
-    const rawBody = request.body && typeof request.body === "object" && !Array.isArray(request.body) ? request.body as Record<string, unknown> : {};
-    const candidateBody = Array.isArray(rawBody.playerData) || Array.isArray(rawBody.cards)
-      ? rawBody
-      : normalizeSuitePlayerDataImport(binding.region, rawBody);
-    const body = z.object({
-      cards: z.array(inventoryItemSchema).max(2000).default([]),
-      playerData: z.array(z.object({ kind: z.string(), data: z.unknown() })).default([])
-    }).parse(candidateBody);
-    const items = await store.upsertInventory(body.cards.map((card) => ({ ...card, userId: request.user.sub, bindingId: binding.id, region: binding.region })));
-    const dataRecords = [];
-    for (const record of body.playerData) {
-      if (!isPlayerDataKind(record.kind)) return reply.badRequest(`Unsupported player data kind: ${record.kind}`);
-      dataRecords.push(await store.upsertPlayerData({
-        userId: request.user.sub,
-        bindingId: binding.id,
-        region: binding.region,
-        kind: record.kind as PlayerDataKind,
-        data: record.data
-      }));
-    }
-    const completeness = await buildBindingCompleteness(binding, items, dataRecords as any);
-    const toolContext = await buildToolContext(request.user.sub, binding.id);
-    return {
-      imported: items.length,
-      importedPlayerData: dataRecords.length,
-      items,
-      playerData: dataRecords,
-      formulaReadiness: toolContext?.formulaReadiness ?? completeness.sections,
-      toolContextWarnings: toolContext?.toolContextWarnings ?? [],
-      realDataRequired: true
-    };
-  });
-
-  app.post("/api/me/player-data/:bindingId/import/review", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const binding = await requireBinding(request.user.sub, request.params.bindingId);
-    if (!binding) return reply.notFound("Player binding not found");
-    const inventory = await store.listInventory(request.user.sub, binding.id);
-    return reviewPlayerDataImport(binding.region, request.body, inventory);
   });
 
   app.get("/api/me/player-data/:bindingId/completeness/full", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
@@ -2306,19 +2701,6 @@ export async function buildApp(options: {
     };
   });
 
-  app.post("/api/me/player-data/:bindingId/validate", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const binding = await requireBinding(request.user.sub, request.params.bindingId);
-    if (!binding) return reply.notFound("Player binding not found");
-    const body = z.object({
-      kind: z.string(),
-      region: z.string().refine(isRegion).optional(),
-      data: z.unknown()
-    }).parse(request.body);
-    if (!isPlayerDataKind(body.kind)) return reply.notFound("Player data kind not found");
-    if (body.region && body.region !== binding.region) return reply.badRequest("Player data region must match the binding region");
-    return validatePlayerDataRecord(binding.region, body.kind, body.data);
-  });
-
   app.get("/api/me/player-data/:bindingId/:kind", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const { bindingId, kind } = request.params as { bindingId: string; kind: string };
     if (!isPlayerDataKind(kind)) return reply.notFound("Player data kind not found");
@@ -2334,24 +2716,6 @@ export async function buildApp(options: {
       unavailableReason: "No uploaded player data for this kind",
       realDataRequired: true
     };
-  });
-
-  app.put("/api/me/player-data/:bindingId/:kind", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const { bindingId, kind } = request.params as { bindingId: string; kind: string };
-    if (!isPlayerDataKind(kind)) return reply.notFound("Player data kind not found");
-    const binding = await requireBinding(request.user.sub, bindingId);
-    if (!binding) return reply.notFound("Player binding not found");
-    const body = playerDataSchema.parse(request.body);
-    if (body.region && body.region !== binding.region) return reply.badRequest("Player data region must match the binding region");
-    const current = await store.getPlayerData(request.user.sub, binding.id, kind as PlayerDataKind);
-    if (current && !assertIfMatch(request, reply, current)) return reply;
-    return setEntityTag(reply, await store.upsertPlayerData({
-      userId: request.user.sub,
-      bindingId: binding.id,
-      region: binding.region,
-      kind: kind as PlayerDataKind,
-      data: body.data
-    }));
   });
 
   app.get("/api/me/deck-configs", { preHandler: (app as any).authenticate }, async (request: any) => {

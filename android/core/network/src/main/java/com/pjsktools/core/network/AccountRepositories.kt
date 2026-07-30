@@ -305,13 +305,4 @@ class PlayerBindingRepositoryImpl @Inject constructor(
         state.value = requireNotNull(response.body()) { "绑定 UID 加载失败 (${response.code()})" }.items.map { it.domain() }
     }
 
-    override suspend fun create(region: Region, playerUid: String, displayName: String?, isDefault: Boolean) = runCatching {
-        requireNotNull(sessions.current()) { "请先登录" }
-        val response = api.createPlayerBinding(
-            com.pjsktools.api.generated.PlayerBindingCreateRequest(region.generated(), playerUid, displayName, isDefault)
-        )
-        val binding = requireNotNull(response.body()) { "绑定 UID 失败 (${response.code()})" }.domain()
-        state.value = (state.value.filterNot { it.id == binding.id } + binding).sortedByDescending { it.isDefault }
-        binding
-    }
 }

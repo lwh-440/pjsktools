@@ -8,12 +8,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,6 +32,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import okhttp3.OkHttpClient
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -42,7 +41,11 @@ fun rememberAccountFeatureController(
     baseUrl: String,
     context: Context = LocalContext.current
 ): AccountFeatureController = remember(baseUrl, context.applicationContext) {
-    AccountFeatureController(AccountRepository(baseUrl, SharedPreferencesAccountSessionStore(context, baseUrl)))
+    AccountFeatureController(
+        repository = AccountRepository(baseUrl, SharedPreferencesAccountSessionStore(context, baseUrl)),
+        harukiGateway = GeneratedHarukiGateway(baseUrl, OkHttpClient()),
+        harukiPreviewCache = HarukiPreviewCache(context)
+    )
 }
 
 /** Drop-in account surface. Its callbacks let the host share the active user/UID with other tools. */
@@ -59,6 +62,7 @@ fun AccountFeatureScreen(
     val scope = rememberCoroutineScope()
     val launch: (suspend () -> Unit) -> Unit = { block -> scope.launch { block() } }
     LaunchedEffect(controller) { controller.initialize() }
+    LaunchedEffect(state.profile?.user?.id) { controller.loadCachedHarukiPreview() }
     LaunchedEffect(state.initialized, state.session?.accessToken) {
         if (state.initialized) onAuthStateChanged(state.session)
     }
@@ -147,7 +151,6 @@ private fun AccountWorkspace(
     launch: (suspend () -> Unit) -> Unit,
     openUri: (String) -> Unit
 ) {
-    var showAdd by remember { mutableStateOf(false) }
     var pendingDeleteId by remember { mutableStateOf<String?>(null) }
     var confirmUnlinkQq by remember { mutableStateOf(false) }
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -184,16 +187,13 @@ private fun AccountWorkspace(
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("UID 管理", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Button(onClick = { showAdd = !showAdd }) { Text(if (showAdd) "收起" else "绑定 UID") }
+                Text("Haruki OAuth 已验证玩家账号", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
         }
-        if (showAdd) item { AddBindingForm(state.busy) { launch { controller.addBinding(it); showAdd = false } } }
-        if (state.profile?.bindings.isNullOrEmpty()) item { Text("暂无绑定 UID。绑定后可同步公开玩家资料。") }
+        if (state.profile?.bindings.isNullOrEmpty()) item { Text("暂无 Haruki OAuth 验证的玩家账号，请先在下方连接 Haruki。") }
         items(state.profile?.bindings.orEmpty(), key = { it.id }) { binding ->
             BindingCard(binding, state.profile?.summaryFor(binding.id), binding.id == state.selectedBinding?.id,
                 state.busy, { launch { controller.selectBinding(binding.id) } },
-                { launch { controller.refreshPublicProfile(binding.id) } },
                 { launch { controller.setDefault(binding.id) } },
                 { pendingDeleteId = binding.id })
         }
@@ -222,34 +222,16 @@ private fun AccountWorkspace(
 }
 
 @Composable
-private fun AddBindingForm(busy: Boolean, submit: (NewPlayerBinding) -> Unit) {
-    var region by remember { mutableStateOf("jp") }; var uid by remember { mutableStateOf("") }
-    var name by remember { mutableStateOf("") }; var note by remember { mutableStateOf("") }; var makeDefault by remember { mutableStateOf(true) }
-    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("新 UID", fontWeight = FontWeight.Bold)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(listOf("jp", "en", "tw", "kr", "cn")) { item ->
-            if (region == item) Button(onClick = {}) { Text(item.uppercase()) } else OutlinedButton(onClick = { region = item }) { Text(item.uppercase()) }
-        } }
-        OutlinedTextField(uid, { uid = it.trim().take(32) }, Modifier.fillMaxWidth(), label = { Text("玩家 UID") }, singleLine = true)
-        OutlinedTextField(name, { name = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("显示名（可选）") })
-        OutlinedTextField(note, { note = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("备注（可选）") })
-        Row { Checkbox(makeDefault, { makeDefault = it }); Text("设为账号默认 UID", Modifier.padding(top = 12.dp)) }
-        Button(onClick = { submit(NewPlayerBinding(region, uid, name, note, makeDefault)) }, modifier = Modifier.fillMaxWidth(), enabled = !busy && uid.isNotBlank()) { Text("绑定") }
-    } }
-}
-
-@Composable
 private fun BindingCard(binding: PlayerBinding, summary: BindingSummary?, selected: Boolean, busy: Boolean,
-    select: () -> Unit, refresh: () -> Unit, makeDefault: () -> Unit, delete: () -> Unit) {
+    select: () -> Unit, makeDefault: () -> Unit, delete: () -> Unit) {
     Card(onClick = select, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(binding.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text("${binding.region.uppercase()} · ${binding.playerUid}${if (binding.isDefault) " · 默认" else ""}")
         binding.publicProfile?.let { Text("Rank ${it.rank ?: "-"}${it.comment?.let { comment -> " · $comment" } ?: ""}") }
         Text("库存 ${summary?.inventoryCount ?: 0} · 已上传 ${summary?.uploadedPlayerDataKinds?.size ?: 0} 类资产")
-        Text("刷新：${binding.refreshedAt ?: "尚未刷新"}", style = MaterialTheme.typography.bodySmall)
+        Text("Haruki 同步：${binding.refreshedAt ?: "尚未同步"}", style = MaterialTheme.typography.bodySmall)
         if (selected) { HorizontalDivider(); Text("当前使用", color = MaterialTheme.colorScheme.primary) }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(enabled = !busy, onClick = refresh) { Text("刷新资料") }
             TextButton(enabled = !busy && !binding.isDefault, onClick = makeDefault) { Text("设为默认") }
             TextButton(enabled = !busy, onClick = delete) { Text("删除", color = MaterialTheme.colorScheme.error) }
         }

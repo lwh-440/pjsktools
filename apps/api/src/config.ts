@@ -39,6 +39,9 @@ function databaseUrl() {
   return `postgresql://${user}:${password}@${host}:${port}/${database}`;
 }
 
+const requiredHarukiScopes = ["offline_access", "user:read", "bindings:read", "game-data:read"];
+const configuredHarukiScopes = (process.env.HARUKI_OAUTH_SCOPE ?? "").split(/\s+/).filter(Boolean);
+
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   host: process.env.API_HOST ?? (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1"),
@@ -46,6 +49,24 @@ export const config = {
   databaseUrl: databaseUrl(),
   redisUrl: process.env.REDIS_URL ?? "",
   harukiApiBaseUrl: process.env.HARUKI_API_BASE_URL ?? "",
+  harukiPublicSuiteBaseUrl: process.env.HARUKI_PUBLIC_SUITE_BASE_URL ?? "https://suite-api.haruki.seiunx.com/public",
+  harukiOAuthAuthorizeUrl: process.env.HARUKI_OAUTH_AUTHORIZE_URL ?? "",
+  harukiOAuthTokenUrl: process.env.HARUKI_OAUTH_TOKEN_URL ?? "",
+  harukiOAuthProfileUrl: process.env.HARUKI_OAUTH_PROFILE_URL ?? "",
+  harukiOAuthBindingsUrl: process.env.HARUKI_OAUTH_BINDINGS_URL ?? "",
+  harukiOAuthGameDataBaseUrl: process.env.HARUKI_OAUTH_GAME_DATA_BASE_URL ?? "",
+  harukiOAuthRevokeUrl: process.env.HARUKI_OAUTH_REVOKE_URL ?? "",
+  harukiOAuthClientId: process.env.HARUKI_OAUTH_CLIENT_ID ?? "",
+  harukiOAuthClientSecret: process.env.HARUKI_OAUTH_CLIENT_SECRET ?? "",
+  harukiOAuthRedirectUri: process.env.HARUKI_OAUTH_REDIRECT_URI ?? "http://127.0.0.1:4000/api/auth/haruki/callback",
+  harukiAndroidReturnUri: process.env.HARUKI_ANDROID_RETURN_URI ?? "https://sekai-tools.cn/auth/haruki",
+  harukiOAuthScope: [...new Set([...requiredHarukiScopes, ...configuredHarukiScopes])].join(" "),
+  harukiWebhookEnabled: process.env.HARUKI_WEBHOOK_ENABLED === "true",
+  harukiWebhookSyncEnabled: process.env.HARUKI_WEBHOOK_SYNC_ENABLED === "true",
+  harukiWebhookSecret: process.env.HARUKI_WEBHOOK_SECRET ?? "",
+  harukiTokenEncryptionKey: process.env.HARUKI_TOKEN_ENCRYPTION_KEY ?? "",
+  harukiTokenEncryptionKeyVersion: process.env.HARUKI_TOKEN_ENCRYPTION_KEY_VERSION ?? "v1",
+  harukiTokenPreviousEncryptionKeys: process.env.HARUKI_TOKEN_PREVIOUS_ENCRYPTION_KEYS ?? "",
   masterRawBaseUrl: process.env.MASTER_RAW_BASE_URL ?? "https://raw.githubusercontent.com",
   publicWebBaseUrl: process.env.PUBLIC_WEB_BASE_URL ?? "http://127.0.0.1:5173",
   corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? process.env.PUBLIC_WEB_BASE_URL ?? "http://127.0.0.1:5173")

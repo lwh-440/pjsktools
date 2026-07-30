@@ -19,7 +19,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
-import org.json.JSONTokener
 import java.security.KeyStore
 import java.io.IOException
 import javax.crypto.Cipher
@@ -128,17 +127,10 @@ class AccountRepository(
         finally { sessionStore.clear() }
     }
     suspend fun getProfile(accessToken: String) = io { parseProfile(get("/api/me/profile", accessToken)) }
-    suspend fun addBinding(accessToken: String, input: NewPlayerBinding) = io {
-        binding(post("/api/me/player-bindings", JSONObject().put("region", input.region).put("playerUid", input.playerUid.trim())
-            .put("displayName", input.displayName.trim()).put("note", input.note.trim()).put("isDefault", input.isDefault), accessToken))
-    }
     suspend fun setDefaultBinding(accessToken: String, id: String) = io {
         binding(patch("/api/me/player-bindings/${encode(id)}", JSONObject().put("isDefault", true), accessToken))
     }
     suspend fun deleteBinding(accessToken: String, id: String) = io { delete("/api/me/player-bindings/${encode(id)}", accessToken); Unit }
-    suspend fun refreshPublicProfile(accessToken: String, id: String) = io {
-        binding(post("/api/me/player-bindings/${encode(id)}/refresh-public-profile", JSONObject(), accessToken))
-    }
     suspend fun startQqAuth(redirectTo: String? = null) = io {
         val suffix = redirectTo?.takeIf(String::isNotBlank)?.let { "?redirectTo=${encode(it)}" }.orEmpty()
         val j = get("/api/auth/qq/start$suffix")
@@ -192,28 +184,6 @@ class AccountRepository(
         val body = JSONObject().put("region", binding.region).put("bindingId", binding.id).put("eventId", eventId?.takeIf(String::isNotBlank))
         DeckRecommendation(post("/api/me/tools/deck-recommend", body, token).toString())
     }
-    suspend fun loadCards(token: String, bindingId: String) = io { getArray("/api/me/player-data/${encode(bindingId)}/cards", token).toString() }
-    suspend fun saveCards(token: String, binding: PlayerBinding, cardsJson: String) = io {
-        val cards = JSONTokener(cardsJson).nextValue() as? JSONArray ?: throw IllegalArgumentException("持有卡数据必须是 JSON 数组")
-        put("/api/me/player-data/${encode(binding.id)}/cards", JSONObject().put("region", binding.region).put("cards", cards), token).toString()
-    }
-    suspend fun deleteCard(token: String, bindingId: String, cardId: String) = io { delete("/api/me/player-data/${encode(bindingId)}/cards/${encode(cardId)}", token); Unit }
-    suspend fun loadPlayerData(token: String, bindingId: String, kind: String) = io { get("/api/me/player-data/${encode(bindingId)}/${encode(kind)}", token).toString() }
-    suspend fun validatePlayerData(token: String, binding: PlayerBinding, kind: String, dataJson: String) = io {
-        post("/api/me/player-data/${encode(binding.id)}/validate", JSONObject().put("kind", kind).put("region", binding.region).put("data", JSONTokener(dataJson).nextValue()), token).toString()
-    }
-    suspend fun savePlayerData(token: String, binding: PlayerBinding, kind: String, dataJson: String) = io {
-        put("/api/me/player-data/${encode(binding.id)}/${encode(kind)}", JSONObject().put("region", binding.region).put("data", JSONTokener(dataJson).nextValue()), token).toString()
-    }
-    suspend fun exportPlayerData(token: String, bindingId: String) = io { get("/api/me/player-data/${encode(bindingId)}/export", token).toString() }
-    suspend fun fullCompleteness(token: String, bindingId: String) = io { get("/api/me/player-data/${encode(bindingId)}/completeness/full", token).toString() }
-    suspend fun reviewImport(token: String, bindingId: String, payload: String) = io {
-        post("/api/me/player-data/${encode(bindingId)}/import/review", JSONTokener(payload).nextValue() as JSONObject, token).toString()
-    }
-    suspend fun confirmImport(token: String, bindingId: String, payload: String) = io {
-        post("/api/me/player-data/${encode(bindingId)}/import", JSONTokener(payload).nextValue() as JSONObject, token).toString()
-    }
-
     private fun auth(json: JSONObject): AccountSession {
         val access = json.stringOrNull("accessToken") ?: json.stringOrNull("token")
             ?: throw AccountApiException(200, "认证响应缺少 access token")
@@ -253,12 +223,10 @@ class AccountRepository(
 
     private suspend fun get(path: String, token: String? = null) = execute(builder(path, token).get().build())
     private suspend fun post(path: String, body: JSONObject, token: String? = null) = execute(builder(path, token).post(body.toString().toRequestBody(jsonType)).build())
-    private suspend fun put(path: String, body: JSONObject, token: String) = execute(builder(path, token).put(body.toString().toRequestBody(jsonType)).build())
     private suspend fun patch(path: String, body: JSONObject, token: String) = execute(builder(path, token).patch(body.toString().toRequestBody(jsonType)).build())
     private suspend fun delete(path: String, token: String) = execute(builder(path, token).delete().build())
     private fun builder(path: String, token: String?): Request.Builder = Request.Builder().url("$base$path").header("Accept", "application/json")
         .also { if (!token.isNullOrBlank()) it.header("Authorization", "Bearer $token") }
-    private suspend fun getArray(path: String, token: String) = JSONArray(executeRaw(builder(path, token).get().build()))
     private suspend fun execute(request: Request, allowRefresh: Boolean = request.header("Authorization") != null): JSONObject =
         executeRaw(request, allowRefresh).takeIf(String::isNotBlank)?.let(::JSONObject) ?: JSONObject()
     private suspend fun executeRaw(request: Request, allowRefresh: Boolean = request.header("Authorization") != null): String {

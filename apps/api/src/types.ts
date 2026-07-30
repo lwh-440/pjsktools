@@ -116,10 +116,24 @@ export interface ScoreRecord {
 export interface PlayerBinding {
   id: string;
   userId: string;
+  harukiConnectionId?: string;
+  harukiBindingId?: string;
+  harukiBindingKey?: string;
   region: RegionId;
   playerUid: string;
   displayName?: string;
   isDefault: boolean;
+  verified?: boolean;
+  source?: "haruki-oauth";
+  upstreamUploadedAt?: string;
+  upstreamEtag?: string;
+  lastWebhookAt?: string;
+  upstreamUpdateAvailable?: boolean;
+  lastSyncAttemptAt?: string;
+  lastSyncSucceededAt?: string;
+  lastSyncStatus?: "never" | "ready" | "syncing" | "success" | "no-change" | "needs-review" | "reauthorize" | "upstream-error" | "parse-error";
+  pendingEmptyGroups?: PlayerDataKind[];
+  autoSyncDaily?: boolean;
   note?: string;
   publicProfileSnapshot?: unknown;
   refreshedAt?: string;
@@ -145,6 +159,9 @@ export interface UserCardInventoryItem {
     isNotSkipped?: boolean;
   }>;
   episodesRead?: boolean;
+  source?: "haruki-oauth";
+  upstreamVersion?: string;
+  syncedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -184,8 +201,94 @@ export interface PlayerDataRecord {
   region: RegionId;
   kind: PlayerDataKind;
   data: unknown;
+  source?: "haruki-oauth";
+  upstreamVersion?: string;
+  syncedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface HarukiConnection {
+  id: string;
+  userId: string;
+  subject: string;
+  scope: string[];
+  accessTokenEncrypted: string;
+  refreshTokenEncrypted?: string;
+  tokenExpiresAt?: string;
+  encryptionKeyVersion: string;
+  status: "active" | "reauthorize";
+  availableBindings: HarukiAvailableBinding[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HarukiAvailableBinding {
+  id: string;
+  bindingKey: string;
+  upstreamBindingId?: string;
+  region: RegionId;
+  playerUid: string;
+  displayName?: string;
+  verified: true;
+}
+
+export interface HarukiOAuthState {
+  stateHash: string;
+  userId: string;
+  client: "web" | "android";
+  redirectUri?: string;
+  codeVerifierEncrypted: string;
+  expiresAt: string;
+}
+
+export interface HarukiSyncReview {
+  tokenHash: string;
+  userId: string;
+  bindingId: string;
+  candidateHash: string;
+  upstreamVersion: string;
+  expiresAt: string;
+}
+
+export interface HarukiSyncCandidate {
+  cardsPresent: boolean;
+  cards: Array<Omit<UserCardInventoryItem, "id" | "userId" | "bindingId" | "region" | "source" | "upstreamVersion" | "syncedAt" | "createdAt" | "updatedAt">>;
+  playerData: Array<{ kind: PlayerDataKind; data: unknown }>;
+  sourceSummary: {
+    userId?: string;
+    region?: RegionId;
+    bindingId?: string;
+    name?: string;
+    rank?: number;
+    uploadTime?: string;
+    unknownKeys: string[];
+  };
+  invalidGroups: Array<"cards" | PlayerDataKind>;
+  upstreamVersion: string;
+}
+
+export interface HarukiWebhookEvent {
+  eventId: string;
+  subject: string;
+  bindingKey: string;
+  region: RegionId;
+  playerUid: string;
+  dataType: "suite" | "mysekai";
+  uploadTime?: string;
+  payloadHash: string;
+  status: "pending" | "processing" | "processed" | "ignored" | "failed";
+  receivedAt: string;
+  processedAt?: string;
+}
+
+export interface HarukiRevokeAudit {
+  userId: string;
+  connectionId: string;
+  subjectHash: string;
+  failedHints: Array<"access_token" | "refresh_token">;
+  status: "pending" | "resolved";
+  createdAt: string;
 }
 
 export interface IdempotencyRecord {
