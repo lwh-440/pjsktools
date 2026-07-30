@@ -1,120 +1,231 @@
-# Project Sekai 全平台玩家助手
+# pjsktools
 
-一个面向 Project Sekai / PJSK 玩家和资料整理场景的全平台工具，包含 Fastify 后端、React Web 端和 Jetpack Compose Android 客户端。项目坚持真实数据优先：数据或资源不可用时返回明确的缺失、未实装或不可用状态，不生成伪数据。
+面向 Project Sekai / PJSK 玩家和资料整理场景的全平台工具箱，由 Fastify API、React Web 客户端和 Jetpack Compose Android 客户端组成。
 
-## 当前功能
+项目以真实数据和可追溯状态为基本原则：上游数据、资源或功能不可用时，接口和客户端应明确返回缺失、未配置或暂不可用状态，不生成伪造数据。
 
-### 后端与公共 API
+> 本项目是非官方社区项目，与 SEGA、Colorful Palette、Craft Egg 或 Project Sekai 的运营方无隶属或授权关系。仓库许可证不授予游戏名称、商标、数据、图片、音频、剧情、Live2D 模型等第三方内容的使用权。
 
-- 五个区服：`jp`、`en`、`tw`、`kr`、`cn`，区服数据、缓存和资源严格隔离。
-- master 数据、活动、歌曲、卡牌、卡池、称号、素材、服装、贴纸和漫画目录。
-- 账号、玩家资料、成绩、排名、计算工具和分享卡接口。
-- 收藏目标全局去重，支持 `player`、`event`、`song`、`card`、`gacha`、`honor`、`material`、`costume`、`stamp`、`comic`。
-- 收藏夹与收藏目标多对多关联；收藏可以属于多个收藏夹，也可以保留为“未分类”。
-- 收藏夹 CRUD、收藏幂等创建、原子替换、批量添加/移除/替换和 `If-Match` 乐观并发控制。
-- 统一目录路由：`/api/master/{region}/catalogs/{type}`。多选筛选支持重复参数和逗号分隔值，响应包含 `filterMeta` 与 `appliedFilters`。
-- OpenAPI 合约位于 `apps/api/openapi/openapi.json`；Android 生成代码只通过合约检查同步，不手工编辑生成文件。
+## 已实现能力
 
-### Web
+### 数据、活动与内容
 
-- 仪表盘、活动与排名、玩家资料、歌曲/卡牌和六类扩展图鉴。
-- 活动、歌曲、卡牌、卡池、称号、素材、服装、贴纸、漫画统一筛选面板。
-- 筛选状态同步 URL，搜索防抖，筛选和分页自动回到第一页；桌面为展开面板，窄屏为抽屉。
-- 筛选面板的展开/收起状态和页面滚动位置在结果更新时保持稳定。
-- 图鉴列表、歌曲/卡牌/活动/集合详情支持收藏。
-- `/me/favorites` 支持收藏夹创建、改名、删除、全部/未分类视图、搜索、类型/区服筛选和批量整理。
-- 收藏操作使用乐观更新，失败时自动回滚；失效目标仍可整理或删除。
+- 支持 `jp`、`en`、`tw`、`kr`、`cn` 五个区服，区服数据、缓存与资源解析相互隔离。
+- 提供活动、歌曲、卡牌、卡池、称号、素材、服装、贴图和漫画等 master 数据与详情接口。
+- 提供公告、兑换所、任务、虚拟 Live、Live2D、MySekai 和故事目录/播放上下文。
+- 活动排名包含 Top 100、分数线、变化记录、历史、预测和指定名次玩家详情。
+- World Link 活动按角色榜保存和展示排名，不回退或混入活动总榜。
+- 分享卡接口可为玩家、成绩、活动、卡牌和歌曲生成 `1200 x 630` PNG。
 
-### Android
+### 玩家工具
 
-- Android 使用后端 API，不直接访问上游数据源或资源镜像。
-- 当前已具备原生工程、区服和环境入口，以及活动、歌曲、卡牌和扩展目录的只读接入基础。
-- 收藏、账号写入、玩家资产和工具等业务仍按 `agent.md` 的阶段计划推进。
+- 控分、活动点数估算、卡组比较、卡组推荐、歌曲推荐、区域道具建议、普通活动规划和 MySekai 计算。
+- 公共玩家资料查询与刷新；上游不存在、限流或暂不可用时保留明确错误语义。
+- 登录后可使用绑定玩家快照运行工具，并查看资料分析、数据完整度和工具就绪状态。
 
-## 项目结构
+### 账号与 Haruki 同步
 
-```text
-apps/api/       Fastify + TypeScript 后端、数据库迁移、OpenAPI 和合约测试
-apps/web/       React + Vite Web 客户端
-android/        Kotlin + Jetpack Compose Android 客户端
-scripts/        本地 smoke、OpenAPI 生成/检查和数据验证脚本
-refer/          Sekai Viewer、Moesekai 等参考项目
-agent.md        架构约束、功能记录、渲染注意事项和验收要求
-```
+- 邮箱验证码注册/登录、刷新令牌、可选 QQ Connect 登录与账号绑定。
+- 收藏夹、多收藏夹归类、批量整理、乐观并发控制，以及个人成绩和卡组配置。
+- Haruki Public 数据预览和本地缓存。
+- Haruki OAuth 使用 PKCE；访问令牌由服务端加密保管，不下发到 Web 或 Android 客户端。
+- 可导入 OAuth 已验证的玩家绑定，在写入前查看卡牌和数据组差异，并显式确认同步。
+- 支持手动同步、每日同步、空数据保护、授权失效提示、令牌撤销和可选 webhook 更新。
+- Web 与 Android 共用服务端玩家快照；用户可断开 Haruki 或删除 pjsktools 账号。
 
-## 快速开始
+### Web 与 Android
 
-需要 Node.js 22+ 和 npm。
+- Web 提供响应式图鉴、筛选、收藏、活动排名、内容播放器、计算工具和账号中心。
+- Android 为原生多模块 Compose 应用，覆盖工具台、活动/排名、图鉴、内容、账号、收藏和 Haruki 连接流程。
+- Android 只调用本项目 API，不直接访问上游 PJSK 数据源；Live2D 和故事舞台复用已部署的 Web 运行时。
+- API 合约位于 `apps/api/openapi/openapi.json`，Android Retrofit/serialization 模型由 OpenAPI 生成并在 CI 中校验。
+
+## 技术架构
+
+| 路径 | 说明 |
+| --- | --- |
+| `apps/api/` | Fastify + TypeScript API、数据同步、PostgreSQL 存储、迁移和 Vitest 测试 |
+| `apps/web/` | React 19 + Vite Web 客户端，包含 Pixi/Live2D 内容运行时 |
+| `android/` | Kotlin + Jetpack Compose 多模块 Android 客户端 |
+| `scripts/` | OpenAPI 生成/检查、本地 smoke、区服与内容验证脚本 |
+| `deploy/` | Docker/Caddy 部署、备份、域名切换和 Android 发布脚本 |
+| `refer/` | Sekai Viewer、Moesekai 等上游参考项目；不参与应用构建 |
+| `apps/api/src/db/migrations/` | PostgreSQL schema 迁移，当前包含 Haruki 同步迁移 `013` |
+
+生产部署由 PostgreSQL、Fastify API、Vite 静态站点和 Caddy 组成。开发环境未配置数据库时使用进程内存存储，重启后数据会丢失。
+
+## 环境要求
+
+- Node.js 22+
+- npm（使用根目录 `package-lock.json`）
+- Android 开发：Android Studio、JDK 21、Android SDK 35
+- 持久化开发或生产环境：PostgreSQL 16+
+- 完整生产部署：Docker Engine 与 Docker Compose
+
+## 本地启动
+
+安装依赖：
 
 ```bash
-npm install
-npm run dev       # 启动 API，默认 http://127.0.0.1:4000
-npm run dev:web   # 启动 Web，默认 http://127.0.0.1:5173
+npm ci
 ```
 
-如果只需要构建：
+按需创建本地配置。不要提交 `.env`、`.secrets/`、OAuth 密钥或令牌：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+未创建 `.env` 也可以使用默认端口和内存存储启动基础开发环境：
 
 ```bash
-npm run build
+npm run dev
+npm run dev:web
 ```
 
-Android 可用 Android Studio 打开 `android/`。Android 构建环境、模块边界、生成客户端和阶段验收要求见 `agent.md`。
+- API：`http://127.0.0.1:4000`
+- Web：`http://127.0.0.1:5173`
+- 健康检查：`http://127.0.0.1:4000/health`
+- OpenAPI：`http://127.0.0.1:4000/openapi.json`
+- API 路由索引：`http://127.0.0.1:4000/api/docs`
 
-Live2D 与故事舞台复用网页端的 Pixi/Cubism 运行时。发布 APK 前必须将网页端部署到稳定的 HTTP(S) 来源，并在构建时显式配置：
+Web 默认自动探测本地 API；分离部署时在构建 Web 前设置 `VITE_API_BASE_URL`。
+
+## 环境配置
+
+API 依次读取仓库根目录 `.env`、`apps/api/.env` 和调用位置可解析到的根配置。完整字段及示例见 `.env.example`，常用配置如下。
+
+### 基础服务
+
+| 变量 | 用途 |
+| --- | --- |
+| `API_HOST` / `PORT` | API 监听地址和端口，开发默认 `127.0.0.1:4000` |
+| `JWT_SECRET` | 访问令牌签名密钥；生产环境必须使用高强度随机值 |
+| `DATABASE_URL` | PostgreSQL 连接串；留空时使用内存存储 |
+| `PGHOST` 等 | 可替代 `DATABASE_URL` 的 PostgreSQL 分项配置 |
+| `REDIS_URL` | 预留的 Redis 地址；当前缓存实现仍为进程内缓存 |
+| `PUBLIC_WEB_BASE_URL` | OAuth 回跳和公开 Web 地址 |
+| `CORS_ALLOWED_ORIGINS` | 逗号分隔的允许来源，默认使用 `PUBLIC_WEB_BASE_URL` |
+| `MASTER_RAW_BASE_URL` | master 数据缺失时的 GitHub Raw 回退来源 |
+| `AUTO_UPDATE_ENABLED` | 是否启动玩家、排名、master 和 Haruki 定时任务 |
+
+邮箱登录使用 `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASS` 和 `SMTP_FROM`。QQ 登录使用 `QQ_CONNECT_APP_ID`、`QQ_CONNECT_APP_KEY`、`QQ_CONNECT_REDIRECT_URI` 和 `QQ_CONNECT_SCOPE`；未配置时 QQ 登录保持禁用。
+
+### Haruki OAuth
+
+基础公共预览使用 `HARUKI_PUBLIC_SUITE_BASE_URL`。完整 OAuth 同步还需要配置：
+
+- OAuth authorize、token、profile、bindings、game-data 和 revoke 端点；
+- `HARUKI_OAUTH_CLIENT_ID` 与 `HARUKI_OAUTH_CLIENT_SECRET`；
+- 与 Haruki 控制台一致的 `HARUKI_OAUTH_REDIRECT_URI`；
+- `HARUKI_TOKEN_ENCRYPTION_KEY`：32 字节随机值，以 Base64 或 64 位十六进制编码；
+- 可选 webhook：`HARUKI_WEBHOOK_ENABLED`、`HARUKI_WEBHOOK_SYNC_ENABLED`、`HARUKI_WEBHOOK_SECRET`。
+
+`HARUKI_TOKEN_ENCRYPTION_KEY_VERSION` 和 `HARUKI_TOKEN_PREVIOUS_ENCRYPTION_KEYS` 用于密钥轮换。旧密钥仅应在旧令牌尚未完成轮换时保留。
+
+生产环境会拒绝非 HTTPS、带用户信息或不在代码允许来源列表中的 Haruki 端点，并要求 HTTPS OAuth redirect URI。不要把真实 OAuth 凭据写入 `.env.example` 或部署清单。
+
+如果只需设置兼容 Haruki API 的基础地址，可以运行：
 
 ```bash
-./gradlew :app:assembleRelease -PPJSKTOOLS_WEB_RUNTIME_BASE_URL=https://tools.example.com
+npm run config:haruki -- http://127.0.0.1:9999
 ```
 
-未配置时 Android 会关闭交互式网页运行时并显示配置错误，不会猜测本地 Vite 端口。运行时 WebView 只允许同源导航；区服通过 `?region=jp` 等 URL 参数传入。
+## 数据库
 
-部署网页时设置 `VITE_API_BASE_URL`，再把生成的网页 HTTPS 地址作为 Android 的 `PJSKTOOLS_WEB_RUNTIME_BASE_URL`。网页托管必须为 SPA 深层路由配置回退到 `index.html`，以便 Live2D 与故事播放器直接加载。
-
-## 数据库与环境变量
-
-后端读取项目根目录 `.env`，也读取 `apps/api/.env`。可参考 `.env.example`。
-
-- `PORT`：API 端口，默认 `4000`
-- `API_HOST`：监听地址，默认 `127.0.0.1`
-- `JWT_SECRET`：登录令牌密钥
-- `DATABASE_URL`：PostgreSQL 连接串；留空时使用内存存储
-- `REDIS_URL`：Redis 连接串；留空时使用进程内缓存
-- `HARUKI_API_BASE_URL`：可选的 Haruki API 代理地址
-- `SMTP_HOST`、`SMTP_USER`、`SMTP_PASS`、`SMTP_FROM`：生产邮件配置；本地 smoke 会主动禁用 SMTP 并使用开发验证码，避免误发邮件
-
-使用 PostgreSQL 时执行：
+配置 PostgreSQL 后执行全部迁移：
 
 ```bash
 npm run db:migrate -w apps/api
 ```
 
-收藏夹迁移为 `apps/api/src/db/migrations/010_favorite_folders.sql`，会合并历史重复收藏，并将历史收藏保留为未分类。生产数据库迁移和发布不由本仓库自动执行。
+生产发布必须先备份数据库，再运行迁移。`013_haruki_player_sync.sql` 会建立 OAuth 连接、同步审核、webhook、限流和玩家绑定相关结构，并对无法安全推导身份的旧绑定采取失败保护；请先在临时数据库验证迁移和回滚方案。
 
-## 常用验证命令
+需要明确强制测试使用内存存储时设置：
 
-```bash
-npm test                         # API 测试
-npm run openapi:export           # 导出 OpenAPI
-npm run openapi:check            # 检查 Android 合约生成结果
-npm run check:encoding           # 检查编码异常
-npm run verify:local             # 构建、编码检查和本地 smoke
+```powershell
+$env:PJSKTOOLS_FORCE_MEMORY_STORE = "true"
+npm test
 ```
 
-本地 smoke 不应连接生产服务或发送真实邮件。一次性 PostgreSQL 迁移验收需要可用的临时 PostgreSQL 实例；如果本机 Docker daemon 不可用，不能将内存存储测试当作 PostgreSQL 验收结果。
+## Android 开发
 
-## 开源许可与参考项目
+用 Android Studio 打开 `android/`，或在命令行运行：
 
-本项目选择对包含或改写自 GPL/AGPL 参考项目的部分按 `AGPL-3.0-or-later` 提供对应源代码。正式公开运行前，本仓库会公开，并在网页/API 的关于页面提供运行版本对应源码的稳定链接。
+```powershell
+Set-Location android
+./gradlew assembleDebug testDebugUnitTest lintDebug
+```
 
-- `Sekai-World/sekai-viewer`（GPL-3.0）：资源路径、内容播放和部分工具实现的参考来源。
-- `moe-sekai/Moesekai`（AGPL-3.0）：计算逻辑、数据模型和工具流程的参考来源。
-- `Team-Haruki/Haruki-Sekai-API` 与 `haruki-sekai-*-master`（MIT）：API 和 master 数据流程参考来源。
-- `@sekai-world/pixi-live2d-display-mulmotion`（MIT）：Web Live2D 运行时依赖。
+Debug 默认连接 Android 模拟器宿主机的 `http://10.0.2.2:4000/`。真机或自定义后端可传入：
 
-完整的第三方来源、许可证和上线前披露要求见 `THIRD_PARTY_NOTICES.md` 与 `OPEN_SOURCE_COMPLIANCE.md`。许可证不授予 Project Sekai 名称、商标、游戏数据、卡图、音频、剧情、Live2D 或其他官方素材的使用权。
+```powershell
+./gradlew :app:assembleDebug -PPJSKTOOLS_API_BASE_URL=http://192.168.1.10:4000
+```
 
-## 安全边界与发布状态
+发布构建必须使用 HTTPS API，并为 Live2D/故事播放器配置已部署 Web 地址：
 
-本项目只处理公开资料、手动记录和用户自愿同步的数据，不实现自动游玩、代打、绕过客户端安全机制或抓取私密数据。
+```powershell
+./gradlew :app:assembleRelease `
+  -PPJSKTOOLS_API_BASE_URL=https://api.example.com `
+  -PPJSKTOOLS_WEB_RUNTIME_BASE_URL=https://tools.example.com
+```
 
-当前代码可用于本地开发和部署前验证，但尚未执行生产发布、线上数据库迁移或最终域名/SMTP/OAuth 配置。正式上线前请完成隐私政策、免责声明、数据与素材归属、账号删除和第三方服务合规审查。
+Web 托管必须为 SPA 深层路由回退到 `index.html`。Haruki Android OAuth 同时支持自定义 scheme 和经过 Digital Asset Links 验证的 HTTPS App Link；正式包的证书指纹与域名配置见 `deploy/README.md`。
+
+签名文件和密码只允许保存在 `.secrets/`。仓库提供 `deploy/prepare-android-signing.ps1` 与 `deploy/build-android-release.ps1`，但不会提交密钥或 APK。
+
+## 构建与验证
+
+```bash
+npm run build                     # 构建 API 和 Web
+npm test                          # API 测试
+npm run test -w apps/web          # Web 测试
+npm run openapi:export            # 导出 OpenAPI 合约
+npm run openapi:check             # 校验已提交的 Android 生成客户端
+npm run check:encoding            # 检查文本编码异常
+npm run verify:local              # API/Web 构建、编码检查和本地 smoke
+npm run verify:player-interfaces  # 验证五区公共玩家/排名接口
+```
+
+生成 Android API 客户端需要 OpenAPI Generator `7.12.0`，脚本默认从 `tools/openapi-generator-cli-7.12.0.jar` 读取：
+
+```bash
+npm run openapi:generate
+```
+
+生成文件位于 `android/core/api/generated/`，应通过 OpenAPI 合约重新生成，不应手工维护。GitHub Actions 会构建和测试 API、核对 OpenAPI、重新生成 Android 客户端，并运行 Android debug 构建、单元测试和 lint。
+
+## 部署
+
+完整的生产说明见 `deploy/README.md`。Docker Compose 入口为 `compose.prod.yml`：
+
+```bash
+cp deploy/.env.production.example .env.production
+docker compose --env-file .env.production -f compose.prod.yml up -d --build
+docker compose --env-file .env.production -f compose.prod.yml ps
+```
+
+生产栈会先运行数据库迁移，再启动 API；Caddy 提供 HTTPS、Web 静态文件和 API 反向代理。PostgreSQL 与 API 端口应只存在于私有 Docker 网络。部署前还应完成异地加密备份、恢复演练、域名/OAuth 回调核对和 Android App Link 校验。
+
+## 安全边界
+
+- 不实现自动游玩、代打、绕过客户端安全机制或抓取私密游戏数据。
+- Haruki OAuth token 只存放在服务端，并使用 AES-256-GCM 与版本化密钥加密。
+- 同步写入前要求审核；上游返回空组、身份不匹配或数据格式异常时不覆盖现有快照。
+- 日志不得记录 token、OAuth payload、原始玩家套件或其他敏感响应。
+- `.env`、`.secrets/`、日志、数据库备份、APK 和构建产物不得提交到仓库。
+- 公开部署前必须完成隐私政策、免责声明、账号删除、数据保留策略和第三方服务合规审查。
+
+## 许可与第三方来源
+
+除文件另有声明外，本仓库源码按 `AGPL-3.0-or-later` 发布，完整文本见 `LICENSE`。
+
+主要参考和依赖来源包括：
+
+- `Sekai-World/sekai-viewer`（GPL-3.0）：资源路径、内容播放、目录行为和部分工具实现；
+- `moe-sekai/Moesekai`（AGPL-3.0）：计算逻辑、数据模型、工具流程和 Haruki OAuth 合约参考；
+- Team-Haruki 项目（MIT）：Haruki API、OAuth 和 master 数据流程参考；
+- `@sekai-world/pixi-live2d-display-mulmotion`（MIT）：Web Live2D 运行时。
+
+公开运行修改版服务时，必须按 AGPL 向网络用户提供与部署版本对应的完整源码和必要构建/部署脚本，同时绝不能公开密钥、用户数据或 provider token。详细来源、固定版本与发布要求见 `THIRD_PARTY_NOTICES.md` 和 `OPEN_SOURCE_COMPLIANCE.md`。
