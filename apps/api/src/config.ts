@@ -47,7 +47,6 @@ export const config = {
   host: process.env.API_HOST ?? (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1"),
   jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
   databaseUrl: databaseUrl(),
-  redisUrl: process.env.REDIS_URL ?? "",
   harukiApiBaseUrl: process.env.HARUKI_API_BASE_URL ?? "",
   harukiPublicSuiteBaseUrl: process.env.HARUKI_PUBLIC_SUITE_BASE_URL ?? "https://suite-api.haruki.seiunx.com/public",
   harukiOAuthAuthorizeUrl: process.env.HARUKI_OAUTH_AUTHORIZE_URL ?? "",

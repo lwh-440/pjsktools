@@ -103,7 +103,6 @@ API 依次读取仓库根目录 `.env`、`apps/api/.env` 和调用位置可解�
 | `JWT_SECRET` | 访问令牌签名密钥；生产环境必须使用高强度随机值 |
 | `DATABASE_URL` | PostgreSQL 连接串；留空时使用内存存储 |
 | `PGHOST` 等 | 可替代 `DATABASE_URL` 的 PostgreSQL 分项配置 |
-| `REDIS_URL` | 预留的 Redis 地址；当前缓存实现仍为进程内缓存 |
 | `PUBLIC_WEB_BASE_URL` | OAuth 回跳和公开 Web 地址 |
 | `CORS_ALLOWED_ORIGINS` | 逗号分隔的允许来源，默认使用 `PUBLIC_WEB_BASE_URL` |
 | `MASTER_RAW_BASE_URL` | master 数据缺失时的 GitHub Raw 回退来源 |
