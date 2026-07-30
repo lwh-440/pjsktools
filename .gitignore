@@ -1,5 +1,6 @@
 node_modules/
 pnpm-lock.yaml
+/refer/
 .cache/assets/
 apps/api/.cache/assets/
 dist/
