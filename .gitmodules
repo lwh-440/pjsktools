@@ -1,6 +1,0 @@
-[submodule "refer/Moesekai"]
-	path = refer/Moesekai
-	url = https://github.com/moe-sekai/Moesekai.git
-[submodule "refer/sekai-viewer"]
-	path = refer/sekai-viewer
-	url = https://github.com/Sekai-World/sekai-viewer.git
