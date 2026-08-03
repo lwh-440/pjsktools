@@ -125,7 +125,7 @@ fun AccountDataPanels(
     }
 }
 
-@Composable private fun Panel(title: String, content: @Composable ColumnScope.() -> Unit) {
+@Composable internal fun Panel(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
