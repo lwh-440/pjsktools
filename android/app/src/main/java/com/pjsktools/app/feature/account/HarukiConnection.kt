@@ -127,8 +127,9 @@ class GeneratedHarukiGateway(
 
     override suspend fun reviewSync(accessToken: String, bindingId: String): HarukiSyncReview {
         val response = requireBody(api(accessToken).reviewHarukiPlayerSync(bindingId))
-        if (response.noChange == true || response.review == null) return HarukiSyncReview(bindingId = bindingId, summary = "Haruki 数据没有变化")
-        val groups = response.review.groups.orEmpty().map { (id, value) ->
+        val review = response.review
+        if (response.noChange == true || review == null) return HarukiSyncReview(bindingId = bindingId, summary = "Haruki 数据没有变化")
+        val groups = review.groups.orEmpty().map { (id, value) ->
             HarukiSyncGroup(id, "$id：传入 ${value.incomingCount} / 当前 ${value.currentCount}", if (value.emptyRequiresConfirmation) "keep" else "update")
         }
         return HarukiSyncReview(
