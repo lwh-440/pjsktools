@@ -368,10 +368,10 @@ class EventsToolsRepository(
         if (body != null) builder.post(body.toRequestBody(jsonMediaType))
         val response = client.newCall(builder.build()).awaitBody()
         val responseBody = response.body
-            if (!response.successful) {
-                val apiMessage = runCatching { JSONObject(responseBody).optString("message") }.getOrNull()
-                throw EventsApiException(response.code, apiMessage?.takeIf { it.isNotBlank() } ?: responseBody.take(300))
-            }
+        if (!response.successful) {
+            val apiMessage = runCatching { JSONObject(responseBody).optString("message") }.getOrNull()
+            throw EventsApiException(response.code, apiMessage?.takeIf { it.isNotBlank() } ?: responseBody.take(300))
+        }
         return responseBody
     }
 
