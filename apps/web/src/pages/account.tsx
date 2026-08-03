@@ -7,12 +7,13 @@ import {
   Wand2
 } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiDelete, apiGet, apiPost } from "../api";
 import { useAuth } from "../AuthContext";
 import { PlayerProfileAnalysisView, type ProfileAnalysis } from "../components/PlayerProfileAnalysis";
-import type { BindingSummary, PlayerBinding, ToolContext } from "../accountTypes";
+import type { AuthResponse, AuthUser, BindingSummary, PlayerBinding, ToolContext } from "../accountTypes";
 import type { Favorite, ScoreRecord } from "../sharedTypes";
+import { parseQqCallback, QQ_CONNECT_BUTTON_URL, safeQqReturnTo } from "../qqOAuth";
 
 function formatDate(value?: string) {
   if (!value) return "-";
@@ -87,17 +88,20 @@ export function LoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const returnTo = new URLSearchParams(location.search).get("returnTo");
-  const from = (returnTo?.startsWith("/") ? returnTo : undefined) ?? (location.state as { from?: string } | null)?.from ?? "/me";
+  const from = safeQqReturnTo(returnTo ?? (location.state as { from?: string } | null)?.from);
   async function submitLogin() {
     await login(email, password);
     navigate(from, { replace: true });
   }
   async function startQqLogin() {
     try {
-      const result = await apiGet<{ authorizeUrl: string }>("/api/auth/qq/start");
+      setNotice("正在前往 QQ 安全登录...");
+      const result = await apiGet<{ authorizeUrl: string }>(`/api/auth/qq/start?redirectTo=${encodeURIComponent(from)}`);
       window.location.href = result.authorizeUrl;
-    } catch {
-      setNotice("QQ 登录暂未配置或仍在审核中，邮箱登录不受影响。");
+    } catch (error) {
+      setNotice(error instanceof Error && error.message.includes("not configured")
+        ? "QQ 登录暂未配置，请使用邮箱登录。"
+        : "暂时无法连接 QQ 登录服务，请稍后重试。");
     }
   }
   if (isAuthenticated) return <Navigate to={from} replace />;
@@ -109,9 +113,59 @@ export function LoginPage() {
         <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="邮箱" />
         <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" />
         <button type="button" onClick={submitLogin}><LogIn size={16} />登录</button>
-        <button type="button" className="secondary" onClick={startQqLogin}>QQ 登录</button>
+        <div className="auth-divider"><span>或</span></div>
+        <button type="button" className="qq-login-button" onClick={startQqLogin} aria-label="使用 QQ 登录">
+          <img src={QQ_CONNECT_BUTTON_URL} alt="QQ 登录" />
+        </button>
         {notice && <p className="empty-state">{notice}</p>}
         <Link to="/register">还没有账号？去注册</Link>
+      </article>
+    </section>
+  );
+}
+
+export function QqCallbackPage() {
+  const { completeOAuthLogin } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const callback = useMemo(() => parseQqCallback(location.search), [location.search]);
+  const exchangeStarted = useRef(false);
+  const completeOAuthLoginRef = useRef(completeOAuthLogin);
+  completeOAuthLoginRef.current = completeOAuthLogin;
+  const [status, setStatus] = useState<"working" | "success" | "error">(callback.status === "error" ? "error" : "working");
+  const [message, setMessage] = useState(callback.status === "error" ? callback.message : "正在完成 QQ 登录，请稍候...");
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    if (callback.status === "error" || exchangeStarted.current) return;
+    exchangeStarted.current = true;
+    window.history.replaceState({}, "", "/auth/qq/callback");
+    apiPost<AuthResponse>("/api/auth/qq/web-exchange", { handoff: callback.handoff })
+      .then(async (auth) => {
+        await completeOAuthLoginRef.current(auth);
+        setUser(auth.user);
+        setStatus("success");
+        setMessage(`QQ 登录成功，欢迎 ${auth.user.nickname ?? "回来"}！`);
+        window.setTimeout(() => navigate(callback.returnTo, { replace: true }), 2500);
+      })
+      .catch((error) => {
+        setStatus("error");
+        setMessage(error instanceof Error && error.message.toLowerCase().includes("expired")
+          ? "QQ 登录凭据已过期或已使用，请从登录页重新发起。"
+          : "QQ 登录未完成，请返回登录页重试。");
+      });
+  }, [callback, navigate]);
+
+  return (
+    <section className="auth-page qq-callback-page">
+      <article className={`panel auth-panel qq-callback-card ${status}`} aria-live="polite">
+        {user?.avatarUrl
+          ? <img className="qq-user-avatar" src={user.avatarUrl} alt={`${user.nickname ?? "QQ 用户"}的头像`} />
+          : <UserRound className="qq-callback-icon" size={52} />}
+        <h2>{status === "working" ? "正在登录" : status === "success" ? "登录成功" : "登录未完成"}</h2>
+        <p>{message}</p>
+        {status === "success" && <button type="button" onClick={() => navigate(callback.returnTo, { replace: true })}>立即继续</button>}
+        {status === "error" && <Link className="button-link" to={`/login?returnTo=${encodeURIComponent(callback.returnTo)}`}>返回登录页</Link>}
       </article>
     </section>
   );

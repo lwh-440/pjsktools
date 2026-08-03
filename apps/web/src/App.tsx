@@ -42,7 +42,7 @@ import { ArtImage, DetailDrawer, Pagination, SearchBox } from "./components/ui";
 import { CatalogFilterPanel, type CatalogFilterMeta } from "./components/CatalogFilterPanel";
 import { FavoriteButton } from "./components/FavoriteButton";
 import type { StoryPlaybackContext } from "./components/StoryPlaybackPlayer";
-import { BoundDeckPage, LoginPage, MeHomePage, MeProfileAnalysisPage, RegisterPage, RequireAuth, ScoresPage } from "./pages/account";
+import { BoundDeckPage, LoginPage, MeHomePage, MeProfileAnalysisPage, QqCallbackPage, RegisterPage, RequireAuth, ScoresPage } from "./pages/account";
 import { HarukiConnectionCenter } from "./components/HarukiConnectionCenter";
 import { RealChartPreview } from "./RealChartPreview";
 import type { RankingEntry, RankingPlayerDetail } from "./components/RankingDetailPanel";
@@ -3027,6 +3027,7 @@ export function App() {
 
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/auth/qq/callback" element={<QqCallbackPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/me" element={<RequireAuth><MeHomePage /></RequireAuth>} />
           <Route path="/me/profile" element={<RequireAuth><MeProfileAnalysisPage /></RequireAuth>} />

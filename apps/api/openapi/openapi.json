@@ -7776,6 +7776,58 @@
         }
       }
     },
+    "/api/auth/qq/web-exchange": {
+      "post": {
+        "operationId": "exchangeQqWebHandoff",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QqWebHandoffRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/api/auth/qq/mobile-link/exchange": {
       "post": {
         "operationId": "post_api_auth_qq_mobile_link_exchange",
@@ -11077,6 +11129,19 @@
           "refreshToken": {
             "type": "string",
             "minLength": 16
+          }
+        }
+      },
+      "QqWebHandoffRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "handoff"
+        ],
+        "properties": {
+          "handoff": {
+            "type": "string",
+            "pattern": "^web_[0-9a-f]{32}$"
           }
         }
       },
