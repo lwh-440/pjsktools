@@ -12,6 +12,7 @@ type AuthContextValue = {
   setAuthMessage: (message: string) => void;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, code: string) => Promise<void>;
+  completeOAuthLogin: (auth: AuthResponse) => Promise<void>;
   refreshAuth: () => Promise<void>;
   logout: () => Promise<void>;
   reloadProfile: () => Promise<void>;
@@ -61,6 +62,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function completeOAuthLogin(auth: AuthResponse) {
+    setAuthLoading(true);
+    try {
+      await applyAuth(auth, `QQ 登录成功，欢迎 ${auth.user.nickname ?? "回来"}`);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
   async function refreshAuth() {
     if (!refreshToken) return;
     setAuthLoading(true);
@@ -105,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthMessage,
     login,
     register,
+    completeOAuthLogin,
     refreshAuth,
     logout,
     reloadProfile

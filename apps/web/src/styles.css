@@ -1458,6 +1458,83 @@ small {
   align-content: center;
 }
 
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #7590a0;
+  font-size: 12px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #d9e3ee;
+}
+
+.qq-login-button,
+.qq-login-button:hover {
+  justify-self: start;
+  width: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.qq-login-button:hover {
+  transform: translateY(-1px);
+}
+
+.qq-login-button img {
+  display: block;
+}
+
+.auth-page.qq-callback-page {
+  grid-template-columns: minmax(0, 560px);
+  justify-content: center;
+  min-height: 420px;
+}
+
+.qq-callback-card {
+  justify-items: center;
+  align-content: center;
+  min-height: 320px;
+  text-align: center;
+  border-top: 4px solid #56c7d9;
+  background: linear-gradient(145deg, #ffffff 0%, #eef9fb 70%, #fff7e8 100%);
+}
+
+.qq-callback-card.success {
+  border-top-color: #3ebf91;
+}
+
+.qq-callback-card.error {
+  border-top-color: #f0aa45;
+}
+
+.qq-user-avatar,
+.qq-callback-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+}
+
+.qq-user-avatar {
+  object-fit: cover;
+  border: 4px solid #ffffff;
+  box-shadow: 0 8px 22px rgba(47, 111, 136, 0.18);
+}
+
+.qq-callback-icon {
+  padding: 10px;
+  color: #2f6f88;
+  background: #dff5f7;
+}
+
 .text-link,
 .brand,
 .tool-card {

@@ -5,10 +5,10 @@ $temp = Join-Path $root $tempName
 $spec = Join-Path $temp "openapi.json"
 $generated = Join-Path $temp "generated"
 
-function Remove-GeneratedTrailingWhitespace([string]$path) {
+function Normalize-GeneratedKotlin([string]$path) {
     $utf8 = [System.Text.UTF8Encoding]::new($false)
     Get-ChildItem -LiteralPath $path -File -Recurse -Filter "*.kt" |
-        Where-Object { $_.Name -like "Haruki*.kt" -or $_.Name -in @("AndroidApi.kt", "PlayerBinding.kt") } |
+        Where-Object { $_.Name -like "Haruki*.kt" -or $_.Name -in @("AndroidApi.kt", "PlayerBinding.kt", "QqWebHandoffRequest.kt") } |
         ForEach-Object {
         $content = [System.IO.File]::ReadAllText($_.FullName)
         $normalized = [System.Text.RegularExpressions.Regex]::Replace(
@@ -17,8 +17,12 @@ function Remove-GeneratedTrailingWhitespace([string]$path) {
             "",
             [System.Text.RegularExpressions.RegexOptions]::Multiline
         )
-        [System.IO.File]::WriteAllText($_.FullName, $normalized, $utf8)
+        if ($_.Name -eq "QqWebHandoffRequest.kt") {
+            $normalized = $normalized.Replace("`r`n", "`n").Replace("`r", "`n")
+            $normalized = $normalized.TrimEnd([char[]]"`r`n") + "`n"
         }
+        [System.IO.File]::WriteAllText($_.FullName, $normalized, $utf8)
+    }
 }
 
 New-Item -ItemType Directory -Path $temp | Out-Null
@@ -36,7 +40,7 @@ try {
     Pop-Location
 }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Remove-GeneratedTrailingWhitespace $generated
+Normalize-GeneratedKotlin $generated
 $currentSpec = [System.IO.File]::ReadAllBytes((Join-Path $root "apps/api/openapi/openapi.json"))
 $exportedSpec = [System.IO.File]::ReadAllBytes($spec)
 if (-not [System.Linq.Enumerable]::SequenceEqual($currentSpec, $exportedSpec)) { throw "Committed OpenAPI file differs from runtime export." }

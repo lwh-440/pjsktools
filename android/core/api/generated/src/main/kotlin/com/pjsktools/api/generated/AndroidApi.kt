@@ -61,6 +61,7 @@ import com.pjsktools.api.generated.PlayerBinding
 import com.pjsktools.api.generated.PlayerBindingPage
 import com.pjsktools.api.generated.PlayerBindingPatchRequest
 import com.pjsktools.api.generated.PlayerProfile
+import com.pjsktools.api.generated.QqWebHandoffRequest
 import com.pjsktools.api.generated.RankingEntryPage
 import com.pjsktools.api.generated.RankingHistory
 import com.pjsktools.api.generated.RankingHistorySummary
@@ -366,6 +367,26 @@ interface AndroidApi {
      */
     @POST("api/tools/event-point-calc")
     suspend fun estimateEventPoint(@Body eventPointEstimateRequest: EventPointEstimateRequest): Response<EventPointEstimateResult>
+
+    /**
+     * POST api/auth/qq/web-exchange
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param qqWebHandoffRequest
+     * @return [AuthResponse]
+     */
+    @POST("api/auth/qq/web-exchange")
+    suspend fun exchangeQqWebHandoff(@Body qqWebHandoffRequest: QqWebHandoffRequest): Response<AuthResponse>
 
     /**
      * GET api/assets/{region}/config

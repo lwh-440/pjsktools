@@ -72,6 +72,10 @@ const schemas: Record<string, Schema> = {
     type: "object", required: ["refreshToken"],
     properties: { refreshToken: { type: "string", minLength: 16 } }
   },
+  QqWebHandoffRequest: {
+    type: "object", additionalProperties: false, required: ["handoff"],
+    properties: { handoff: { type: "string", pattern: "^web_[0-9a-f]{32}$" } }
+  },
   OkResponse: {
     type: "object", required: ["ok"], properties: { ok: { type: "boolean" } }
   },
@@ -722,6 +726,7 @@ const overrides: Record<string, OperationOverride> = {
   "POST /api/auth/login": { operationId: "login", response: ref("AuthResponse"), request: ref("LoginRequest") },
   "POST /api/auth/refresh": { operationId: "refreshSession", response: ref("AuthResponse"), request: ref("RefreshTokenRequest") },
   "POST /api/auth/logout": { operationId: "logout", response: ref("OkResponse"), request: ref("RefreshTokenRequest") },
+  "POST /api/auth/qq/web-exchange": { operationId: "exchangeQqWebHandoff", response: ref("AuthResponse"), request: ref("QqWebHandoffRequest") },
   "POST /api/tools/score-control": { operationId: "calculateScoreControl", response: ref("ScoreControlResult"), request: ref("ScoreControlRequest") },
   "POST /api/tools/event-point-calc": { operationId: "estimateEventPoint", response: ref("EventPointEstimateResult"), request: ref("EventPointEstimateRequest") },
   "POST /api/me/tools/score-control": { operationId: "calculateBoundScoreControl", response: ref("ScoreControlResult"), request: ref("ScoreControlRequest"), security: true },

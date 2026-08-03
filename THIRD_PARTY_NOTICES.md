@@ -58,6 +58,19 @@ obtained through those projects.
 The package license permits use of the runtime library. It does not license
 the Live2D models or any other game assets loaded by the library.
 
+## Service marks and provider assets
+
+### QQ Connect
+
+- Provider: Tencent QQ Connect
+- Official asset URL: https://qzonestyle.gtimg.cn/qzone/vas/opensns/res/img/Connect_logo_3.png
+- Use in this project: the unmodified standard QQ login mark is loaded from
+  Tencent's official asset host on the website login page.
+
+QQ and the QQ login mark are trademarks or service marks of Tencent. Their use
+identifies the external login provider and does not imply endorsement of this
+project.
+
 ## Notice maintenance
 
 Before a public release, update this document with the exact upstream commit,

@@ -5,10 +5,10 @@ $jar = Join-Path $root "tools/openapi-generator-cli-$version.jar"
 $spec = Join-Path $root "apps/api/openapi/openapi.json"
 $output = Join-Path $root "android/core/api/generated"
 
-function Remove-GeneratedTrailingWhitespace([string]$path) {
+function Normalize-GeneratedKotlin([string]$path) {
     $utf8 = [System.Text.UTF8Encoding]::new($false)
     Get-ChildItem -LiteralPath $path -File -Recurse -Filter "*.kt" |
-        Where-Object { $_.Name -like "Haruki*.kt" -or $_.Name -in @("AndroidApi.kt", "PlayerBinding.kt") } |
+        Where-Object { $_.Name -like "Haruki*.kt" -or $_.Name -in @("AndroidApi.kt", "PlayerBinding.kt", "QqWebHandoffRequest.kt") } |
         ForEach-Object {
         $content = [System.IO.File]::ReadAllText($_.FullName)
         $normalized = [System.Text.RegularExpressions.Regex]::Replace(
@@ -17,8 +17,12 @@ function Remove-GeneratedTrailingWhitespace([string]$path) {
             "",
             [System.Text.RegularExpressions.RegexOptions]::Multiline
         )
-        [System.IO.File]::WriteAllText($_.FullName, $normalized, $utf8)
+        if ($_.Name -eq "QqWebHandoffRequest.kt") {
+            $normalized = $normalized.Replace("`r`n", "`n").Replace("`r", "`n")
+            $normalized = $normalized.TrimEnd([char[]]"`r`n") + "`n"
         }
+        [System.IO.File]::WriteAllText($_.FullName, $normalized, $utf8)
+    }
 }
 
 if (-not (Test-Path $jar)) {
@@ -33,4 +37,4 @@ try {
 } finally {
     Pop-Location
 }
-Remove-GeneratedTrailingWhitespace $output
+Normalize-GeneratedKotlin $output

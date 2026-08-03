@@ -115,8 +115,18 @@ const refreshSchema = z.object({
 });
 
 const qqCallbackSchema = z.object({
-  code: z.string().min(1),
-  state: z.string().min(8)
+  code: z.string().min(1).optional(),
+  state: z.string().min(8),
+  error: z.string().min(1).max(100).optional(),
+  error_description: z.string().max(500).optional()
+}).refine((value) => Boolean(value.code || value.error), { message: "QQ callback must include code or error" });
+
+const qqMobileHandoffSchema = z.object({
+  handoff: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+const qqWebHandoffSchema = z.object({
+  handoff: z.string().regex(/^web_[0-9a-f]{32}$/)
 });
 
 const favoriteSchema = z.object({
@@ -746,11 +756,13 @@ function createSixDigitCode() {
 export function normalizeRedirectTo(value?: string) {
   if (!value) return config.publicWebBaseUrl;
   if (value === mobileQqRedirect) return mobileQqLoginState;
-  if (value.startsWith("/")) return `${config.publicWebBaseUrl}${value}`;
   try {
-    const target = new URL(value);
     const base = new URL(config.publicWebBaseUrl);
-    return target.origin === base.origin ? target.toString() : config.publicWebBaseUrl;
+    if (value.startsWith("//")) return base.toString();
+    const target = new URL(value, base);
+    return target.origin === base.origin && !target.username && !target.password
+      ? target.toString()
+      : base.toString();
   } catch {
     return config.publicWebBaseUrl;
   }
@@ -762,6 +774,21 @@ const mobileQqLinkStatePrefix = "mobile-link:";
 const mobileHandoffTtlMs = 2 * 60 * 1000;
 function mobileHandoffExpiresAt() { return new Date(Date.now() + mobileHandoffTtlMs).toISOString(); }
 function mobileQqDeepLink(handoff: string) { return `${mobileQqRedirect}?handoff=${encodeURIComponent(handoff)}`; }
+function webQqHandoff() { return `web_${createQqState()}`; }
+function webQqReturnTo(redirectTo: string) {
+  const base = new URL(config.publicWebBaseUrl);
+  const target = new URL(normalizeRedirectTo(redirectTo));
+  if (target.origin !== base.origin) return "/";
+  const value = `${target.pathname}${target.search}${target.hash}`;
+  return value.startsWith("//") || target.pathname === "/auth/qq/callback" ? "/me" : value;
+}
+function webQqCallbackUrl(input: { redirectTo: string; handoff?: string; error?: string }) {
+  const callback = new URL("/auth/qq/callback", config.publicWebBaseUrl);
+  callback.searchParams.set("returnTo", webQqReturnTo(input.redirectTo));
+  if (input.handoff) callback.searchParams.set("handoff", input.handoff);
+  if (input.error) callback.searchParams.set("error", input.error);
+  return callback.toString();
+}
 
 async function requireBinding(userId: string, bindingId: string) {
   return (await store.listPlayerBindings(userId)).find((item) => item.id === bindingId) ?? null;
@@ -914,24 +941,19 @@ async function issueAuth(app: ReturnType<typeof Fastify>, userId: string, email?
   };
 }
 
-async function resolveQqLogin(code: string, state: string) {
-  const authState = await store.consumeAuthState("qq", state);
-  if (!authState) throw new Error("INVALID_AUTH_STATE");
+async function resolveQqIdentity(code: string) {
   const token = await exchangeQqCode(code);
   const openId = await fetchQqOpenId(token.accessToken);
   const info = await fetchQqUserInfo(token.accessToken, openId.openId);
   const expiresAt = token.expiresIn ? new Date(Date.now() + token.expiresIn * 1000).toISOString() : undefined;
   return {
-    authState,
-    oauth: {
-      provider: "qq" as const,
-      providerUserId: openId.openId,
-      nickname: info.nickname,
-      avatarUrl: qqAvatarUrl(info),
-      accessTokenEncrypted: encryptSecret(token.accessToken),
-      refreshTokenEncrypted: encryptSecret(token.refreshToken),
-      expiresAt
-    }
+    provider: "qq" as const,
+    providerUserId: openId.openId,
+    nickname: info.nickname,
+    avatarUrl: qqAvatarUrl(info),
+    accessTokenEncrypted: encryptSecret(token.accessToken),
+    refreshTokenEncrypted: encryptSecret(token.refreshToken),
+    expiresAt
   };
 }
 
@@ -2098,9 +2120,20 @@ export async function buildApp(options: {
   app.get("/api/auth/qq/callback", async (request, reply) => {
     if (!qqConfigured()) return reply.serviceUnavailable("QQ login is not configured");
     const query = qqCallbackSchema.parse(request.query);
+    const authState = await store.consumeAuthState("qq", query.state);
+    if (!authState) return reply.unauthorized("Invalid or expired QQ auth state");
+
+    const mobileLogin = authState.redirectTo === mobileQqLoginState;
+    const mobileLink = authState.redirectTo.startsWith(mobileQqLinkStatePrefix);
+    if (query.error || !query.code) {
+      if (mobileLogin || mobileLink) return reply.badRequest("QQ authorization was cancelled or denied");
+      const error = query.error === "access_denied" ? "qq_authorization_cancelled" : "qq_authorization_failed";
+      return reply.redirect(webQqCallbackUrl({ redirectTo: authState.redirectTo, error }));
+    }
+
     try {
-      const { oauth, authState } = await resolveQqLogin(query.code, query.state);
-      if (authState.redirectTo.startsWith(mobileQqLinkStatePrefix)) {
+      const oauth = await resolveQqIdentity(query.code);
+      if (mobileLink) {
         const userId = authState.redirectTo.slice(mobileQqLinkStatePrefix.length);
         if (!userId || !(await store.getUser(userId))) return reply.unauthorized("Link target user not found");
         const handoff = createQqState();
@@ -2111,29 +2144,45 @@ export async function buildApp(options: {
       const user = existing ? await store.getUser(existing.userId) : await store.createOAuthUser(oauth);
       if (!user) return reply.unauthorized("OAuth user not found");
       if (existing) await store.linkOAuthAccount(user.id, oauth);
-      if (authState.redirectTo === mobileQqLoginState) {
+      if (mobileLogin) {
         const handoff = createQqState();
         await store.createOAuthHandoff(handoff, { kind: "login", userId: user.id, oauth }, mobileHandoffExpiresAt());
         return reply.redirect(mobileQqDeepLink(handoff));
       }
-      return issueAuth(app, user.id, user.email);
+      const handoff = webQqHandoff();
+      await store.createOAuthHandoff(handoff, { kind: "login", userId: user.id, oauth }, mobileHandoffExpiresAt());
+      return reply.redirect(webQqCallbackUrl({ redirectTo: authState.redirectTo, handoff }));
     } catch (error) {
-      if ((error as Error).message === "INVALID_AUTH_STATE") return reply.unauthorized("Invalid QQ auth state");
+      if (!mobileLogin && !mobileLink && (error as Error).message.startsWith("QQ_")) {
+        return reply.redirect(webQqCallbackUrl({ redirectTo: authState.redirectTo, error: "qq_login_failed" }));
+      }
+      if ((error as Error).message.startsWith("QQ_")) return reply.badGateway("QQ login service is temporarily unavailable");
       throw error;
     }
   });
 
   app.post("/api/auth/qq/mobile-exchange", async (request, reply) => {
-    const body = z.object({ handoff: z.string().min(8) }).parse(request.body);
-    const handoff = await store.consumeOAuthHandoff(body.handoff, "login");
+    const body = qqMobileHandoffSchema.safeParse(request.body);
+    if (!body.success) return reply.unauthorized("Invalid or expired mobile login handoff");
+    const handoff = await store.consumeOAuthHandoff(body.data.handoff, "login");
     if (!handoff?.userId) return reply.unauthorized("Invalid or expired mobile login handoff");
     const user = await store.getUser(handoff.userId);
     return user ? issueAuth(app, user.id, user.email) : reply.unauthorized("User not found");
   });
 
+  app.post("/api/auth/qq/web-exchange", async (request, reply) => {
+    const body = qqWebHandoffSchema.safeParse(request.body);
+    if (!body.success) return reply.unauthorized("Invalid or expired QQ web login handoff");
+    const handoff = await store.consumeOAuthHandoff(body.data.handoff, "login");
+    if (!handoff?.userId) return reply.unauthorized("Invalid or expired QQ web login handoff");
+    const user = await store.getUser(handoff.userId);
+    return user ? issueAuth(app, user.id, user.email) : reply.unauthorized("User not found");
+  });
+
   app.post("/api/auth/qq/mobile-link/exchange", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const body = z.object({ handoff: z.string().min(8) }).parse(request.body);
-    const handoff = await store.consumeOAuthHandoff(body.handoff, "link", request.user.sub);
+    const body = qqMobileHandoffSchema.safeParse(request.body);
+    if (!body.success) return reply.unauthorized("Invalid or expired mobile link handoff");
+    const handoff = await store.consumeOAuthHandoff(body.data.handoff, "link", request.user.sub);
     if (!handoff) return reply.unauthorized("Invalid or expired mobile link handoff");
     try {
       await store.linkOAuthAccount(request.user.sub, handoff.oauth);
@@ -2172,12 +2221,15 @@ export async function buildApp(options: {
   app.post("/api/auth/qq/link", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     if (!qqConfigured()) return reply.serviceUnavailable("QQ login is not configured");
     const body = qqCallbackSchema.parse(request.body);
+    if (!body.code || body.error) return reply.badRequest("QQ authorization was cancelled or denied");
     try {
-      const { oauth } = await resolveQqLogin(body.code, body.state);
+      const authState = await store.consumeAuthState("qq", body.state);
+      if (!authState) return reply.unauthorized("Invalid or expired QQ auth state");
+      const oauth = await resolveQqIdentity(body.code);
       return store.linkOAuthAccount(request.user.sub, oauth);
     } catch (error) {
-      if ((error as Error).message === "INVALID_AUTH_STATE") return reply.unauthorized("Invalid QQ auth state");
       if ((error as Error).message === "OAUTH_ACCOUNT_EXISTS") return reply.conflict("QQ account already linked");
+      if ((error as Error).message.startsWith("QQ_")) return reply.badGateway("QQ login service is temporarily unavailable");
       throw error;
     }
   });

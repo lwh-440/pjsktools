@@ -97,6 +97,7 @@ src/main/kotlin/com/pjsktools/api/generated/PlayerBindingPage.kt
 src/main/kotlin/com/pjsktools/api/generated/PlayerBindingPatchRequest.kt
 src/main/kotlin/com/pjsktools/api/generated/PlayerProfile.kt
 src/main/kotlin/com/pjsktools/api/generated/PublicUser.kt
+src/main/kotlin/com/pjsktools/api/generated/QqWebHandoffRequest.kt
 src/main/kotlin/com/pjsktools/api/generated/RankingEntry.kt
 src/main/kotlin/com/pjsktools/api/generated/RankingEntryPage.kt
 src/main/kotlin/com/pjsktools/api/generated/RankingHistory.kt
