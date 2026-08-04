@@ -13,7 +13,7 @@ import {
   UserRound
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "../api";
 import { useAuth } from "../AuthContext";
 import type { BindingSummary, PlayerBinding } from "../accountTypes";
