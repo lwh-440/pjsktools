@@ -9,6 +9,7 @@ import pg from "pg";
 
 const { Pool } = pg;
 const execFileAsync=promisify(execFile);
+const dockerCommand=process.platform==="win32"?"docker.exe":"docker";
 const quoteIdentifier=(value)=>`"${value.replaceAll('"','""')}"`;
 const requiredConfirmation="isolated-only";
 const managementUrlValue=process.env.PJSKTOOLS_POSTGRES_TEST_URL;
@@ -134,7 +135,7 @@ async function runBootstrap(harukiPassword) {
   const args=["run","--rm","--network","host","--user","0:0","--mount",`type=bind,source=${path.resolve("deploy/compliance/bootstrap-database-roles.sh")},target=/bootstrap.sh,readonly`];
   for(const [key,value] of Object.entries(bashEnvironment)){args.push("--env",`${key}=${value}`);}
   args.push("postgres:16","bash","/bootstrap.sh");
-  await execFileAsync("docker.exe",args,{cwd:process.cwd(),env:process.env});
+  await execFileAsync(dockerCommand,args,{cwd:process.cwd(),env:process.env});
 }
 
 async function runPreMigrationBootstrap() {
@@ -155,7 +156,7 @@ async function runPreMigrationBootstrap() {
   const args=["run","--rm","--network","host","--user","0:0","--mount",`type=bind,source=${path.resolve("deploy/compliance/bootstrap-pre-migration-roles.sh")},target=/bootstrap.sh,readonly`];
   for(const [key,value] of Object.entries(bashEnvironment)){args.push("--env",`${key}=${value}`);}
   args.push("postgres:16","bash","/bootstrap.sh");
-  await execFileAsync("docker.exe",args,{cwd:process.cwd(),env:process.env});
+  await execFileAsync(dockerCommand,args,{cwd:process.cwd(),env:process.env});
 }
 
 async function applyMigrationsTwice() {
