@@ -51,7 +51,7 @@ fun ComplianceLinks(
             TextButton(onClick = { uriHandler.openUri(ICP_URL) }) { Text(ICP_NUMBER) }
         }
         Text(
-            "隐私与安全联系：privacy@sekai-tools.cn · security@sekai-tools.cn",
+            "隐私与安全联系：sekaitools@qq.com",
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center
         )

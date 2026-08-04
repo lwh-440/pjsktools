@@ -17,8 +17,8 @@ function LegalContactCard() {
   return (
     <aside className="legal-contact-card" aria-label="隐私与安全联系渠道">
       <strong>需要帮助？</strong>
-      <span>隐私及个人信息事项：<a href="mailto:privacy@sekai-tools.cn">privacy@sekai-tools.cn</a></span>
-      <span>安全漏洞、违法信息及其他举报：<a href="mailto:security@sekai-tools.cn">security@sekai-tools.cn</a></span>
+      <span>隐私及个人信息事项：<a href="mailto:sekaitools@qq.com?subject=SEKAI%20TOOLS%20隐私事项">sekaitools@qq.com</a></span>
+      <span>安全漏洞、违法信息及其他举报：<a href="mailto:sekaitools@qq.com?subject=SEKAI%20TOOLS%20安全与举报">sekaitools@qq.com</a></span>
       <Link to="/security">查看安全与举报流程</Link>
     </aside>
   );
@@ -75,7 +75,7 @@ export function PrivacyPage() {
       <section>
         <h3>6. 你的权利</h3>
         <p>登录后可查询和更正账号资料、导出个人数据 JSON、解除 QQ 关联、清除 Android 本地缓存并注销账号。注销需要二次确认和重新验证；完成后将删除账号、会话、绑定、收藏、成绩、卡组和玩家快照。法律法规另有保存要求的内容会被隔离，仅在规定期限内保存。</p>
-        <p>你也可以通过 <a href="mailto:privacy@sekai-tools.cn">privacy@sekai-tools.cn</a> 提出访问、更正、删除、撤回授权或投诉请求。我们会核验请求人身份，并在法律规定的期限内处理。</p>
+        <p>你也可以通过 <a href="mailto:sekaitools@qq.com?subject=SEKAI%20TOOLS%20隐私权利请求">sekaitools@qq.com</a> 提出访问、更正、删除、撤回授权或投诉请求。我们会核验请求人身份，并在法律规定的期限内处理。</p>
       </section>
 
       <section>
@@ -113,7 +113,7 @@ export function TermsPage() {
 
       <section>
         <h3>4. 账号与安全</h3>
-        <p>你应妥善保护邮箱、QQ 账号、验证码和设备，不得转让、出租账号或协助他人绕过安全措施。发现异常登录或账号被盗时，请立即修改相关第三方账号凭据并联系 <a href="mailto:security@sekai-tools.cn">security@sekai-tools.cn</a>。</p>
+        <p>你应妥善保护邮箱、QQ 账号、验证码和设备，不得转让、出租账号或协助他人绕过安全措施。发现异常登录或账号被盗时，请立即修改相关第三方账号凭据并联系 <a href="mailto:sekaitools@qq.com?subject=SEKAI%20TOOLS%20账号安全问题">sekaitools@qq.com</a>。</p>
       </section>
 
       <section>
@@ -139,7 +139,7 @@ export function TermsPage() {
 
       <section>
         <h3>8. 联系我们</h3>
-        <p>对协议有疑问，可联系 <a href="mailto:privacy@sekai-tools.cn">privacy@sekai-tools.cn</a>；安全或违法信息问题请使用 <Link to="/security">安全与举报</Link>渠道。</p>
+        <p>对协议有疑问，可联系 <a href="mailto:sekaitools@qq.com?subject=SEKAI%20TOOLS%20用户协议咨询">sekaitools@qq.com</a>；安全或违法信息问题请使用 <Link to="/security">安全与举报</Link>渠道。</p>
       </section>
 
       <LegalContactCard />
@@ -156,20 +156,20 @@ export function SecurityPage() {
       />
 
       <section className="security-channel-grid">
-        <a className="security-channel-card" href="mailto:security@sekai-tools.cn?subject=SEKAI%20TOOLS%20安全漏洞报告">
+        <a className="security-channel-card" href="mailto:sekaitools@qq.com?subject=SEKAI%20TOOLS%20安全漏洞报告">
           <strong>安全漏洞</strong>
           <span>账号、接口、服务器、数据泄露或其他技术风险</span>
-          <small>security@sekai-tools.cn</small>
+          <small>sekaitools@qq.com</small>
         </a>
-        <a className="security-channel-card" href="mailto:security@sekai-tools.cn?subject=SEKAI%20TOOLS%20违法信息举报">
+        <a className="security-channel-card" href="mailto:sekaitools@qq.com?subject=SEKAI%20TOOLS%20违法信息举报">
           <strong>违法信息举报</strong>
           <span>公开页面中涉嫌违法、侵权或需要紧急停止展示的内容</span>
-          <small>security@sekai-tools.cn</small>
+          <small>sekaitools@qq.com</small>
         </a>
-        <a className="security-channel-card" href="mailto:privacy@sekai-tools.cn?subject=SEKAI%20TOOLS%20隐私投诉">
+        <a className="security-channel-card" href="mailto:sekaitools@qq.com?subject=SEKAI%20TOOLS%20隐私投诉">
           <strong>隐私投诉</strong>
           <span>个人信息查询、更正、删除、撤回授权或账号注销问题</span>
-          <small>privacy@sekai-tools.cn</small>
+          <small>sekaitools@qq.com</small>
         </a>
       </section>
 
