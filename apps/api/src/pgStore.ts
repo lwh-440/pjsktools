@@ -2,16 +2,19 @@ import bcrypt from "bcryptjs";
 import { Pool, type PoolClient } from "pg";
 import { hashToken } from "./authCrypto.js";
 import { config, type RegionId } from "./config.js";
+import { deletionIdentifierHash } from "./deletionPrivacy.js";
 import type { AuthStore, CreateOAuthInput, OAuthHandoff, OAuthHandoffKind } from "./store.js";
 import type {
   AuthSession,
   AuthState,
+  AccountDeletionIntent,
   DeckConfig,
   EmailVerificationCode,
   EmailVerificationPurpose,
   Favorite,
   FavoriteFolder,
   IdempotencyRecord,
+  LegalAcceptance,
   OAuthAccount,
   OAuthProvider,
   PlayerDataKind,
@@ -82,7 +85,33 @@ function rowToAuthState(row: any): AuthState {
     provider: row.provider,
     state: row.state,
     redirectTo: row.redirect_to,
+    privacyVersion: row.privacy_version ?? undefined,
+    termsVersion: row.terms_version ?? undefined,
+    ageConfirmed: Boolean(row.age_confirmed),
     expiresAt: new Date(row.expires_at).toISOString(),
+    createdAt: new Date(row.created_at).toISOString()
+  };
+}
+
+function rowToLegalAcceptance(row: any): LegalAcceptance {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    privacyVersion: row.privacy_version,
+    termsVersion: row.terms_version,
+    ageConfirmed: true,
+    source: row.source,
+    acceptedAt: new Date(row.accepted_at).toISOString()
+  };
+}
+
+function rowToDeletionIntent(row: any): AccountDeletionIntent {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    tokenHash: row.token_hash,
+    expiresAt: new Date(row.expires_at).toISOString(),
+    consumedAt: row.consumed_at ? new Date(row.consumed_at).toISOString() : undefined,
     createdAt: new Date(row.created_at).toISOString()
   };
 }
@@ -393,6 +422,17 @@ export class PgStore implements AuthStore {
     const client = await this.pool.connect();
     try {
       await client.query("begin");
+      const userResult = await client.query(`select id, email from users where id = $1 for update`, [id]);
+      const user = userResult.rows[0];
+      if (!user) {
+        await client.query("rollback");
+        return false;
+      }
+      await client.query(
+        `insert into account_deletion_tombstones (user_hash, email_hash, deleted_at)
+         values ($1, $2, now()) on conflict (user_hash) do nothing`,
+        [deletionIdentifierHash("user", user.id), user.email ? deletionIdentifierHash("email", user.email) : null]
+      );
       await client.query(`delete from api_idempotency_records where scope like $1`, [`${id}:%`]);
       const result = await client.query(`delete from users where id = $1`, [id]);
       await client.query("commit");
@@ -486,12 +526,62 @@ export class PgStore implements AuthStore {
     return (result.rowCount ?? 0) > 0;
   }
 
-  async createAuthState(provider: OAuthProvider, state: string, redirectTo: string, expiresAt: string) {
+  async createAuthState(provider: OAuthProvider, state: string, redirectTo: string, expiresAt: string, legal?: { privacyVersion: string; termsVersion: string; ageConfirmed: boolean }) {
     const result = await this.pool.query(
-      `insert into auth_states (provider, state, redirect_to, expires_at) values ($1, $2, $3, $4) returning *`,
-      [provider, state, redirectTo, expiresAt]
+      `insert into auth_states (provider, state, redirect_to, expires_at, privacy_version, terms_version, age_confirmed)
+       values ($1, $2, $3, $4, $5, $6, $7) returning *`,
+      [provider, state, redirectTo, expiresAt, legal?.privacyVersion ?? null, legal?.termsVersion ?? null, legal?.ageConfirmed ?? false]
     );
     return rowToAuthState(result.rows[0]);
+  }
+
+  async listDeletionTombstones() {
+    const result = await this.pool.query(`select * from account_deletion_tombstones order by deleted_at`);
+    return result.rows.map((row) => ({
+      id: row.id,
+      userHash: row.user_hash,
+      emailHash: row.email_hash ?? undefined,
+      deletedAt: new Date(row.deleted_at).toISOString()
+    }));
+  }
+
+  async getLegalAcceptance(userId: string) {
+    const result = await this.pool.query(`select * from legal_acceptances where user_id = $1 order by accepted_at desc limit 1`, [userId]);
+    return result.rows[0] ? rowToLegalAcceptance(result.rows[0]) : null;
+  }
+
+  async recordLegalAcceptance(userId: string, input: { privacyVersion: string; termsVersion: string; ageConfirmed: true; source: LegalAcceptance["source"] }) {
+    const result = await this.pool.query(
+      `insert into legal_acceptances (user_id, privacy_version, terms_version, age_confirmed, source)
+       values ($1, $2, $3, true, $4)
+       on conflict (user_id, privacy_version, terms_version) do nothing
+       returning *`,
+      [userId, input.privacyVersion, input.termsVersion, input.source]
+    );
+    if (result.rows[0]) return rowToLegalAcceptance(result.rows[0]);
+    const existing = await this.pool.query(
+      `select * from legal_acceptances where user_id = $1 and privacy_version = $2 and terms_version = $3`,
+      [userId, input.privacyVersion, input.termsVersion]
+    );
+    return rowToLegalAcceptance(existing.rows[0]);
+  }
+
+  async createAccountDeletionIntent(userId: string, token: string, expiresAt: string) {
+    const result = await this.pool.query(
+      `insert into account_deletion_intents (user_id, token_hash, expires_at) values ($1, $2, $3) returning *`,
+      [userId, hashToken(token), expiresAt]
+    );
+    return rowToDeletionIntent(result.rows[0]);
+  }
+
+  async consumeAccountDeletionIntent(userId: string, token: string) {
+    const result = await this.pool.query(
+      `update account_deletion_intents set consumed_at = now()
+       where id in (select id from account_deletion_intents where user_id = $1 and token_hash = $2
+         and consumed_at is null and expires_at > now() limit 1) returning id`,
+      [userId, hashToken(token)]
+    );
+    return Boolean(result.rows[0]);
   }
 
   async consumeAuthState(provider: OAuthProvider, state: string) {
@@ -953,7 +1043,7 @@ export class PgStore implements AuthStore {
       const row = await this.pool.query(
         `insert into ranking_history_samples
           (region, event_id, sample_type, rank, score, sampled_at, bucket_at, player_name, user_id, leader_card_id, leader_card_image_url, raw_payload, source_metadata)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '{}'::jsonb, $12)
          on conflict (region, event_id, sample_type, rank, bucket_at) do update set
           score = excluded.score,
           sampled_at = excluded.sampled_at,
@@ -961,7 +1051,7 @@ export class PgStore implements AuthStore {
           user_id = excluded.user_id,
           leader_card_id = excluded.leader_card_id,
           leader_card_image_url = excluded.leader_card_image_url,
-          raw_payload = excluded.raw_payload,
+          raw_payload = '{}'::jsonb,
           source_metadata = excluded.source_metadata
          returning *`,
         [
@@ -976,7 +1066,6 @@ export class PgStore implements AuthStore {
           input.userId ?? null,
           input.leaderCardId ?? null,
           input.leaderCardImageUrl ?? null,
-          JSON.stringify(input.rawPayload ?? {}),
           JSON.stringify(input.sourceMetadata ?? {})
         ]
       );
@@ -1056,6 +1145,29 @@ export class PgStore implements AuthStore {
 
   async cleanupIdempotencyRecords() {
     await this.pool.query(`delete from api_idempotency_records where expires_at <= now()`);
+  }
+
+  async cleanupExpiredData() {
+    await this.pool.query(`delete from email_verification_codes where expires_at < now() - interval '24 hours'`);
+    await this.pool.query(`delete from email_verification_cooldowns where expires_at <= now()`);
+    await this.pool.query(`delete from auth_states where expires_at <= now()`);
+    await this.pool.query(`delete from oauth_handoffs where expires_at <= now()`);
+    await this.pool.query(`delete from auth_sessions where expires_at <= now() or revoked_at < now() - interval '24 hours'`);
+    await this.pool.query(`delete from account_deletion_intents where expires_at <= now() or consumed_at < now() - interval '24 hours'`);
+    await this.pool.query(`delete from account_deletion_tombstones where deleted_at < now() - interval '200 days'`);
+    await this.cleanupIdempotencyRecords();
+    await this.pool.query(
+      `insert into ranking_history_minute_rollups
+        (region, event_id, sample_type, rank, minute_at, score_min, score_max, score_avg, sample_count)
+       select region, event_id, sample_type, rank, date_trunc('minute', sampled_at), min(score), max(score), round(avg(score)), count(*)
+       from ranking_history_samples where sampled_at < now() - interval '14 days'
+       group by region, event_id, sample_type, rank, date_trunc('minute', sampled_at)
+       on conflict (region, event_id, sample_type, rank, minute_at) do update set
+        score_min = least(ranking_history_minute_rollups.score_min, excluded.score_min),
+        score_max = greatest(ranking_history_minute_rollups.score_max, excluded.score_max),
+        score_avg = excluded.score_avg, sample_count = excluded.sample_count`
+    );
+    await this.pool.query(`delete from ranking_history_samples where sampled_at < now() - interval '14 days'`);
   }
 
   async reserveIdempotencyRecord(record: IdempotencyRecord) {

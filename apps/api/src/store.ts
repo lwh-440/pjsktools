@@ -2,16 +2,20 @@ import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { hashToken } from "./authCrypto.js";
 import { config, type RegionId } from "./config.js";
+import { deletionIdentifierHash } from "./deletionPrivacy.js";
 import { PgStore } from "./pgStore.js";
 import type {
   AuthSession,
   AuthState,
+  AccountDeletionIntent,
   DeckConfig,
+  DeletionTombstone,
   EmailVerificationCode,
   EmailVerificationPurpose,
   Favorite,
   FavoriteFolder,
   IdempotencyRecord,
+  LegalAcceptance,
   OAuthAccount,
   OAuthProvider,
   PlayerDataKind,
@@ -37,7 +41,7 @@ export type CreateOAuthInput = {
   expiresAt?: string;
 };
 
-export type OAuthHandoffKind = "login" | "link";
+export type OAuthHandoffKind = "login" | "link" | "delete";
 
 export type OAuthHandoff = {
   kind: OAuthHandoffKind;
@@ -64,8 +68,12 @@ export type AuthStore = {
   createSession(userId: string, refreshToken: string, expiresAt: string): Promise<AuthSession>;
   getSessionByRefreshToken(refreshToken: string): Promise<AuthSession | null>;
   revokeSession(id: string): Promise<boolean>;
-  createAuthState(provider: OAuthProvider, state: string, redirectTo: string, expiresAt: string): Promise<AuthState>;
+  createAuthState(provider: OAuthProvider, state: string, redirectTo: string, expiresAt: string, legal?: { privacyVersion: string; termsVersion: string; ageConfirmed: boolean }): Promise<AuthState>;
   consumeAuthState(provider: OAuthProvider, state: string): Promise<AuthState | null>;
+  getLegalAcceptance(userId: string): Promise<LegalAcceptance | null>;
+  recordLegalAcceptance(userId: string, input: { privacyVersion: string; termsVersion: string; ageConfirmed: true; source: LegalAcceptance["source"] }): Promise<LegalAcceptance>;
+  createAccountDeletionIntent(userId: string, token: string, expiresAt: string): Promise<AccountDeletionIntent>;
+  consumeAccountDeletionIntent(userId: string, token: string): Promise<boolean>;
   createOAuthHandoff(handoff: string, input: OAuthHandoff, expiresAt: string): Promise<void>;
   consumeOAuthHandoff(handoff: string, kind: OAuthHandoffKind, userId?: string): Promise<OAuthHandoff | null>;
   listFavoriteFolders(userId: string): Promise<FavoriteFolder[]>;
@@ -100,6 +108,8 @@ export type AuthStore = {
   reserveIdempotencyRecord(record: IdempotencyRecord): Promise<"reserved" | IdempotencyRecord>;
   saveIdempotencyRecord(record: IdempotencyRecord): Promise<void>;
   cleanupIdempotencyRecords(): Promise<void>;
+  cleanupExpiredData(): Promise<void>;
+  listDeletionTombstones(): Promise<DeletionTombstone[]>;
 };
 
 export function toPublicUser(user: UserAccount): PublicUser {
@@ -130,6 +140,9 @@ export class MemoryStore implements AuthStore {
   private sessionsByHash = new Map<string, string>();
   private authStates = new Map<string, AuthState>();
   private oauthHandoffs = new Map<string, OAuthHandoff & { expiresAt: string }>();
+  private legalAcceptances = new Map<string, LegalAcceptance>();
+  private deletionIntents = new Map<string, AccountDeletionIntent>();
+  private deletionTombstones = new Map<string, DeletionTombstone>();
   private emailCodes = new Map<string, EmailVerificationCode>();
   private emailCodeCooldowns = new Map<string, { reservationId: string; expiresAt: number }>();
   private favoriteFolders = new Map<string, FavoriteFolder>();
@@ -253,6 +266,13 @@ export class MemoryStore implements AuthStore {
   async deleteUserById(id: string) {
     const user = this.users.get(id);
     if (!user) return false;
+    const tombstone: DeletionTombstone = {
+      id: randomUUID(),
+      userHash: deletionIdentifierHash("user", user.id),
+      emailHash: user.email ? deletionIdentifierHash("email", user.email) : undefined,
+      deletedAt: nowIso()
+    };
+    this.deletionTombstones.set(tombstone.userHash, tombstone);
     this.users.delete(id);
     if (user.email) this.usersByEmail.delete(normalizeEmail(user.email));
     for (const [key, value] of [...this.oauthAccounts]) if (value.userId === id) this.oauthAccounts.delete(key);
@@ -265,6 +285,8 @@ export class MemoryStore implements AuthStore {
     for (const [key, value] of [...this.deckConfigs]) if (value.userId === id) this.deckConfigs.delete(key);
     for (const [key, value] of [...this.playerData]) if (value.userId === id) this.playerData.delete(key);
     for (const [key, value] of [...this.idempotencyRecords]) if (value.scope.startsWith(`${id}:`)) this.idempotencyRecords.delete(key);
+    for (const key of [...this.legalAcceptances.keys()]) if (key.startsWith(`${id}:`)) this.legalAcceptances.delete(key);
+    for (const [key, value] of [...this.deletionIntents]) if (value.userId === id) this.deletionIntents.delete(key);
     return true;
   }
 
@@ -344,10 +366,38 @@ export class MemoryStore implements AuthStore {
     return true;
   }
 
-  async createAuthState(provider: OAuthProvider, state: string, redirectTo: string, expiresAt: string) {
-    const authState: AuthState = { id: randomUUID(), provider, state, redirectTo, expiresAt, createdAt: nowIso() };
+  async createAuthState(provider: OAuthProvider, state: string, redirectTo: string, expiresAt: string, legal?: { privacyVersion: string; termsVersion: string; ageConfirmed: boolean }) {
+    const authState: AuthState = { id: randomUUID(), provider, state, redirectTo, expiresAt, createdAt: nowIso(), ...legal };
     this.authStates.set(`${provider}:${state}`, authState);
     return authState;
+  }
+
+  async getLegalAcceptance(userId: string) {
+    return [...this.legalAcceptances.values()]
+      .filter((item) => item.userId === userId)
+      .sort((left, right) => Date.parse(right.acceptedAt) - Date.parse(left.acceptedAt))[0] ?? null;
+  }
+
+  async recordLegalAcceptance(userId: string, input: { privacyVersion: string; termsVersion: string; ageConfirmed: true; source: LegalAcceptance["source"] }) {
+    const key = `${userId}:${input.privacyVersion}:${input.termsVersion}`;
+    const existing = this.legalAcceptances.get(key);
+    if (existing) return existing;
+    const acceptance: LegalAcceptance = { id: randomUUID(), userId, ...input, acceptedAt: nowIso() };
+    this.legalAcceptances.set(key, acceptance);
+    return acceptance;
+  }
+
+  async createAccountDeletionIntent(userId: string, token: string, expiresAt: string) {
+    const intent: AccountDeletionIntent = { id: randomUUID(), userId, tokenHash: hashToken(token), expiresAt, createdAt: nowIso() };
+    this.deletionIntents.set(intent.tokenHash, intent);
+    return intent;
+  }
+
+  async consumeAccountDeletionIntent(userId: string, token: string) {
+    const key = hashToken(token);
+    const intent = this.deletionIntents.get(key);
+    this.deletionIntents.delete(key);
+    return Boolean(intent && intent.userId === userId && !intent.consumedAt && Date.parse(intent.expiresAt) > Date.now());
   }
 
   async consumeAuthState(provider: OAuthProvider, state: string) {
@@ -653,6 +703,7 @@ export class MemoryStore implements AuthStore {
       const record: RankingHistorySample = {
         ...existing,
         ...input,
+        rawPayload: {},
         id: existing?.id ?? randomUUID(),
         createdAt: existing?.createdAt ?? nowIso()
       };
@@ -699,6 +750,22 @@ export class MemoryStore implements AuthStore {
     for (const [key, value] of this.idempotencyRecords) {
       if (Date.parse(value.expiresAt) <= now) this.idempotencyRecords.delete(key);
     }
+  }
+
+  async cleanupExpiredData() {
+    const now = Date.now();
+    for (const [key, value] of this.emailCodes) if (Date.parse(value.expiresAt) + 24 * 60 * 60 * 1000 <= now) this.emailCodes.delete(key);
+    for (const [key, value] of this.authStates) if (Date.parse(value.expiresAt) <= now) this.authStates.delete(key);
+    for (const [key, value] of this.oauthHandoffs) if (Date.parse(value.expiresAt) <= now) this.oauthHandoffs.delete(key);
+    for (const [key, value] of this.sessions) if (value.revokedAt || Date.parse(value.expiresAt) <= now) this.sessions.delete(key);
+    for (const [key, value] of this.deletionIntents) if (Date.parse(value.expiresAt) <= now) this.deletionIntents.delete(key);
+    for (const [key, value] of this.rankingHistory) if (Date.parse(value.sampledAt) < now - 14 * 24 * 60 * 60 * 1000) this.rankingHistory.delete(key);
+    for (const [key, value] of this.deletionTombstones) if (Date.parse(value.deletedAt) < now - 200 * 24 * 60 * 60 * 1000) this.deletionTombstones.delete(key);
+    await this.cleanupIdempotencyRecords();
+  }
+
+  async listDeletionTombstones() {
+    return [...this.deletionTombstones.values()];
   }
 
   async reserveIdempotencyRecord(record: IdempotencyRecord) {

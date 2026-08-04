@@ -42,6 +42,7 @@ import com.pjsktools.core.designsystem.SekaiPink
 import com.pjsktools.core.designsystem.SekaiTeal
 import com.pjsktools.core.designsystem.SekaiYellow
 import com.pjsktools.app.feature.catalog.RemoteCatalogImage
+import com.pjsktools.app.feature.compliance.ComplianceLinks
 import kotlinx.coroutines.CancellationException
 import com.pjsktools.app.BuildConfig
 import com.pjsktools.app.core.ApiOrigin
@@ -340,7 +341,7 @@ fun AboutFeatureScreen(modifier: Modifier = Modifier) {
         "Haruki" to "公开玩家数据、排名详情和数据补充。",
         "Uni / Haruki" to "同区游戏资产镜像与备用加载。",
         "rks-n" to "实时排名、档线、时序和周回统计。"
-    )
+    ).filterNot { !BuildConfig.HARUKI_FEATURE_ENABLED && it.first.contains("Haruki") }
     LazyColumn(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -350,6 +351,13 @@ fun AboutFeatureScreen(modifier: Modifier = Modifier) {
         }
         items(sources) { (name, description) -> ShellCard(name, description) {} }
         item { ShellCard("区服与缓存原则", "五个区服的数据与资产独立加载，不跨区借用；可用缓存可先展示，再在后台刷新。") {} }
+        item {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("合规与联系", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("查看隐私政策、用户协议、安全与举报渠道及网站备案信息。")
+                ComplianceLinks(Modifier.fillMaxWidth())
+            }
+        }
     }
 }
 

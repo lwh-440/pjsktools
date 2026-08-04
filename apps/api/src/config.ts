@@ -41,13 +41,19 @@ function databaseUrl() {
 
 const requiredHarukiScopes = ["offline_access", "user:read", "bindings:read", "game-data:read"];
 const configuredHarukiScopes = (process.env.HARUKI_OAUTH_SCOPE ?? "").split(/\s+/).filter(Boolean);
+const defaultTrustedProxies = process.env.NODE_ENV === "production" ? "127.0.0.1,::1,172.16.0.0/12" : "";
 
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   host: process.env.API_HOST ?? (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1"),
   jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-me",
+  deletionTombstoneKey: process.env.DELETION_TOMBSTONE_KEY ?? (process.env.NODE_ENV === "production" ? "" : "dev-deletion-key-change-me"),
+  securityEventHmacKey: process.env.SECURITY_LOG_HMAC_KEY ?? (process.env.NODE_ENV === "production" ? "" : "dev-security-event-key-change-me"),
+  securityEventLogPath: process.env.SECURITY_EVENT_LOG_PATH ?? (process.env.NODE_ENV === "production" ? "/var/log/pjsktools/security.json" : ""),
+  playerDisplayDenylistFile: process.env.PLAYER_DISPLAY_DENYLIST_FILE ?? "",
   databaseUrl: databaseUrl(),
   harukiApiBaseUrl: process.env.HARUKI_API_BASE_URL ?? "",
+  harukiFeatureEnabled: process.env.HARUKI_FEATURE_ENABLED === "true",
   harukiPublicSuiteBaseUrl: process.env.HARUKI_PUBLIC_SUITE_BASE_URL ?? "https://suite-api.haruki.seiunx.com/public",
   harukiOAuthAuthorizeUrl: process.env.HARUKI_OAUTH_AUTHORIZE_URL ?? "",
   harukiOAuthTokenUrl: process.env.HARUKI_OAUTH_TOKEN_URL ?? "",
@@ -86,7 +92,10 @@ export const config = {
   autoUpdateEnabled: process.env.AUTO_UPDATE_ENABLED !== "false",
   playerRefreshMs: Number(process.env.PLAYER_REFRESH_MS ?? 60_000),
   rankingRefreshMs: Number(process.env.RANKING_REFRESH_MS ?? 10_000),
-  masterRefreshMs: Number(process.env.MASTER_REFRESH_MS ?? 43_200_000)
+  masterRefreshMs: Number(process.env.MASTER_REFRESH_MS ?? 43_200_000),
+  masterSyncAdminToken: process.env.MASTER_SYNC_ADMIN_TOKEN ?? "",
+  cspReportOnly: process.env.CSP_REPORT_ONLY !== "false",
+  trustedProxyCidrs: (process.env.TRUSTED_PROXY_CIDRS ?? defaultTrustedProxies).split(",").map((value) => value.trim()).filter(Boolean)
 };
 
 export const regions = [

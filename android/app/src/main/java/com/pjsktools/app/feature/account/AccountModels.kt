@@ -1,6 +1,12 @@
 package com.pjsktools.app.feature.account
 
-data class AccountSession(val accessToken: String, val refreshToken: String, val expiresInSeconds: Long? = null, val user: AccountUser)
+data class AccountSession(
+    val accessToken: String,
+    val refreshToken: String,
+    val expiresInSeconds: Long? = null,
+    val user: AccountUser,
+    val legalAcceptanceRequired: Boolean = false
+)
 data class AccountUser(val id: String, val email: String? = null, val nickname: String? = null, val avatarUrl: String? = null, val createdAt: String? = null)
 data class OAuthAccount(val id: String, val provider: String, val nickname: String? = null, val avatarUrl: String? = null, val createdAt: String? = null)
 data class PublicPlayerProfile(val nickname: String? = null, val rank: Int? = null, val comment: String? = null, val source: String? = null, val rawJson: String? = null)
@@ -43,6 +49,11 @@ data class RegistrationCodeResult(
     val resendAfterSeconds: Long? = null,
     val developmentCode: String? = null
 )
+data class AccountDeletionCodeResult(
+    val sent: Boolean,
+    val expiresInSeconds: Long? = null,
+    val resendAfterSeconds: Long? = null
+)
 enum class AccountEntryMode { LOGIN, REGISTER }
 
 data class AccountUiState(
@@ -53,7 +64,10 @@ data class AccountUiState(
     val profileAnalysis: ProfileAnalysis? = null, val toolContext: ToolContext? = null,
     val deckRecommendation: DeckRecommendation? = null,
     val haruki: HarukiUiState = HarukiUiState(),
-    val qqAuthStart: QqAuthStart? = null
+    val qqAuthStart: QqAuthStart? = null,
+    val legalAcceptanceRequired: Boolean = false,
+    val deletionCode: AccountDeletionCodeResult? = null,
+    val qqDeletionReady: Boolean = false
 ) {
     val isAuthenticated get() = session != null
     val selectedBinding: PlayerBinding? get() = profile?.bindings?.firstOrNull { it.id == selectedBindingId }

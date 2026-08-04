@@ -1,29 +1,32 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiGet, apiPost } from "./api";
 import type { AuthResponse, MeProfile } from "./accountTypes";
+import { currentLegalAcceptance } from "./legalClient";
 
 type AuthContextValue = {
   token: string;
-  refreshToken: string;
   meProfile: MeProfile | null;
+  legalAcceptanceRequired: boolean;
   authLoading: boolean;
   isAuthenticated: boolean;
   message: string;
   setAuthMessage: (message: string) => void;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<boolean>;
   register: (email: string, password: string, code: string) => Promise<void>;
-  completeOAuthLogin: (auth: AuthResponse) => Promise<void>;
+  completeOAuthLogin: (auth: AuthResponse) => Promise<boolean>;
   refreshAuth: () => Promise<void>;
   logout: () => Promise<void>;
   reloadProfile: () => Promise<void>;
+  acceptLegal: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState(() => localStorage.getItem("pjsktools-token") ?? "");
-  const [refreshToken, setRefreshToken] = useState(() => localStorage.getItem("pjsktools-refresh-token") ?? "");
+  const refreshAttempted = useRef(false);
   const [meProfile, setMeProfile] = useState<MeProfile | null>(null);
+  const [legalAcceptanceRequired, setLegalAcceptanceRequired] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [message, setAuthMessage] = useState("准备就绪");
 
@@ -31,12 +34,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const nextToken = auth.accessToken ?? auth.token;
     setToken(nextToken);
     localStorage.setItem("pjsktools-token", nextToken);
-    if (auth.refreshToken) {
-      setRefreshToken(auth.refreshToken);
-      localStorage.setItem("pjsktools-refresh-token", auth.refreshToken);
-    }
+    localStorage.removeItem("pjsktools-refresh-token");
+    const acceptanceRequired = Boolean(auth.legalAcceptanceRequired);
+    setLegalAcceptanceRequired(acceptanceRequired);
     setAuthMessage(successMessage);
-    setMeProfile(await apiGet<MeProfile>("/api/me/profile", nextToken));
+    setMeProfile(acceptanceRequired ? null : await apiGet<MeProfile>("/api/me/profile", nextToken));
+    return acceptanceRequired;
   }
 
   async function reloadProfile() {
@@ -44,10 +47,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMeProfile(await apiGet<MeProfile>("/api/me/profile", token));
   }
 
+  async function acceptLegal() {
+    if (!token) throw new Error("请先登录");
+    await apiPost("/api/me/legal-acceptances", currentLegalAcceptance, token);
+    setLegalAcceptanceRequired(false);
+    setAuthMessage("协议确认已记录");
+    await reloadProfile();
+  }
+
   async function login(email: string, password: string) {
     setAuthLoading(true);
     try {
-      await applyAuth(await apiPost<AuthResponse>("/api/auth/login", { email, password }), "登录成功");
+      return await applyAuth(await apiPost<AuthResponse>("/api/auth/web/login", { email, password }), "登录成功");
     } finally {
       setAuthLoading(false);
     }
@@ -56,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function register(email: string, password: string, code: string) {
     setAuthLoading(true);
     try {
-      await applyAuth(await apiPost<AuthResponse>("/api/auth/register", { email, password, code }), "注册成功");
+      await applyAuth(await apiPost<AuthResponse>("/api/auth/web/register", { email, password, code, ...currentLegalAcceptance }), "注册成功");
     } finally {
       setAuthLoading(false);
     }
@@ -65,21 +76,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function completeOAuthLogin(auth: AuthResponse) {
     setAuthLoading(true);
     try {
-      await applyAuth(auth, `QQ 登录成功，欢迎 ${auth.user.nickname ?? "回来"}`);
+      return await applyAuth(auth, `QQ 登录成功，欢迎 ${auth.user.nickname ?? "回来"}`);
     } finally {
       setAuthLoading(false);
     }
   }
 
   async function refreshAuth() {
-    if (!refreshToken) return;
     setAuthLoading(true);
     try {
-      await applyAuth(await apiPost<AuthResponse>("/api/auth/refresh", { refreshToken }), "登录状态已刷新");
+      await applyAuth(await apiPost<AuthResponse>("/api/auth/web/refresh", {}), "登录状态已刷新");
     } catch {
       setToken("");
-      setRefreshToken("");
       setMeProfile(null);
+      setLegalAcceptanceRequired(false);
       localStorage.removeItem("pjsktools-token");
       localStorage.removeItem("pjsktools-refresh-token");
     } finally {
@@ -88,27 +98,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
-    if (refreshToken) await apiPost("/api/auth/logout", { refreshToken }).catch(() => undefined);
+    await apiPost("/api/auth/web/logout", {}).catch(() => undefined);
     setToken("");
-    setRefreshToken("");
     setMeProfile(null);
+    setLegalAcceptanceRequired(false);
     localStorage.removeItem("pjsktools-token");
     localStorage.removeItem("pjsktools-refresh-token");
     setAuthMessage("已退出登录");
   }
 
   useEffect(() => {
+    if (refreshAttempted.current) return;
+    refreshAttempted.current = true;
     if (token) {
-      apiGet<MeProfile>("/api/me/profile", token).then(setMeProfile).catch(() => undefined);
-      return;
+      apiGet<MeProfile>("/api/me/profile", token).then(setMeProfile).catch(() => refreshAuth());
+    } else {
+      refreshAuth().catch(() => undefined);
     }
-    if (refreshToken) refreshAuth().catch(() => undefined);
-  }, [token, refreshToken]);
+  }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
     token,
-    refreshToken,
     meProfile,
+    legalAcceptanceRequired,
     authLoading,
     isAuthenticated: Boolean(token),
     message,
@@ -118,8 +130,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     completeOAuthLogin,
     refreshAuth,
     logout,
-    reloadProfile
-  }), [token, refreshToken, meProfile, authLoading, message]);
+    reloadProfile,
+    acceptLegal
+  }), [token, meProfile, legalAcceptanceRequired, authLoading, message]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

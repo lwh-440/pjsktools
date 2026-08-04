@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
 import { z } from "zod";
-import { decryptHarukiSecret, encryptHarukiSecret, encryptSecret } from "./authCrypto.js";
+import { decryptHarukiSecret, encryptHarukiSecret } from "./authCrypto.js";
 import { getCardImportManifest } from "./cardImportManifest.js";
 import { getAssetConfig, getCardAssetDetail, getChartAssetDetail, getEventAssetDetail, getMusicAssetDetail } from "./assets.js";
 import { AssetResolveError, AssetResolver } from "./assetResolver.js";
@@ -77,6 +77,9 @@ import { buildAssetReadiness, sharedFormulaVersion } from "./normalEventFormula.
 import { buildProfileAnalysis } from "./profileAnalysis.js";
 import { compareDecks } from "./deckComparator.js";
 import { installOpenApi } from "./openApi.js";
+import { writeSecurityEvent } from "./securityEvents.js";
+import { currentPrivacyVersion, currentTermsVersion, isCurrentLegalAcceptance, legalDocumentUrls } from "./legal.js";
+import { loadPlayerDisplayBlocker, type PlayerDisplayBlocker } from "./playerDisplayControls.js";
 import { paginate, withPaginationFlags } from "./pagination.js";
 import { renderShareCardPng, shareCardMetadata, type ShareCardData } from "./shareCard.js";
 import { assertIfMatch, createWriteControls, setEntityTag, withEntityVersion } from "./writeControls.js";
@@ -96,14 +99,37 @@ import {
 
 const authSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8)
+  password: z.string().min(8),
+  privacyVersion: z.string().optional(),
+  termsVersion: z.string().optional(),
+  ageConfirmed: z.boolean().optional(),
+  source: z.enum(["web", "android"]).default("android")
 });
 
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(10),
-  code: z.string().regex(/^\d{6}$/)
+  code: z.string().regex(/^\d{6}$/),
+  privacyVersion: z.literal(currentPrivacyVersion),
+  termsVersion: z.literal(currentTermsVersion),
+  ageConfirmed: z.literal(true),
+  source: z.enum(["web", "android"]).default("android")
 });
+
+const legalAcceptanceSchema = z.object({
+  privacyVersion: z.literal(currentPrivacyVersion),
+  termsVersion: z.literal(currentTermsVersion),
+  ageConfirmed: z.literal(true),
+  source: z.enum(["web", "android"])
+}).strict();
+
+const deletionIntentSchema = z.object({
+  confirmation: z.literal("DELETE"),
+  code: z.string().regex(/^\d{6}$/).optional()
+}).strict();
+
+const deletionConfirmSchema = z.object({ token: z.string().min(32).max(200) }).strict();
+const deletionHandoffSchema = z.object({ handoff: z.string().regex(/^delete_[0-9a-f]{32}$/) }).strict();
 
 const emailCodeSchema = z.object({
   email: z.string().email(),
@@ -736,6 +762,62 @@ const refreshTokenTtlMs = 1000 * 60 * 60 * 24 * 30;
 const authStateTtlMs = 1000 * 60 * 10;
 const emailCodeTtlSeconds = 5 * 60;
 const emailCodeResendCooldownSeconds = 60;
+const webRefreshCookieName = "pjsktools_refresh";
+const deletionIntentTtlMs = 10 * 60 * 1000;
+const qqDeletionStatePrefix = "__qq_delete__:";
+
+type RateBucket = { count: number; resetAt: number };
+const rateBuckets = new Map<string, RateBucket>();
+
+export function sanitizeRequestLogUrl(value: string) {
+  return value.split("?", 1)[0]
+    .replace(/\/[0-9]{8,20}(?=\/|$)/g, "/:id")
+    .replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}(?=\/|$)/gi, "/:id");
+}
+
+function auditSecurity(request: any, event: Parameters<typeof writeSecurityEvent>[1], accountIdentifier?: string) {
+  void writeSecurityEvent(request, event, accountIdentifier)
+    .catch((error) => request.log.error({ errorType: (error as Error).name }, "security event write failed"));
+}
+
+function clientAddress(request: any) {
+  return String(request.ip ?? request.socket?.remoteAddress ?? "unknown").slice(0, 128);
+}
+
+function enforceRateLimit(request: any, reply: any, scope: string, limit: number, windowMs: number, account?: string) {
+  const now = Date.now();
+  const key = `${scope}:${clientAddress(request)}:${String(account ?? "-").toLowerCase().slice(0, 160)}`;
+  const current = rateBuckets.get(key);
+  const bucket = !current || current.resetAt <= now ? { count: 0, resetAt: now + windowMs } : current;
+  bucket.count += 1;
+  rateBuckets.set(key, bucket);
+  reply.header("X-RateLimit-Limit", String(limit));
+  reply.header("X-RateLimit-Remaining", String(Math.max(0, limit - bucket.count)));
+  if (bucket.count <= limit) return true;
+  auditSecurity(request, "rate_limited", account);
+  reply.header("Retry-After", String(Math.max(1, Math.ceil((bucket.resetAt - now) / 1000))));
+  reply.code(429).send({ statusCode: 429, code: "RATE_LIMITED", message: "Too many requests; please try again later" });
+  return false;
+}
+
+function readCookie(request: any, name: string) {
+  const cookie = String(request.headers?.cookie ?? "");
+  for (const part of cookie.split(";")) {
+    const [key, ...value] = part.trim().split("=");
+    if (key === name) return decodeURIComponent(value.join("="));
+  }
+  return undefined;
+}
+
+function setWebRefreshCookie(reply: any, token: string) {
+  const secure = config.nodeEnv === "production" ? "; Secure" : "";
+  reply.header("Set-Cookie", `${webRefreshCookieName}=${encodeURIComponent(token)}; Path=/api/auth/web; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(refreshTokenTtlMs / 1000)}${secure}`);
+}
+
+function clearWebRefreshCookie(reply: any) {
+  const secure = config.nodeEnv === "production" ? "; Secure" : "";
+  reply.header("Set-Cookie", `${webRefreshCookieName}=; Path=/api/auth/web; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
+}
 
 function refreshExpiresAt() {
   return new Date(Date.now() + refreshTokenTtlMs).toISOString();
@@ -788,6 +870,29 @@ function webQqCallbackUrl(input: { redirectTo: string; handoff?: string; error?:
   if (input.handoff) callback.searchParams.set("handoff", input.handoff);
   if (input.error) callback.searchParams.set("error", input.error);
   return callback.toString();
+}
+function qqDeletionTarget(redirectTo: string) {
+  if (!redirectTo.startsWith(qqDeletionStatePrefix)) return null;
+  const value = redirectTo.slice(qqDeletionStatePrefix.length);
+  const separator = value.indexOf(":");
+  const client = separator >= 0 ? value.slice(0, separator) : "web";
+  const userId = separator >= 0 ? value.slice(separator + 1) : value;
+  return { client: client === "android" ? "android" as const : "web" as const, userId };
+}
+function qqDeletionCallbackError(client: "web" | "android", error: "qq_authorization_cancelled" | "qq_authorization_failed" | "qq_account_mismatch" | "qq_service_unavailable") {
+  if (client === "android") return `pjsktools://auth/qq-delete?error=${encodeURIComponent(error)}`;
+  const url = new URL("/me", config.publicWebBaseUrl);
+  url.searchParams.set("qqDeleteError", error);
+  return url.toString();
+}
+function publicOAuthAccount(account: Awaited<ReturnType<AuthStore["listOAuthAccounts"]>>[number]) {
+  return {
+    provider: account.provider,
+    providerUserId: account.providerUserId,
+    nickname: account.nickname,
+    avatarUrl: account.avatarUrl,
+    linkedAt: account.createdAt
+  };
 }
 
 async function requireBinding(userId: string, bindingId: string) {
@@ -929,31 +1034,59 @@ async function buildToolContext(userId: string, bindingId: string) {
 async function issueAuth(app: ReturnType<typeof Fastify>, userId: string, email?: string) {
   const refreshToken = randomUUID() + randomUUID();
   await store.createSession(userId, refreshToken, refreshExpiresAt());
-  const accessToken = app.jwt.sign({ sub: userId, email }, { expiresIn: accessTokenTtl });
   const user = await store.getUser(userId);
   if (!user) throw new Error("USER_NOT_FOUND");
+  const legalAcceptanceRequired = !isCurrentLegalAcceptance(await store.getLegalAcceptance(userId));
+  const accessToken = app.jwt.sign({ sub: userId, email, legalPending: legalAcceptanceRequired }, { expiresIn: accessTokenTtl });
   return {
     token: accessToken,
     accessToken,
     refreshToken,
     expiresIn: 15 * 60,
+    legalAcceptanceRequired,
     user: toPublicUser(user)
   };
+}
+
+async function issueWebAuth(app: ReturnType<typeof Fastify>, reply: any, userId: string, email?: string) {
+  const auth = await issueAuth(app, userId, email);
+  setWebRefreshCookie(reply, auth.refreshToken);
+  const { refreshToken: _refreshToken, ...publicAuth } = auth;
+  return publicAuth;
+}
+
+async function ensureLegalAcceptance(reply: any, userId: string, input: { privacyVersion?: string; termsVersion?: string; ageConfirmed?: boolean; source?: "web" | "android" }) {
+  const existing = await store.getLegalAcceptance(userId);
+  if (isCurrentLegalAcceptance(existing)) return true;
+  if (!isCurrentLegalAcceptance(input)) {
+    reply.code(428).send({
+      statusCode: 428,
+      code: "LEGAL_ACCEPTANCE_REQUIRED",
+      message: "Please review and accept the current privacy policy and terms, and confirm that you are at least 14 years old",
+      privacyVersion: currentPrivacyVersion,
+      termsVersion: currentTermsVersion,
+      urls: legalDocumentUrls
+    });
+    return false;
+  }
+  await store.recordLegalAcceptance(userId, {
+    privacyVersion: currentPrivacyVersion,
+    termsVersion: currentTermsVersion,
+    ageConfirmed: true,
+    source: input.source ?? "android"
+  });
+  return true;
 }
 
 async function resolveQqIdentity(code: string) {
   const token = await exchangeQqCode(code);
   const openId = await fetchQqOpenId(token.accessToken);
   const info = await fetchQqUserInfo(token.accessToken, openId.openId);
-  const expiresAt = token.expiresIn ? new Date(Date.now() + token.expiresIn * 1000).toISOString() : undefined;
   return {
     provider: "qq" as const,
     providerUserId: openId.openId,
     nickname: info.nickname,
-    avatarUrl: qqAvatarUrl(info),
-    accessTokenEncrypted: encryptSecret(token.accessToken),
-    refreshTokenEncrypted: encryptSecret(token.refreshToken),
-    expiresAt
+    avatarUrl: qqAvatarUrl(info)
   };
 }
 
@@ -1030,6 +1163,15 @@ async function revokeStoredHarukiConnection(connection: Awaited<ReturnType<typeo
   ]);
   if (failedHints.length) await harukiStore.saveRevokeAudit({ userId: connection.userId, connectionId: connection.id, subjectHash: createHash("sha256").update(connection.subject).digest("hex"), failedHints, status: "pending", createdAt: new Date().toISOString() });
   return failedHints;
+}
+
+async function bestEffortDeleteHarukiConnection(userId: string) {
+  try {
+    const connection = await harukiStore.getConnection(userId);
+    if (!connection) return;
+    try { await revokeStoredHarukiConnection(connection); } catch { /* Remote revoke and audit must not block local deletion. */ }
+    try { await harukiStore.deleteConnection(userId); } catch { /* The user cascade remains authoritative. */ }
+  } catch { /* Missing/invalid Haruki secrets must not block local deletion. */ }
 }
 
 function normalizeHarukiCandidate(region: RegionId, value: unknown) {
@@ -1137,14 +1279,22 @@ export async function buildApp(options: {
   verificationEmailSender?: typeof sendVerificationEmail;
   smtpAvailable?: boolean;
   authStore?: AuthStore;
+  playerDisplayBlocker?: PlayerDisplayBlocker;
+  accountDeletionExternalCleanup?: (userId: string) => Promise<void>;
 } = {}) {
-  validateHarukiEndpointConfiguration();
+  if (config.nodeEnv === "production" && config.databaseUrl && (config.deletionTombstoneKey.length < 32 || config.securityEventHmacKey.length < 32)) {
+    throw new Error("Independent high-entropy deletion and security-event HMAC keys are required in production");
+  }
+  if (config.harukiFeatureEnabled) validateHarukiEndpointConfiguration();
+  const playerDisplayBlocked = options.playerDisplayBlocker ?? loadPlayerDisplayBlocker(config.playerDisplayDenylistFile);
+  const accountDeletionExternalCleanup = options.accountDeletionExternalCleanup ?? bestEffortDeleteHarukiConnection;
   const app = Fastify({
+    trustProxy: config.trustedProxyCidrs.length ? config.trustedProxyCidrs : false,
     logger: process.env.PJSKTOOLS_SILENT_APP_LOGS === "true" ? false : {
       serializers: {
         req: (incoming: { method?: string; url?: string }) => ({
           method: incoming.method,
-          url: String(incoming.url ?? "").split("?", 1)[0]
+          url: sanitizeRequestLogUrl(String(incoming.url ?? ""))
         })
       },
       redact: {
@@ -1163,13 +1313,34 @@ export async function buildApp(options: {
   const verificationEmailSender = options.verificationEmailSender ?? sendVerificationEmail;
   const smtpAvailable = options.smtpAvailable ?? smtpConfigured();
   const emailVerificationStore = options.authStore ?? store;
-  await app.register(cors, { origin: config.corsAllowedOrigins });
+  app.addHook("onRequest", async (request, reply) => {
+    if (config.harukiFeatureEnabled) return;
+    const path = String(request.url).split("?", 1)[0];
+    const harukiPath = path.startsWith("/api/me/haruki")
+      || path.startsWith("/api/auth/haruki")
+      || path.startsWith("/api/integrations/haruki")
+      || (path.startsWith("/api/me/player-bindings/") && path.includes("/sync"));
+    if (harukiPath) return reply.code(404).send({ statusCode: 404, code: "NOT_FOUND", message: "Not found" });
+  });
+  await app.register(cors, { origin: config.corsAllowedOrigins, credentials: true });
   await app.register(compress, { global: true, threshold: 1024 });
   await app.register(sensible);
   await app.register(jwt, { secret: config.jwtSecret });
 
   app.decorate("authenticate", async (request: any, reply: any) => {
     await request.jwtVerify();
+    const route = String(request.routeOptions?.url ?? "");
+    const legalExempt = route === "/api/me/legal-acceptances" || route === "/api/auth/me";
+    if (!legalExempt && request.user.legalPending === true && !isCurrentLegalAcceptance(await store.getLegalAcceptance(request.user.sub))) {
+      return reply.code(428).send({
+        statusCode: 428,
+        code: "LEGAL_ACCEPTANCE_REQUIRED",
+        message: "Current legal documents and age confirmation must be accepted before using account data",
+        privacyVersion: currentPrivacyVersion,
+        termsVersion: currentTermsVersion,
+        urls: legalDocumentUrls
+      });
+    }
     return writeControls.before(request, reply, request.user.sub);
   });
   app.addHook("onSend", (request, reply, payload) => writeControls.after(request, reply, payload));
@@ -1179,15 +1350,30 @@ export async function buildApp(options: {
       reply.header("Pragma", "no-cache");
     }
     if (config.nodeEnv === "production") reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("X-Frame-Options", "DENY");
+    reply.header("Referrer-Policy", "no-referrer");
+    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+    const csp = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+    reply.header(config.cspReportOnly ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy", csp);
     return payload;
   });
+
+  const cleanupTimer = setInterval(() => {
+    store.cleanupExpiredData().catch((error) => app.log.error({ errorType: (error as Error).name }, "expired data cleanup failed"));
+    const now = Date.now();
+    for (const [key, bucket] of rateBuckets) if (bucket.resetAt <= now) rateBuckets.delete(key);
+  }, 60 * 60 * 1000);
+  cleanupTimer.unref();
+  app.addHook("onClose", async () => clearInterval(cleanupTimer));
 
   app.get("/health", async () => ({
     status: "ok",
     service: "pjsktools-api",
     regions: regions.map((item) => item.id),
     autoUpdateEnabled: config.autoUpdateEnabled,
-    harukiApiConfigured: Boolean(config.harukiApiBaseUrl),
+    harukiApiConfigured: config.harukiFeatureEnabled && Boolean(config.harukiApiBaseUrl),
+    harukiFeatureEnabled: config.harukiFeatureEnabled,
     databaseConfigured: Boolean(config.databaseUrl),
     qqConfigured: qqConfigured(),
     smtpConfigured: smtpConfigured()
@@ -1356,6 +1542,12 @@ export async function buildApp(options: {
   });
 
   app.post("/api/master/:region/sync", async (request, reply) => {
+    if (!config.masterSyncAdminToken) { auditSecurity(request, "master_sync_rejected"); return reply.notFound("Not found"); }
+    const authorization = String(request.headers.authorization ?? "");
+    const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const expected = Buffer.from(config.masterSyncAdminToken);
+    const actual = Buffer.from(supplied);
+    if (!supplied || expected.length !== actual.length || !timingSafeEqual(expected, actual)) { auditSecurity(request, "master_sync_rejected"); return reply.unauthorized("Administrator authorization required"); }
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     const cache = await syncMasterRegion(region);
@@ -1805,7 +1997,7 @@ export async function buildApp(options: {
         latestSampledAt: sorted.at(-1)?.sampledAt ?? null,
         sampleSpanHours
       },
-      retentionRecommendation: "Raw ranking history samples are retained until an explicit cleanup policy is implemented.",
+      retentionRecommendation: "Raw 10-second ranking samples are retained for 14 days, then deleted after anonymous one-minute rollups are created.",
       warnings: items.length ? [] : ["No persistent ranking history samples yet"],
       items,
       unavailableReason: items.length ? undefined : "No persistent ranking history samples yet",
@@ -1844,7 +2036,7 @@ export async function buildApp(options: {
         maxSampleCount,
         maxSampleSpanHours
       },
-      retentionRecommendation: "Keep raw samples for active-event planning; archive/delete policy should be explicit.",
+      retentionRecommendation: "Raw 10-second ranking samples are retained for 14 days; anonymous one-minute rollups are retained for long-term summaries.",
       warnings: lines.length ? [] : ["No persistent ranking history samples yet"],
       unavailableReason: lines.length ? undefined : "No persistent ranking history samples yet",
       realDataRequired: true
@@ -1902,6 +2094,7 @@ export async function buildApp(options: {
     const { region, userId } = request.params as { region: string; userId: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     if (!playerUidPattern.test(userId)) return reply.badRequest("Unsupported player UID");
+    if (playerDisplayBlocked(region, userId)) return reply.notFound("Player profile is unavailable");
     try {
       return await getPlayerProfileCached(region, userId);
     } catch (error) {
@@ -1913,6 +2106,8 @@ export async function buildApp(options: {
     const { region, userId } = request.params as { region: string; userId: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
     if (!playerUidPattern.test(userId)) return reply.badRequest("Unsupported player UID");
+    if (playerDisplayBlocked(region, userId)) return reply.notFound("Player profile is unavailable");
+    if (!enforceRateLimit(request, reply, "player-refresh", 12, 15 * 60 * 1000, `${region}:${userId}`)) return;
     try {
       return await getPlayerProfileCached(region, userId, true);
     } catch (error) {
@@ -1995,6 +2190,8 @@ export async function buildApp(options: {
 
   app.post("/api/auth/email-code/start", async (request, reply) => {
     const body = emailCodeSchema.parse(request.body);
+    if (!enforceRateLimit(request, reply, "email-code-ip", 20, 60 * 60 * 1000)) return;
+    if (!enforceRateLimit(request, reply, "email-code", 5, 60 * 60 * 1000, body.email)) return;
     if (!smtpAvailable && (config.nodeEnv === "production" || options.smtpAvailable === false)) {
       return reply.serviceUnavailable("邮件验证码服务尚未配置，请联系管理员。");
     }
@@ -2019,6 +2216,7 @@ export async function buildApp(options: {
     try {
       const result = await verificationEmailSender(body.email, code);
       await emailVerificationStore.createEmailVerificationCode({ email: body.email, purpose: body.purpose, code, expiresAt: emailCodeExpiresAt() });
+      auditSecurity(request, "verification_requested", body.email);
       return {
         ok: true,
         sent: result.sent,
@@ -2036,7 +2234,16 @@ export async function buildApp(options: {
     }
   });
 
+  app.get("/api/legal/current", async () => ({
+    operator: "SEKAI TOOLS（sekai-tools.cn 网站运营者）",
+    privacyVersion: currentPrivacyVersion,
+    termsVersion: currentTermsVersion,
+    minimumAge: 14,
+    urls: legalDocumentUrls
+  }));
+
   app.post("/api/auth/register", async (request, reply) => {
+    if (!enforceRateLimit(request, reply, "register", 5, 60 * 60 * 1000, (request.body as any)?.email)) return;
     const body = registerSchema.parse(request.body);
     const strength = validatePasswordStrength(body.password, body.email);
     if (!strength.ok) return reply.badRequest(strength.reasons.join("; "));
@@ -2044,6 +2251,12 @@ export async function buildApp(options: {
     if (!codeOk) return reply.unauthorized("Verification code is invalid or expired");
     try {
       const user = await store.createUser(body.email, body.password);
+      await store.recordLegalAcceptance(user.id, {
+        privacyVersion: body.privacyVersion,
+        termsVersion: body.termsVersion,
+        ageConfirmed: true,
+        source: body.source
+      });
       return reply.code(201).send(await issueAuth(app, user.id, user.email));
     } catch (error) {
       if ((error as Error).message === "EMAIL_EXISTS") return reply.conflict("Email already registered");
@@ -2052,16 +2265,55 @@ export async function buildApp(options: {
   });
 
   app.post("/api/auth/login", async (request, reply) => {
+    if (!enforceRateLimit(request, reply, "login", 10, 15 * 60 * 1000, (request.body as any)?.email)) return;
     const body = authSchema.parse(request.body);
     const user = await store.verifyUser(body.email, body.password);
-    if (!user) return reply.unauthorized("Invalid email or password");
+    if (!user) { auditSecurity(request, "login_failed", body.email); return reply.unauthorized("Invalid email or password"); }
+    if (isCurrentLegalAcceptance(body)) {
+      await store.recordLegalAcceptance(user.id, {
+        privacyVersion: currentPrivacyVersion,
+        termsVersion: currentTermsVersion,
+        ageConfirmed: true,
+        source: body.source
+      });
+    }
+    auditSecurity(request, "login_succeeded", user.id);
     return issueAuth(app, user.id, user.email);
+  });
+
+  app.post("/api/auth/web/register", async (request, reply) => {
+    if (!enforceRateLimit(request, reply, "web-register", 5, 60 * 60 * 1000, (request.body as any)?.email)) return;
+    const body = registerSchema.parse(request.body);
+    const strength = validatePasswordStrength(body.password, body.email);
+    if (!strength.ok) return reply.badRequest(strength.reasons.join("; "));
+    const codeOk = await store.consumeEmailVerificationCode({ email: body.email, purpose: "register", code: body.code });
+    if (!codeOk) return reply.unauthorized("Verification code is invalid or expired");
+    try {
+      const user = await store.createUser(body.email, body.password);
+      await store.recordLegalAcceptance(user.id, { privacyVersion: body.privacyVersion, termsVersion: body.termsVersion, ageConfirmed: true, source: "web" });
+      return reply.code(201).send(await issueWebAuth(app, reply, user.id, user.email));
+    } catch (error) {
+      if ((error as Error).message === "EMAIL_EXISTS") return reply.conflict("Email already registered");
+      throw error;
+    }
+  });
+
+  app.post("/api/auth/web/login", async (request, reply) => {
+    if (!enforceRateLimit(request, reply, "web-login", 10, 15 * 60 * 1000, (request.body as any)?.email)) return;
+    const body = authSchema.parse(request.body);
+    const user = await store.verifyUser(body.email, body.password);
+    if (!user) { auditSecurity(request, "login_failed", body.email); return reply.unauthorized("Invalid email or password"); }
+    if (isCurrentLegalAcceptance(body)) {
+      await store.recordLegalAcceptance(user.id, { privacyVersion: currentPrivacyVersion, termsVersion: currentTermsVersion, ageConfirmed: true, source: "web" });
+    }
+    auditSecurity(request, "login_succeeded", user.id);
+    return issueWebAuth(app, reply, user.id, user.email);
   });
 
   app.get("/api/auth/me", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     const user = await store.getUser(request.user.sub);
     if (!user) return reply.unauthorized("User not found");
-    return { user: toPublicUser(user), oauthAccounts: await store.listOAuthAccounts(user.id) };
+    return { user: toPublicUser(user), oauthAccounts: (await store.listOAuthAccounts(user.id)).map(publicOAuthAccount) };
   });
 
   app.get("/api/me/profile", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
@@ -2083,6 +2335,7 @@ export async function buildApp(options: {
   });
 
   app.post("/api/auth/refresh", async (request, reply) => {
+    if (!enforceRateLimit(request, reply, "refresh", 30, 15 * 60 * 1000)) return;
     const body = refreshSchema.parse(request.body);
     const session = await store.getSessionByRefreshToken(body.refreshToken);
     if (!session) return reply.unauthorized("Invalid refresh token");
@@ -2090,6 +2343,123 @@ export async function buildApp(options: {
     if (!user) return reply.unauthorized("User not found");
     await store.revokeSession(session.id);
     return issueAuth(app, user.id, user.email);
+  });
+
+  app.get("/api/me/legal-acceptances", { preHandler: (app as any).authenticate }, async (request: any) => ({
+    current: {
+      privacyVersion: currentPrivacyVersion,
+      termsVersion: currentTermsVersion,
+      minimumAge: 14,
+      urls: legalDocumentUrls
+    },
+    acceptance: await store.getLegalAcceptance(request.user.sub)
+  }));
+
+  app.post("/api/me/legal-acceptances", { preHandler: (app as any).authenticate }, async (request: any) => {
+    const body = legalAcceptanceSchema.parse(request.body);
+    return store.recordLegalAcceptance(request.user.sub, body);
+  });
+
+  app.get("/api/me/export", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    if (!enforceRateLimit(request, reply, "data-export", 3, 60 * 60 * 1000, request.user.sub)) return;
+    const profile = await buildMeProfile(request.user.sub);
+    if (!profile) return reply.notFound("Account not found");
+    const oauthAccounts = (await store.listOAuthAccounts(request.user.sub)).map(publicOAuthAccount);
+    reply.header("Cache-Control", "private, no-store");
+    reply.header("Content-Disposition", `attachment; filename="sekai-tools-data-${new Date().toISOString().slice(0, 10)}.json"`);
+    auditSecurity(request, "data_exported", request.user.sub);
+    return {
+      exportedAt: new Date().toISOString(),
+      operator: "SEKAI TOOLS（sekai-tools.cn 网站运营者）",
+      user: profile.user,
+      legalAcceptance: await store.getLegalAcceptance(request.user.sub),
+      oauthAccounts,
+      bindings: profile.bindings,
+      favorites: profile.favorites,
+      favoriteFolders: await store.listFavoriteFolders(request.user.sub),
+      scores: profile.scores,
+      deckConfigs: profile.deckConfigs,
+      playerData: await Promise.all(profile.bindings.map(async (binding) => ({
+        bindingId: binding.id,
+        records: await store.listPlayerData(request.user.sub, binding.id),
+        inventory: await store.listInventory(request.user.sub, binding.id)
+      })))
+    };
+  });
+
+  app.post("/api/me/account-deletion/email-code", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    if (!enforceRateLimit(request, reply, "delete-code", 3, 60 * 60 * 1000, request.user.sub)) return;
+    const user = await store.getUser(request.user.sub);
+    if (!user?.email || !user.passwordHash) return reply.badRequest("This account must be reauthenticated with QQ");
+    if (!smtpAvailable) return reply.serviceUnavailable("Email verification service is not configured");
+    const reservationId = randomUUID();
+    const retryAfter = await store.reserveEmailVerificationCooldown({
+      email: user.email,
+      purpose: "delete-account",
+      reservationId,
+      cooldownSeconds: emailCodeResendCooldownSeconds
+    });
+    if (retryAfter > 0) {
+      reply.header("Retry-After", String(retryAfter));
+      return reply.code(429).send({ code: "EMAIL_CODE_COOLDOWN", message: "Please wait before requesting another code", retryAfter });
+    }
+    const code = createSixDigitCode();
+    try {
+      const result = await verificationEmailSender(user.email, code);
+      await store.createEmailVerificationCode({ email: user.email, purpose: "delete-account", code, expiresAt: emailCodeExpiresAt() });
+      auditSecurity(request, "verification_requested", user.id);
+      return { ok: true, sent: result.sent, expiresIn: emailCodeTtlSeconds, resendAfter: emailCodeResendCooldownSeconds, devCode: result.devCode };
+    } catch (error) {
+      await store.releaseEmailVerificationCooldown({ email: user.email, purpose: "delete-account", reservationId });
+      request.log.error({ errorType: (error as Error).name }, "account deletion verification delivery failed");
+      return reply.serviceUnavailable("Verification email could not be sent");
+    }
+  });
+
+  app.post("/api/me/account-deletion/intent", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    if (!enforceRateLimit(request, reply, "account-delete", 5, 60 * 60 * 1000, request.user.sub)) return;
+    const body = deletionIntentSchema.parse(request.body);
+    const user = await store.getUser(request.user.sub);
+    if (!user) return reply.notFound("Account not found");
+    if (!user.email || !user.passwordHash) {
+      return reply.code(409).send({ code: "QQ_REAUTHENTICATION_REQUIRED", message: "Reauthenticate with QQ before deleting this account" });
+    }
+    if (!body.code || !await store.consumeEmailVerificationCode({ email: user.email, purpose: "delete-account", code: body.code })) {
+      return reply.unauthorized("Verification code is invalid or expired");
+    }
+    const token = randomUUID() + randomUUID();
+    await store.createAccountDeletionIntent(user.id, token, new Date(Date.now() + deletionIntentTtlMs).toISOString());
+    auditSecurity(request, "deletion_started", user.id);
+    return { token, expiresIn: deletionIntentTtlMs / 1000 };
+  });
+
+  app.post("/api/me/account-deletion/confirm", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const body = deletionConfirmSchema.parse(request.body);
+    if (!await store.consumeAccountDeletionIntent(request.user.sub, body.token)) return reply.unauthorized("Deletion confirmation is invalid or expired");
+    try {
+      await accountDeletionExternalCleanup(request.user.sub);
+    } catch {
+      request.log.warn({ cleanup: "external-account-link" }, "external cleanup failed during account deletion");
+    }
+    const deleted = await store.deleteUserById(request.user.sub);
+    if (deleted) auditSecurity(request, "account_deleted", request.user.sub);
+    clearWebRefreshCookie(reply);
+    return deleted ? { ok: true } : reply.notFound("Account not found");
+  });
+
+  app.post("/api/auth/web/refresh", async (request, reply) => {
+    if (!enforceRateLimit(request, reply, "web-refresh", 30, 15 * 60 * 1000)) return;
+    const refreshToken = readCookie(request, webRefreshCookieName);
+    if (!refreshToken) return reply.unauthorized("Refresh cookie is missing");
+    const session = await store.getSessionByRefreshToken(refreshToken);
+    if (!session) {
+      clearWebRefreshCookie(reply);
+      return reply.unauthorized("Invalid refresh cookie");
+    }
+    const user = await store.getUser(session.userId);
+    if (!user) return reply.unauthorized("User not found");
+    await store.revokeSession(session.id);
+    return issueWebAuth(app, reply, user.id, user.email);
   });
 
   app.post("/api/auth/logout", async (request) => {
@@ -2101,12 +2471,28 @@ export async function buildApp(options: {
     return { ok: true };
   });
 
+  app.post("/api/auth/web/logout", async (request, reply) => {
+    const refreshToken = readCookie(request, webRefreshCookieName);
+    if (refreshToken) {
+      const session = await store.getSessionByRefreshToken(refreshToken);
+      if (session) await store.revokeSession(session.id);
+    }
+    clearWebRefreshCookie(reply);
+    return { ok: true };
+  });
+
   app.get("/api/auth/qq/start", async (request, reply) => {
+    if (!enforceRateLimit(request, reply, "qq-start", 15, 15 * 60 * 1000)) return;
     if (!qqConfigured()) return reply.serviceUnavailable("QQ login is not configured");
-    const query = request.query as { redirectTo?: string };
+    const query = request.query as { redirectTo?: string; privacyVersion?: string; termsVersion?: string; ageConfirmed?: string };
+    const legal = {
+      privacyVersion: query.privacyVersion ?? "",
+      termsVersion: query.termsVersion ?? "",
+      ageConfirmed: query.ageConfirmed === "true"
+    };
     const state = createQqState();
     const redirectTo = normalizeRedirectTo(query.redirectTo);
-    await store.createAuthState("qq", state, redirectTo, authStateExpiresAt());
+    await store.createAuthState("qq", state, redirectTo, authStateExpiresAt(), isCurrentLegalAcceptance(legal) ? legal : undefined);
     return { provider: "qq", state, authorizeUrl: buildQqAuthorizeUrl(state), expiresIn: authStateTtlMs / 1000 };
   });
 
@@ -2125,14 +2511,27 @@ export async function buildApp(options: {
 
     const mobileLogin = authState.redirectTo === mobileQqLoginState;
     const mobileLink = authState.redirectTo.startsWith(mobileQqLinkStatePrefix);
+    const deletionTarget = qqDeletionTarget(authState.redirectTo);
     if (query.error || !query.code) {
       if (mobileLogin || mobileLink) return reply.badRequest("QQ authorization was cancelled or denied");
       const error = query.error === "access_denied" ? "qq_authorization_cancelled" : "qq_authorization_failed";
+      if (deletionTarget) return reply.redirect(qqDeletionCallbackError(deletionTarget.client, error));
       return reply.redirect(webQqCallbackUrl({ redirectTo: authState.redirectTo, error }));
     }
 
     try {
       const oauth = await resolveQqIdentity(query.code);
+      if (deletionTarget) {
+        const { client, userId } = deletionTarget;
+        const linked = await store.findOAuthAccount("qq", oauth.providerUserId);
+        if (!linked || linked.userId !== userId) return reply.redirect(qqDeletionCallbackError(client, "qq_account_mismatch"));
+        const handoff = `delete_${createQqState()}`;
+        await store.createOAuthHandoff(handoff, { kind: "delete", userId, oauth }, mobileHandoffExpiresAt());
+        if (client === "android") return reply.redirect(`pjsktools://auth/qq-delete?handoff=${encodeURIComponent(handoff)}`);
+        const url = new URL("/me", config.publicWebBaseUrl);
+        url.searchParams.set("qqDeleteHandoff", handoff);
+        return reply.redirect(url.toString());
+      }
       if (mobileLink) {
         const userId = authState.redirectTo.slice(mobileQqLinkStatePrefix.length);
         if (!userId || !(await store.getUser(userId))) return reply.unauthorized("Link target user not found");
@@ -2144,6 +2543,14 @@ export async function buildApp(options: {
       const user = existing ? await store.getUser(existing.userId) : await store.createOAuthUser(oauth);
       if (!user) return reply.unauthorized("OAuth user not found");
       if (existing) await store.linkOAuthAccount(user.id, oauth);
+      if (isCurrentLegalAcceptance(authState)) {
+        await store.recordLegalAcceptance(user.id, {
+          privacyVersion: currentPrivacyVersion,
+          termsVersion: currentTermsVersion,
+          ageConfirmed: true,
+          source: "qq"
+        });
+      }
       if (mobileLogin) {
         const handoff = createQqState();
         await store.createOAuthHandoff(handoff, { kind: "login", userId: user.id, oauth }, mobileHandoffExpiresAt());
@@ -2153,6 +2560,10 @@ export async function buildApp(options: {
       await store.createOAuthHandoff(handoff, { kind: "login", userId: user.id, oauth }, mobileHandoffExpiresAt());
       return reply.redirect(webQqCallbackUrl({ redirectTo: authState.redirectTo, handoff }));
     } catch (error) {
+      auditSecurity(request, "qq_oauth_failed");
+      if (deletionTarget && (error as Error).message.startsWith("QQ_")) {
+        return reply.redirect(qqDeletionCallbackError(deletionTarget.client, "qq_service_unavailable"));
+      }
       if (!mobileLogin && !mobileLink && (error as Error).message.startsWith("QQ_")) {
         return reply.redirect(webQqCallbackUrl({ redirectTo: authState.redirectTo, error: "qq_login_failed" }));
       }
@@ -2171,12 +2582,33 @@ export async function buildApp(options: {
   });
 
   app.post("/api/auth/qq/web-exchange", async (request, reply) => {
+    if (!enforceRateLimit(request, reply, "qq-exchange", 15, 15 * 60 * 1000)) return;
     const body = qqWebHandoffSchema.safeParse(request.body);
     if (!body.success) return reply.unauthorized("Invalid or expired QQ web login handoff");
     const handoff = await store.consumeOAuthHandoff(body.data.handoff, "login");
     if (!handoff?.userId) return reply.unauthorized("Invalid or expired QQ web login handoff");
     const user = await store.getUser(handoff.userId);
-    return user ? issueAuth(app, user.id, user.email) : reply.unauthorized("User not found");
+    return user ? issueWebAuth(app, reply, user.id, user.email) : reply.unauthorized("User not found");
+  });
+
+  app.get("/api/me/account-deletion/qq/start", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    if (!qqConfigured()) return reply.serviceUnavailable("QQ login is not configured");
+    const account = (await store.listOAuthAccounts(request.user.sub)).find((item) => item.provider === "qq");
+    if (!account) return reply.badRequest("This account is not linked to QQ");
+    const query = z.object({ client: z.enum(["web", "android"]).default("web") }).parse(request.query);
+    const state = createQqState();
+    await store.createAuthState("qq", state, `${qqDeletionStatePrefix}${query.client}:${request.user.sub}`, authStateExpiresAt());
+    return { provider: "qq", authorizeUrl: buildQqAuthorizeUrl(state), expiresIn: authStateTtlMs / 1000 };
+  });
+
+  app.post("/api/me/account-deletion/qq/exchange", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
+    const body = deletionHandoffSchema.safeParse(request.body);
+    if (!body.success) return reply.unauthorized("Invalid or expired QQ deletion handoff");
+    const handoff = await store.consumeOAuthHandoff(body.data.handoff, "delete", request.user.sub);
+    if (!handoff) return reply.unauthorized("Invalid or expired QQ deletion handoff");
+    const token = randomUUID() + randomUUID();
+    await store.createAccountDeletionIntent(request.user.sub, token, new Date(Date.now() + deletionIntentTtlMs).toISOString());
+    return { token, expiresIn: deletionIntentTtlMs / 1000 };
   });
 
   app.post("/api/auth/qq/mobile-link/exchange", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
@@ -2186,7 +2618,7 @@ export async function buildApp(options: {
     if (!handoff) return reply.unauthorized("Invalid or expired mobile link handoff");
     try {
       await store.linkOAuthAccount(request.user.sub, handoff.oauth);
-      return { ok: true, oauthAccounts: await store.listOAuthAccounts(request.user.sub) };
+      return { ok: true, oauthAccounts: (await store.listOAuthAccounts(request.user.sub)).map(publicOAuthAccount) };
     } catch (error) {
       if ((error as Error).message === "OAUTH_ACCOUNT_EXISTS") return reply.conflict("QQ account already linked");
       throw error;
@@ -2214,6 +2646,7 @@ export async function buildApp(options: {
     app.post("/__test/auth/user", async (request, reply) => {
       const body = z.object({ email: z.string().email() }).parse(request.body);
       const user = await store.createUser(body.email, "Strong-passphrase-123!");
+      await store.recordLegalAcceptance(user.id, { privacyVersion: currentPrivacyVersion, termsVersion: currentTermsVersion, ageConfirmed: true, source: "android" });
       return reply.code(201).send(await issueAuth(app, user.id, user.email));
     });
   }
@@ -2237,6 +2670,7 @@ export async function buildApp(options: {
   app.delete("/api/auth/qq/link", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
     try {
       const deleted = await store.unlinkOAuthAccount(request.user.sub, "qq");
+      if (deleted) auditSecurity(request, "qq_unlinked", request.user.sub);
       return deleted ? { ok: true } : reply.notFound("QQ account not linked");
     } catch (error) {
       if ((error as Error).message === "LAST_LOGIN_METHOD") return reply.badRequest("Cannot unlink the last login method");
@@ -2535,13 +2969,10 @@ export async function buildApp(options: {
   });
 
   app.delete("/api/me/account", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const connection = await harukiStore.getConnection(request.user.sub);
-    if (connection) {
-      await revokeStoredHarukiConnection(connection);
-      await harukiStore.deleteConnection(request.user.sub);
-    }
-    const deleted = await store.deleteUserById(request.user.sub);
-    return deleted ? { ok: true } : reply.notFound("Account not found");
+    return reply.code(409).send({
+      code: "REVERIFICATION_REQUIRED",
+      message: "Create and confirm an account deletion intent before deleting the account"
+    });
   });
 
   app.post("/api/me/haruki/bindings/import", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
@@ -2943,6 +3374,7 @@ export async function buildApp(options: {
 
   app.get("/api/share/cards/:type/:id.png", async (request, reply) => {
     const { type, id } = request.params as { type: string; id: string };
+    if (!enforceRateLimit(request, reply, "share-render", 30, 15 * 60 * 1000, `${type}:${id}`)) return;
     const query = request.query as { region?: string };
     if (query.region && !isRegion(query.region)) return reply.badRequest("Unsupported region");
     if (!["profile", "score", "event", "card", "song"].includes(type)) return reply.badRequest("Unsupported share card type");
@@ -2962,6 +3394,7 @@ export async function buildApp(options: {
 
   app.get("/api/share/cards/:type/:id", async (request, reply) => {
     const { type, id } = request.params as { type: string; id: string };
+    if (!enforceRateLimit(request, reply, "share-metadata", 120, 15 * 60 * 1000, `${type}:${id}`)) return;
     const query = request.query as { region?: string };
     if (query.region && !isRegion(query.region)) return reply.badRequest("Unsupported region");
     if (!["profile", "score", "event", "card", "song"].includes(type)) return reply.badRequest("Unsupported share card type");

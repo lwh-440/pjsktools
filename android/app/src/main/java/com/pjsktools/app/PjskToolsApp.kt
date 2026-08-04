@@ -130,6 +130,7 @@ fun PjskToolsApp(
             section = AppSection.ACCOUNT
             when (deepLink.path) {
                 "/qq" -> accountController.handleQqCallback(deepLink)
+                "/qq-delete" -> accountController.handleQqAccountDeletionCallback(deepLink)
                 "/haruki" -> accountController.handleHarukiCallback(deepLink)
             }
             onDeepLinkConsumed()

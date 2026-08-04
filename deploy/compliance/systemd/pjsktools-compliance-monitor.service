@@ -1,0 +1,15 @@
+[Unit]
+Description=Check pjsktools backup, archive, disk and TLS health
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/pjsktools-compliance/bin/monitor-compliance.sh
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/pjsktools-compliance

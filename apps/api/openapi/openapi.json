@@ -7316,6 +7316,48 @@
         }
       }
     },
+    "/api/legal/current": {
+      "get": {
+        "operationId": "getCurrentLegalDocuments",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/api/auth/register": {
       "post": {
         "operationId": "register",
@@ -7392,6 +7434,110 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/auth/web/register": {
+      "post": {
+        "operationId": "registerWeb",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebAuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/auth/web/login": {
+      "post": {
+        "operationId": "loginWeb",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebAuthResponse"
                 }
               }
             }
@@ -7556,6 +7702,358 @@
         }
       }
     },
+    "/api/me/legal-acceptances": {
+      "get": {
+        "operationId": "getMyLegalAcceptances",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "post": {
+        "operationId": "acceptCurrentLegalDocuments",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegalAcceptanceRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/me/export": {
+      "get": {
+        "operationId": "exportMyData",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/me/account-deletion/email-code": {
+      "post": {
+        "operationId": "startAccountDeletionEmailVerification",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailCodeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/me/account-deletion/intent": {
+      "post": {
+        "operationId": "createAccountDeletionIntent",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeletionIntentRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/me/account-deletion/confirm": {
+      "post": {
+        "operationId": "confirmAccountDeletion",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeletionConfirmRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/auth/web/refresh": {
+      "post": {
+        "operationId": "refreshWebSession",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebAuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/api/auth/logout": {
       "post": {
         "operationId": "logout",
@@ -7573,6 +8071,48 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/auth/web/logout": {
+      "post": {
+        "operationId": "logoutWeb",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -7799,7 +8339,122 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuthResponse"
+                  "$ref": "#/components/schemas/WebAuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/me/account-deletion/qq/start": {
+      "get": {
+        "operationId": "startQqAccountDeletion",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [
+          {
+            "name": "client",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(web|android)$",
+              "default": "web"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QqAccountDeletionStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/me/account-deletion/qq/exchange": {
+      "post": {
+        "operationId": "exchangeQqAccountDeletion",
+        "tags": [
+          "Android"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QqAccountDeletionExchangeRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionIntentResponse"
                 }
               }
             }
@@ -11023,6 +11678,35 @@
           "expiresIn": {
             "type": "integer"
           },
+          "legalAcceptanceRequired": {
+            "type": "boolean"
+          },
+          "user": {
+            "$ref": "#/components/schemas/PublicUser"
+          }
+        }
+      },
+      "WebAuthResponse": {
+        "type": "object",
+        "required": [
+          "token",
+          "accessToken",
+          "expiresIn",
+          "user"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "accessToken": {
+            "type": "string"
+          },
+          "expiresIn": {
+            "type": "integer"
+          },
+          "legalAcceptanceRequired": {
+            "type": "boolean"
+          },
           "user": {
             "$ref": "#/components/schemas/PublicUser"
           }
@@ -11042,6 +11726,44 @@
           "password": {
             "type": "string",
             "minLength": 8
+          },
+          "privacyVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "termsVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ageConfirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "web",
+              "android"
+            ],
+            "default": "android"
           }
         }
       },
@@ -11050,7 +11772,10 @@
         "required": [
           "email",
           "password",
-          "code"
+          "code",
+          "privacyVersion",
+          "termsVersion",
+          "ageConfirmed"
         ],
         "properties": {
           "email": {
@@ -11064,6 +11789,94 @@
           "code": {
             "type": "string",
             "pattern": "^[0-9]{6}$"
+          },
+          "privacyVersion": {
+            "type": "string",
+            "const": "2026-08-04"
+          },
+          "termsVersion": {
+            "type": "string",
+            "const": "2026-08-04"
+          },
+          "ageConfirmed": {
+            "type": "boolean",
+            "description": "Must be true."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "web",
+              "android"
+            ],
+            "default": "android"
+          }
+        }
+      },
+      "LegalAcceptanceRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "privacyVersion",
+          "termsVersion",
+          "ageConfirmed",
+          "source"
+        ],
+        "properties": {
+          "privacyVersion": {
+            "type": "string",
+            "const": "2026-08-04"
+          },
+          "termsVersion": {
+            "type": "string",
+            "const": "2026-08-04"
+          },
+          "ageConfirmed": {
+            "type": "boolean",
+            "description": "Must be true."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "web",
+              "android"
+            ]
+          }
+        }
+      },
+      "AccountDeletionIntentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "confirmation"
+        ],
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "const": "DELETE"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "AccountDeletionConfirmRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 32
           }
         }
       },
@@ -11142,6 +11955,62 @@
           "handoff": {
             "type": "string",
             "pattern": "^web_[0-9a-f]{32}$"
+          }
+        }
+      },
+      "QqAccountDeletionStartResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "authorizeUrl",
+          "expiresIn"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "qq"
+            ]
+          },
+          "authorizeUrl": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expiresIn": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "QqAccountDeletionExchangeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "handoff"
+        ],
+        "properties": {
+          "handoff": {
+            "type": "string",
+            "pattern": "^delete_[0-9a-f]{32}$"
+          }
+        }
+      },
+      "AccountDeletionIntentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "expiresIn"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 32
+          },
+          "expiresIn": {
+            "type": "integer",
+            "minimum": 1
           }
         }
       },

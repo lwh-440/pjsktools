@@ -1,0 +1,11 @@
+[Unit]
+Description=Monthly pjsktools COS random restore check
+
+[Timer]
+OnCalendar=*-*-01 04:30:00
+Persistent=true
+RandomizedDelaySec=30m
+Unit=pjsktools-cos-restore-check.service
+
+[Install]
+WantedBy=timers.target

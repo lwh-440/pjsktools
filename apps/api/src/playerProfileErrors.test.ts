@@ -10,7 +10,7 @@ async function register(app: Awaited<ReturnType<typeof buildApp>>, prefix: strin
   createdEmails.push(email);
   const code = "123456";
   await store.createEmailVerificationCode({ email, purpose: "register", code, expiresAt: new Date(Date.now() + 300_000).toISOString() });
-  const response = await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "Password123!", code } });
+  const response = await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "Password123!", code, privacyVersion: "2026-08-04", termsVersion: "2026-08-04", ageConfirmed: true, source: "android" } });
   expect(response.statusCode).toBe(201);
   return { email, token: response.json().accessToken as string };
 }

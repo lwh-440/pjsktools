@@ -81,7 +81,7 @@ describe("pjsktools api", () => {
     const register = await app.inject({
       method: "POST",
       url: "/api/auth/register",
-      payload: { email, password: "Password123!", code }
+      payload: { email, password: "Password123!", code, privacyVersion: "2026-08-04", termsVersion: "2026-08-04", ageConfirmed: true, source: "android" }
     });
     expect(register.statusCode).toBe(201);
     const auth = register.json();
@@ -125,9 +125,9 @@ describe("pjsktools api", () => {
     const app = await buildApp({ enableTestAuthRoutes: true });
     const email = `dup-${Date.now()}@example.com`;
     const firstCode = await createRegistrationCode(email);
-    await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "Password123!", code: firstCode } });
+    await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "Password123!", code: firstCode, privacyVersion: "2026-08-04", termsVersion: "2026-08-04", ageConfirmed: true, source: "android" } });
     const secondCode = await createRegistrationCode(email);
-    const duplicate = await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "Password123!", code: secondCode } });
+    const duplicate = await app.inject({ method: "POST", url: "/api/auth/register", payload: { email, password: "Password123!", code: secondCode, privacyVersion: "2026-08-04", termsVersion: "2026-08-04", ageConfirmed: true, source: "android" } });
     expect(duplicate.statusCode).toBe(409);
     const badLogin = await app.inject({ method: "POST", url: "/api/auth/login", payload: { email, password: "wrongpass" } });
     expect(badLogin.statusCode).toBe(401);

@@ -1,0 +1,38 @@
+# Import this snippet inside every public site block:
+#
+#   import compliance_access_log
+#
+# The standard access-log record still contains the client IP, method, host,
+# protocol, status, response size and duration.  The original URI and all
+# request/response headers are deliberately removed, then only a query-free
+# path, User-Agent and per-request UUID are added back.
+(compliance_access_log) {
+	log {
+		output file {$COMPLIANCE_ACCESS_LOG:/var/log/pjsktools/access.json} {
+			mode 0600
+			roll_at 00:00
+			roll_size 100MiB
+			roll_keep 0
+			roll_keep_for 4800h
+		}
+		format filter {
+			request>uri delete
+			request>headers delete
+			resp_headers delete
+			user_id delete
+			uuid delete
+			# Redact numeric game/user identifiers and UUID path segments while
+			# preserving the route shape needed for security investigations.
+			request_path regexp `(/[0-9]{8,})(/|$)` `/:id${2}`
+			request_path regexp `(?i)(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(/|$)` `/:id${2}`
+			wrap json {
+				time_format rfc3339_nano
+				duration_format ms
+			}
+		}
+	}
+
+	log_append <request_path {http.request.uri.path}
+	log_append <user_agent {http.request.header.User-Agent}
+	log_append <request_id {http.request.uuid}
+}

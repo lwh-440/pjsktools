@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +43,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pjsktools.core.model.AuthRepository
 import com.pjsktools.core.model.AuthState
+import com.pjsktools.core.model.RegistrationConsent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -65,12 +67,25 @@ class AccountViewModel @Inject constructor(
     val resendSeconds = MutableStateFlow(0)
 
     fun login(email: String, password: String) = submit { repository.login(email.trim(), password) }
-    fun register(email: String, password: String, confirmPassword: String, code: String) {
+    fun register(
+        email: String,
+        password: String,
+        confirmPassword: String,
+        code: String,
+        privacyAccepted: Boolean,
+        termsAccepted: Boolean,
+        ageConfirmed: Boolean
+    ) {
         if (password != confirmPassword) {
             message.value = "PASSWORD_MISMATCH"
             return
         }
-        submit { repository.register(email.trim(), password, code.trim()) }
+        val consent = RegistrationConsent(privacyAccepted, termsAccepted, ageConfirmed)
+        if (!consent.isComplete) {
+            message.value = "LEGAL_CONFIRMATION_REQUIRED"
+            return
+        }
+        submit { repository.register(email.trim(), password, code.trim(), consent) }
     }
 
     fun sendCode(email: String) = submit {
@@ -154,6 +169,9 @@ private fun AccountForm(busy: Boolean, message: String?, resendSeconds: Int, vie
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
+    var privacyAccepted by remember { mutableStateOf(false) }
+    var termsAccepted by remember { mutableStateOf(false) }
+    var ageConfirmed by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().widthIn(max = 520.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -188,28 +206,69 @@ private fun AccountForm(busy: Boolean, message: String?, resendSeconds: Int, vie
                     enabled = !busy && email.contains("@") && resendSeconds == 0
                 ) { Text(if (resendSeconds > 0) stringResource(R.string.account_resend_countdown, resendSeconds) else stringResource(R.string.account_send_code)) }
             }
+            LegalConfirmationRow(
+                checked = privacyAccepted,
+                onCheckedChange = { privacyAccepted = it },
+                label = stringResource(R.string.account_accept_privacy)
+            )
+            LegalConfirmationRow(
+                checked = termsAccepted,
+                onCheckedChange = { termsAccepted = it },
+                label = stringResource(R.string.account_accept_terms)
+            )
+            LegalConfirmationRow(
+                checked = ageConfirmed,
+                onCheckedChange = { ageConfirmed = it },
+                label = stringResource(R.string.account_confirm_age)
+            )
         }
         message?.let {
             Text(
                 if (it.startsWith("DEV:")) stringResource(R.string.account_dev_code, it.removePrefix("DEV:").substringBefore(':'))
                 else if (it.startsWith("SENT:")) stringResource(R.string.account_code_sent, it.substringAfter(':').toInt() / 60)
-                else if (it == "PASSWORD_MISMATCH") stringResource(R.string.account_password_mismatch) else it,
+                else if (it == "PASSWORD_MISMATCH") stringResource(R.string.account_password_mismatch)
+                else if (it == "LEGAL_CONFIRMATION_REQUIRED") stringResource(R.string.account_legal_confirmation_required)
+                else it,
                 color = if (it.startsWith("SENT:") || it.startsWith("DEV:")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
             )
         }
         Button(
             {
-                if (register) viewModel.register(email, password, confirmPassword, code)
+                if (register) viewModel.register(
+                    email,
+                    password,
+                    confirmPassword,
+                    code,
+                    privacyAccepted,
+                    termsAccepted,
+                    ageConfirmed
+                )
                 else viewModel.login(email, password)
             },
             Modifier.fillMaxWidth(),
             enabled = !busy &&
                 email.contains("@") &&
                 password.length >= (if (register) 10 else 8) &&
-                (!register || code.length == 6 && password == confirmPassword)
+                (!register || code.length == 6 && password == confirmPassword &&
+                    privacyAccepted && termsAccepted && ageConfirmed)
         ) {
             if (busy) CircularProgressIndicator(Modifier.height(20.dp), strokeWidth = 2.dp)
             else Text(stringResource(if (register) R.string.account_submit_register else R.string.account_submit_login))
         }
+    }
+}
+
+@Composable
+private fun LegalConfirmationRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    label: String
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Text(label, style = MaterialTheme.typography.bodySmall)
     }
 }

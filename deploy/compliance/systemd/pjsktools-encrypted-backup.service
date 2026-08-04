@@ -1,0 +1,14 @@
+[Unit]
+Description=Create age-encrypted pjsktools PostgreSQL backup
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/pjsktools-compliance/bin/backup-postgres-encrypted.sh
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full

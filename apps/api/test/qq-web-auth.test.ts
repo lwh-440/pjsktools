@@ -95,7 +95,8 @@ describe("QQ web OAuth", () => {
     expect(first.json().user.nickname).toBe("QQ test user");
     expect(first.json().user.avatarUrl).toBe("https://q.qlogo.cn/test.png");
     expect(first.json().accessToken).toBeTruthy();
-    expect(first.json().refreshToken).toBeTruthy();
+    expect(first.json().refreshToken).toBeUndefined();
+    expect(first.headers["set-cookie"]).toContain("HttpOnly");
 
     const replay = await app.inject({ method: "POST", url: "/api/auth/qq/web-exchange", payload: { handoff } });
     expect(replay.statusCode).toBe(401);

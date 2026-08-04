@@ -66,7 +66,7 @@ export type MeProfile = {
   deckConfigs: DeckConfig[];
 };
 export type InventoryItem = { cardId: string; level?: number; masterRank?: number; skillLevel?: number; specialTrainingStatus?: string; defaultImage?: string; episodesRead?: boolean; episodes?: Array<{ cardEpisodeId: string; scenarioStatus: string; scenarioStatusReasons?: string[]; isNotSkipped?: boolean }> };
-export type AuthResponse = { accessToken: string; token: string; refreshToken?: string; user: AuthUser };
+export type AuthResponse = { accessToken: string; token: string; refreshToken?: string; expiresIn?: number; legalAcceptanceRequired?: boolean; user: AuthUser };
 export type { ProfileAnalysis } from "./components/PlayerProfileAnalysis";
 
 export const playerDataKindOptions = [

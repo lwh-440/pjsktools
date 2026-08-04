@@ -1,5 +1,7 @@
 package com.pjsktools.app.feature.account
 
+import com.pjsktools.app.BuildConfig
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -30,7 +32,9 @@ fun AccountDataPanels(
     modifier: Modifier = Modifier
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        HarukiConnectionPanel(state, controller, launch)
+        if (BuildConfig.HARUKI_FEATURE_ENABLED) {
+            HarukiConnectionPanel(state, controller, launch)
+        }
         state.profileAnalysis?.let { analysis ->
             Panel("玩家档案") {
                 Text(analysis.nickname ?: state.selectedBinding?.title ?: "-")

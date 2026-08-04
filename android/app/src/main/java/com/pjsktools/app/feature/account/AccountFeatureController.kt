@@ -1,5 +1,6 @@
 package com.pjsktools.app.feature.account
 
+import com.pjsktools.app.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,7 @@ class AccountFeatureController(
     private val harukiPreviewCache: HarukiPreviewCache? = null
 ) {
     private val mutex = Mutex()
+    private var pendingQqDeletionToken: String? = null
     private val mutableState = MutableStateFlow(AccountUiState())
     val state: StateFlow<AccountUiState> = mutableState.asStateFlow()
 
@@ -23,9 +25,16 @@ class AccountFeatureController(
         if (stored == null) { update { it.copy(initialized = true) }; return }
         loading {
             val restored = restore(stored)
-            val profile = repository.getProfile(restored.accessToken)
-            it.copy(initialized = true, session = restored, profile = profile,
-                selectedBindingId = preferredBinding(profile)?.id, message = "登录状态已恢复")
+            val legalRequired = restored.legalAcceptanceRequired || repository.legalAcceptanceRequired(restored.accessToken)
+            val profile = if (legalRequired) null else repository.getProfile(restored.accessToken)
+            it.copy(
+                initialized = true,
+                session = restored.copy(legalAcceptanceRequired = legalRequired),
+                profile = profile,
+                selectedBindingId = profile?.let(::preferredBinding)?.id,
+                legalAcceptanceRequired = legalRequired,
+                message = if (legalRequired) "请先确认最新隐私政策与用户协议" else "登录状态已恢复"
+            )
         }
     }
 
@@ -52,10 +61,19 @@ class AccountFeatureController(
         if (!requireInput(email.isNotBlank() && password.length >= 8, "请输入有效邮箱和至少 8 位密码")) return@withLock
         authenticate { repository.login(email, password) }
     }
-    suspend fun register(email: String, password: String, confirmPassword: String, code: String) = mutex.withLock {
+    suspend fun register(
+        email: String,
+        password: String,
+        confirmPassword: String,
+        code: String,
+        privacyAccepted: Boolean,
+        termsAccepted: Boolean,
+        ageConfirmed: Boolean
+    ) = mutex.withLock {
         if (!requireInput(password == confirmPassword, "两次输入的密码不一致")) return@withLock
+        if (!requireInput(privacyAccepted && termsAccepted && ageConfirmed, "请阅读并同意隐私政策、用户协议，并确认已满 14 周岁")) return@withLock
         if (!requireInput(email.isNotBlank() && password.length >= 10 && code.matches(Regex("\\d{6}")), "注册需要有效邮箱、符合规则的密码和 6 位验证码")) return@withLock
-        authenticate { repository.register(email, password, code) }
+        authenticate { repository.register(email, password, code, privacyAccepted, termsAccepted, ageConfirmed) }
     }
     suspend fun refreshSession() = mutex.withLock {
         val refresh = state.value.session?.refreshToken ?: repository.sessionStore.load()?.refreshToken
@@ -76,6 +94,7 @@ class AccountFeatureController(
     suspend fun logout() = mutex.withLock {
         val refresh = state.value.session?.refreshToken ?: repository.sessionStore.load()?.refreshToken
         try { repository.logout(refresh) } finally {
+            pendingQqDeletionToken = null
             mutableState.value = AccountUiState(initialized = true, message = "已退出登录")
         }
     }
@@ -94,6 +113,90 @@ class AccountFeatureController(
     }
     suspend fun linkQq(code: String, state: String) = accountWrite("QQ 账号已关联") { repository.linkQq(it, code, state) }
     suspend fun unlinkQq() = accountWrite("QQ 账号已解除关联") { repository.unlinkQq(it) }
+    suspend fun acceptCurrentLegal(privacyAccepted: Boolean, termsAccepted: Boolean, ageConfirmed: Boolean) = mutex.withLock {
+        if (!requireInput(privacyAccepted && termsAccepted && ageConfirmed, "请阅读并同意隐私政策、用户协议，并确认已满 14 周岁")) return@withLock
+        val session = requireSession()
+        loading {
+            repository.acceptCurrentLegal(session.accessToken, privacyAccepted, termsAccepted, ageConfirmed)
+            val profile = repository.getProfile(session.accessToken)
+            val acceptedSession = currentSession(it.session)?.copy(legalAcceptanceRequired = false)
+            it.copy(
+                session = acceptedSession,
+                profile = profile,
+                selectedBindingId = preferredBinding(profile)?.id,
+                legalAcceptanceRequired = false,
+                message = "隐私政策与用户协议确认已保存"
+            )
+        }
+    }
+    suspend fun exportPersonalData(): String = mutex.withLock {
+        val result = repository.exportPersonalData(requireSession().accessToken)
+        update { it.copy(message = "个人数据导出已生成，请选择保存位置", error = null) }
+        result
+    }
+    suspend fun requestAccountDeletionCode() = mutex.withLock {
+        loading {
+            val result = repository.requestAccountDeletionCode(requireSession().accessToken)
+            it.copy(deletionCode = result, message = "注销验证码已发送，${(result.expiresInSeconds ?: 300) / 60} 分钟内有效")
+        }
+    }
+    suspend fun deleteEmailAccount(code: String, confirmation: String) = mutex.withLock {
+        if (!requireInput(confirmation == "DELETE", "请输入 DELETE 以确认注销")) return@withLock
+        if (!requireInput(code.matches(Regex("\\d{6}")), "请输入 6 位注销验证码")) return@withLock
+        val userId = state.value.profile?.user?.id
+        loading {
+            repository.deleteEmailAccount(requireSession().accessToken, code)
+            if (userId != null) harukiPreviewCache?.clearAllForUser(userId)
+            AccountUiState(initialized = true, message = "账号已注销，本机登录凭据与私有缓存已清除")
+        }
+    }
+    suspend fun startQqAccountDeletion(): String = mutex.withLock {
+        pendingQqDeletionToken = null
+        update { it.copy(qqDeletionReady = false) }
+        repository.startQqAccountDeletion(requireSession().accessToken).also {
+            update { state -> state.copy(message = "请在 QQ 完成注销身份验证", error = null) }
+        }
+    }
+    suspend fun handleQqAccountDeletionCallback(uri: android.net.Uri) = mutex.withLock {
+        val validTarget = uri.scheme == "pjsktools" && uri.host == "auth" && uri.path == "/qq-delete" &&
+            uri.port == -1 && uri.userInfo == null && uri.fragment == null &&
+            (uri.queryParameterNames == setOf("handoff") || uri.queryParameterNames == setOf("error"))
+        if (!requireInput(validTarget, "无效的 QQ 注销回调地址")) return@withLock
+        val error = uri.getQueryParameter("error")
+        if (error != null) {
+            pendingQqDeletionToken = null
+            val message = when (error) {
+                "qq_authorization_cancelled" -> "已取消 QQ 注销身份验证，账号不会被删除"
+                "qq_account_mismatch" -> "授权的 QQ 与当前账号不一致，账号不会被删除"
+                "qq_service_unavailable" -> "QQ 登录服务暂时不可用，请稍后重试"
+                else -> "QQ 注销身份验证未完成，请重新发起"
+            }
+            update { it.copy(qqDeletionReady = false, message = message, error = null) }
+            return@withLock
+        }
+        val handoff = uri.getQueryParameter("handoff").orEmpty()
+        if (!requireInput(handoff.matches(Regex("delete_[0-9a-f]{32}")), "无效或过期的 QQ 注销凭据")) return@withLock
+        loading {
+            pendingQqDeletionToken = repository.exchangeQqAccountDeletion(requireSession().accessToken, handoff)
+            it.copy(qqDeletionReady = true, message = "QQ 身份验证成功，请再次确认永久注销")
+        }
+    }
+    suspend fun confirmQqAccountDeletion(confirmation: String) = mutex.withLock {
+        if (!requireInput(confirmation == "DELETE", "请输入 DELETE 以确认注销")) return@withLock
+        val deletionToken = pendingQqDeletionToken
+        if (!requireInput(!deletionToken.isNullOrBlank(), "请先重新完成 QQ 身份验证")) return@withLock
+        val userId = state.value.profile?.user?.id
+        loading {
+            repository.confirmAccountDeletion(requireSession().accessToken, deletionToken!!)
+            pendingQqDeletionToken = null
+            if (userId != null) harukiPreviewCache?.clearAllForUser(userId)
+            AccountUiState(initialized = true, message = "账号已注销，本机登录凭据与私有缓存已清除")
+        }
+    }
+    suspend fun clearPrivateCache() = mutex.withLock {
+        state.value.profile?.user?.id?.let { harukiPreviewCache?.clearAllForUser(it) }
+        update { it.copy(message = "账号私有缓存已清除", error = null) }
+    }
 
     /** Host Activity may pass its deep-link URI here after registering an intent-filter. */
     suspend fun handleQqCallback(uri: android.net.Uri) {
@@ -166,6 +269,10 @@ class AccountFeatureController(
         start
     }
     suspend fun handleHarukiCallback(uri: android.net.Uri) {
+        if (!BuildConfig.HARUKI_FEATURE_ENABLED) {
+            update { it.copy(error = "Haruki 功能尚未开放") }
+            return
+        }
         val isCustomScheme = uri.scheme == "pjsktools" && uri.host == "auth"
         val isVerifiedAppLink = uri.scheme == "https" && uri.host == "sekai-tools.cn"
         val valid = (isCustomScheme || isVerifiedAppLink) && uri.path == "/haruki" &&
@@ -233,17 +340,32 @@ class AccountFeatureController(
     private suspend fun restore(stored: StoredAccountSession): AccountSession {
         if (stored.accessToken.isNotBlank()) {
             try {
-                val profile = repository.getProfile(stored.accessToken)
-                return AccountSession(stored.accessToken, stored.refreshToken, user = profile.user)
+                val legalRequired = repository.legalAcceptanceRequired(stored.accessToken)
+                val current = repository.latestSession
+                if (legalRequired) {
+                    return current?.copy(legalAcceptanceRequired = true)
+                        ?: AccountSession(stored.accessToken, stored.refreshToken, user = AccountUser(""), legalAcceptanceRequired = true)
+                }
+                val accessToken = current?.accessToken ?: stored.accessToken
+                val profile = repository.getProfile(accessToken)
+                return AccountSession(
+                    accessToken,
+                    current?.refreshToken ?: stored.refreshToken,
+                    user = profile.user,
+                    legalAcceptanceRequired = false
+                )
             } catch (error: AccountApiException) { if (error.statusCode != 401) throw error }
         }
         return repository.refresh(stored.refreshToken)
     }
     private suspend fun authenticate(message: String = "登录成功", block: suspend () -> AccountSession) = loading {
+        pendingQqDeletionToken = null
         val session = block()
-        val profile = repository.getProfile(session.accessToken)
+        val profile = if (session.legalAcceptanceRequired) null else repository.getProfile(session.accessToken)
         it.copy(initialized = true, session = session, profile = profile,
-            selectedBindingId = preferredBinding(profile)?.id, registrationCode = null, message = message)
+            selectedBindingId = profile?.let(::preferredBinding)?.id, registrationCode = null,
+            legalAcceptanceRequired = session.legalAcceptanceRequired,
+            message = if (session.legalAcceptanceRequired) "请先确认最新隐私政策与用户协议" else message)
     }
     private suspend fun replaceProfile(token: String, selected: String?, message: String) {
         val profile = repository.getProfile(token)

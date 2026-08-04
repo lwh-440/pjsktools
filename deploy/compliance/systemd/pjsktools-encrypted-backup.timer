@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily age-encrypted pjsktools PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=pjsktools-encrypted-backup.service
+
+[Install]
+WantedBy=timers.target

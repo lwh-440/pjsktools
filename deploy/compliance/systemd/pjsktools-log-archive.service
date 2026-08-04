@@ -1,0 +1,15 @@
+[Unit]
+Description=Archive and verify pjsktools access logs in private COS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/pjsktools-compliance/bin/archive-logs.sh
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/pjsktools /var/lib/pjsktools-compliance

@@ -1,3 +1,6 @@
+src/main/kotlin/com/pjsktools/api/generated/AccountDeletionConfirmRequest.kt
+src/main/kotlin/com/pjsktools/api/generated/AccountDeletionIntentRequest.kt
+src/main/kotlin/com/pjsktools/api/generated/AccountDeletionIntentResponse.kt
 src/main/kotlin/com/pjsktools/api/generated/AndroidApi.kt
 src/main/kotlin/com/pjsktools/api/generated/ApiError.kt
 src/main/kotlin/com/pjsktools/api/generated/AppliedCatalogFilters.kt
@@ -86,6 +89,7 @@ src/main/kotlin/com/pjsktools/api/generated/HarukiSyncSettingsRequest.kt
 src/main/kotlin/com/pjsktools/api/generated/HonorDetail.kt
 src/main/kotlin/com/pjsktools/api/generated/HonorItem.kt
 src/main/kotlin/com/pjsktools/api/generated/HonorPage.kt
+src/main/kotlin/com/pjsktools/api/generated/LegalAcceptanceRequest.kt
 src/main/kotlin/com/pjsktools/api/generated/LiveRanking.kt
 src/main/kotlin/com/pjsktools/api/generated/LoginRequest.kt
 src/main/kotlin/com/pjsktools/api/generated/MaterialDetail.kt
@@ -97,6 +101,8 @@ src/main/kotlin/com/pjsktools/api/generated/PlayerBindingPage.kt
 src/main/kotlin/com/pjsktools/api/generated/PlayerBindingPatchRequest.kt
 src/main/kotlin/com/pjsktools/api/generated/PlayerProfile.kt
 src/main/kotlin/com/pjsktools/api/generated/PublicUser.kt
+src/main/kotlin/com/pjsktools/api/generated/QqAccountDeletionExchangeRequest.kt
+src/main/kotlin/com/pjsktools/api/generated/QqAccountDeletionStartResponse.kt
 src/main/kotlin/com/pjsktools/api/generated/QqWebHandoffRequest.kt
 src/main/kotlin/com/pjsktools/api/generated/RankingEntry.kt
 src/main/kotlin/com/pjsktools/api/generated/RankingEntryPage.kt
@@ -126,5 +132,6 @@ src/main/kotlin/com/pjsktools/api/generated/SourceHealth.kt
 src/main/kotlin/com/pjsktools/api/generated/StampDetail.kt
 src/main/kotlin/com/pjsktools/api/generated/StampItem.kt
 src/main/kotlin/com/pjsktools/api/generated/StampPage.kt
+src/main/kotlin/com/pjsktools/api/generated/WebAuthResponse.kt
 src/main/kotlin/com/pjsktools/api/generated/WorldLinkCharacter.kt
 src/main/kotlin/com/pjsktools/api/generated/infrastructure/CollectionFormats.kt

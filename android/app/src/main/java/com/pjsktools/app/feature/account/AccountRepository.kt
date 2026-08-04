@@ -17,6 +17,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import retrofit2.Retrofit
+import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
@@ -29,6 +32,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import com.pjsktools.app.BuildConfig
 import com.pjsktools.app.core.ApiOrigin
+import com.pjsktools.api.generated.AndroidApi
+import com.pjsktools.api.generated.QqAccountDeletionExchangeRequest
 
 interface AccountSessionStore {
     fun load(): StoredAccountSession?
@@ -101,8 +106,13 @@ class AccountRepository(
     val sessionStore: AccountSessionStore,
     private val client: OkHttpClient = OkHttpClient()
 ) {
+    companion object {
+        const val PRIVACY_VERSION = "2026-08-04"
+        const val TERMS_VERSION = "2026-08-04"
+    }
     private val base = baseUrl.trimEnd('/')
     private val jsonType = "application/json; charset=utf-8".toMediaType()
+    private val generatedJson = Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true }
     private val refreshMutex = Mutex()
     @Volatile var latestSession: AccountSession? = null
         private set
@@ -115,8 +125,25 @@ class AccountRepository(
     suspend fun login(email: String, password: String) = io {
         auth(post("/api/auth/login", JSONObject().put("email", email.trim()).put("password", password)))
     }
-    suspend fun register(email: String, password: String, code: String) = io {
-        auth(post("/api/auth/register", JSONObject().put("email", email.trim()).put("password", password).put("code", code.trim())))
+    suspend fun register(
+        email: String,
+        password: String,
+        code: String,
+        privacyAccepted: Boolean,
+        termsAccepted: Boolean,
+        ageConfirmed: Boolean
+    ) = io {
+        require(privacyAccepted && termsAccepted && ageConfirmed) {
+            "Privacy policy, terms and age confirmation are required"
+        }
+        auth(post("/api/auth/register", JSONObject()
+            .put("email", email.trim())
+            .put("password", password)
+            .put("code", code.trim())
+            .put("privacyVersion", PRIVACY_VERSION)
+            .put("termsVersion", TERMS_VERSION)
+            .put("ageConfirmed", ageConfirmed)
+            .put("source", "android")))
     }
     suspend fun refresh(refreshToken: String) = io {
         try { auth(post("/api/auth/refresh", JSONObject().put("refreshToken", refreshToken))) }
@@ -127,6 +154,72 @@ class AccountRepository(
         finally { sessionStore.clear() }
     }
     suspend fun getProfile(accessToken: String) = io { parseProfile(get("/api/me/profile", accessToken)) }
+    suspend fun legalAcceptanceRequired(accessToken: String) = io {
+        try {
+            val json = get("/api/me/legal-acceptances", accessToken)
+            when {
+                json.has("required") -> json.optBoolean("required")
+                json.has("legalAcceptanceRequired") -> json.optBoolean("legalAcceptanceRequired")
+                json.has("current") -> {
+                    val current = json.optJSONObject("current") ?: JSONObject()
+                    val acceptance = json.optJSONObject("acceptance")
+                    acceptance == null ||
+                        acceptance.optString("privacyVersion") != current.optString("privacyVersion", PRIVACY_VERSION) ||
+                        acceptance.optString("termsVersion") != current.optString("termsVersion", TERMS_VERSION) ||
+                        !acceptance.optBoolean("ageConfirmed")
+                }
+                else -> json.optString("privacyVersion") != PRIVACY_VERSION ||
+                    json.optString("termsVersion") != TERMS_VERSION || !json.optBoolean("ageConfirmed")
+            }
+        } catch (error: AccountApiException) {
+            if (error.statusCode == 404) false else throw error
+        }
+    }
+    suspend fun acceptCurrentLegal(accessToken: String, privacyAccepted: Boolean, termsAccepted: Boolean, ageConfirmed: Boolean) = io {
+        require(privacyAccepted && termsAccepted && ageConfirmed) {
+            "Privacy policy, terms and age confirmation are required"
+        }
+        post("/api/me/legal-acceptances", JSONObject()
+            .put("privacyVersion", PRIVACY_VERSION)
+            .put("termsVersion", TERMS_VERSION)
+            .put("ageConfirmed", ageConfirmed)
+            .put("source", "android"), accessToken)
+        Unit
+    }
+    suspend fun exportPersonalData(accessToken: String) = io {
+        get("/api/me/export", accessToken).toString(2)
+    }
+    suspend fun requestAccountDeletionCode(accessToken: String) = io {
+        val json = post("/api/me/account-deletion/email-code", JSONObject(), accessToken)
+        AccountDeletionCodeResult(
+            sent = json.optBoolean("sent", json.optBoolean("ok")),
+            expiresInSeconds = json.longOrNull("expiresIn"),
+            resendAfterSeconds = json.longOrNull("resendAfter")
+        )
+    }
+    suspend fun deleteEmailAccount(accessToken: String, code: String) = io {
+        val intent = post("/api/me/account-deletion/intent", JSONObject()
+            .put("confirmation", "DELETE")
+            .put("code", code.trim()), accessToken)
+        val deletionToken = intent.stringOrNull("token")
+            ?: throw AccountApiException(200, "注销响应缺少一次性确认令牌")
+        confirmAccountDeletion(accessToken, deletionToken)
+    }
+    suspend fun startQqAccountDeletion(accessToken: String) = io {
+        val response = generatedApi(accessToken).startQqAccountDeletion("android")
+        if (!response.isSuccessful) throw AccountApiException(response.code(), "QQ 注销验证启动失败")
+        response.body()?.authorizeUrl ?: throw AccountApiException(200, "QQ 注销验证响应缺少授权地址")
+    }
+    suspend fun exchangeQqAccountDeletion(accessToken: String, handoff: String) = io {
+        val response = generatedApi(accessToken).exchangeQqAccountDeletion(QqAccountDeletionExchangeRequest(handoff))
+        if (!response.isSuccessful) throw AccountApiException(response.code(), "QQ 注销验证失败")
+        response.body()?.token ?: throw AccountApiException(200, "QQ 注销验证响应缺少确认令牌")
+    }
+    suspend fun confirmAccountDeletion(accessToken: String, deletionToken: String) = io {
+        post("/api/me/account-deletion/confirm", JSONObject().put("token", deletionToken), accessToken)
+        sessionStore.clear()
+        latestSession = null
+    }
     suspend fun setDefaultBinding(accessToken: String, id: String) = io {
         binding(patch("/api/me/player-bindings/${encode(id)}", JSONObject().put("isDefault", true), accessToken))
     }
@@ -154,6 +247,15 @@ class AccountRepository(
         post("/api/auth/qq/link", JSONObject().put("code", code).put("state", state), token).toString()
     }
     suspend fun unlinkQq(token: String) = io { delete("/api/auth/qq/link", token); Unit }
+
+    private fun generatedApi(accessToken: String): AndroidApi = Retrofit.Builder()
+        .baseUrl("$base/")
+        .client(client.newBuilder().addInterceptor { chain ->
+            chain.proceed(chain.request().newBuilder().header("Authorization", "Bearer $accessToken").build())
+        }.build())
+        .addConverterFactory(generatedJson.asConverterFactory(jsonType))
+        .build()
+        .create(AndroidApi::class.java)
     suspend fun profileAnalysis(token: String, id: String) = io {
         val j = get("/api/me/player-bindings/${encode(id)}/profile-analysis", token)
         val p = j.optJSONObject("profileSummary") ?: JSONObject()
@@ -189,7 +291,13 @@ class AccountRepository(
             ?: throw AccountApiException(200, "认证响应缺少 access token")
         val refresh = json.stringOrNull("refreshToken") ?: sessionStore.load()?.refreshToken
             ?: throw AccountApiException(200, "认证响应缺少 refresh token")
-        val result = AccountSession(access, refresh, json.longOrNull("expiresIn"), user(json.optJSONObject("user") ?: JSONObject()))
+        val result = AccountSession(
+            access,
+            refresh,
+            json.longOrNull("expiresIn"),
+            user(json.optJSONObject("user") ?: JSONObject()),
+            json.optBoolean("legalAcceptanceRequired")
+        )
         sessionStore.save(StoredAccountSession(access, refresh))
         latestSession = result
         return result

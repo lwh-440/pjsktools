@@ -1,0 +1,14 @@
+[Unit]
+Description=Export irreversible account-deletion tombstones to age and private COS
+After=docker.service network-online.target pjsktools-encrypted-backup.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/pjsktools-compliance/bin/export-tombstones-encrypted.sh
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full

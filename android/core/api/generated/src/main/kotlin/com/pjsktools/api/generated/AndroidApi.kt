@@ -8,6 +8,9 @@ import okhttp3.ResponseBody
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+import com.pjsktools.api.generated.AccountDeletionConfirmRequest
+import com.pjsktools.api.generated.AccountDeletionIntentRequest
+import com.pjsktools.api.generated.AccountDeletionIntentResponse
 import com.pjsktools.api.generated.ApiError
 import com.pjsktools.api.generated.AssetConfig
 import com.pjsktools.api.generated.AuthResponse
@@ -52,6 +55,7 @@ import com.pjsktools.api.generated.HarukiSyncReviewResponse
 import com.pjsktools.api.generated.HarukiSyncSettingsRequest
 import com.pjsktools.api.generated.HonorDetail
 import com.pjsktools.api.generated.HonorPage
+import com.pjsktools.api.generated.LegalAcceptanceRequest
 import com.pjsktools.api.generated.LiveRanking
 import com.pjsktools.api.generated.LoginRequest
 import com.pjsktools.api.generated.MaterialDetail
@@ -61,6 +65,8 @@ import com.pjsktools.api.generated.PlayerBinding
 import com.pjsktools.api.generated.PlayerBindingPage
 import com.pjsktools.api.generated.PlayerBindingPatchRequest
 import com.pjsktools.api.generated.PlayerProfile
+import com.pjsktools.api.generated.QqAccountDeletionExchangeRequest
+import com.pjsktools.api.generated.QqAccountDeletionStartResponse
 import com.pjsktools.api.generated.QqWebHandoffRequest
 import com.pjsktools.api.generated.RankingEntryPage
 import com.pjsktools.api.generated.RankingHistory
@@ -77,8 +83,29 @@ import com.pjsktools.api.generated.SongDetail
 import com.pjsktools.api.generated.SongPage
 import com.pjsktools.api.generated.StampDetail
 import com.pjsktools.api.generated.StampPage
+import com.pjsktools.api.generated.WebAuthResponse
 
 interface AndroidApi {
+    /**
+     * POST api/me/legal-acceptances
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param legalAcceptanceRequest
+     * @return [kotlin.Any]
+     */
+    @POST("api/me/legal-acceptances")
+    suspend fun acceptCurrentLegalDocuments(@Body legalAcceptanceRequest: LegalAcceptanceRequest): Response<kotlin.Any>
+
     /**
      * PATCH api/me/favorites/bulk
      *
@@ -161,6 +188,26 @@ interface AndroidApi {
     suspend fun completeHarukiMobileOAuth(@Body harukiMobileCompleteRequest: HarukiMobileCompleteRequest): Response<HarukiConnection>
 
     /**
+     * POST api/me/account-deletion/confirm
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param accountDeletionConfirmRequest
+     * @return [OkResponse]
+     */
+    @POST("api/me/account-deletion/confirm")
+    suspend fun confirmAccountDeletion(@Body accountDeletionConfirmRequest: AccountDeletionConfirmRequest): Response<OkResponse>
+
+    /**
      * POST api/me/player-bindings/{id}/sync/confirm
      *
      *
@@ -181,6 +228,26 @@ interface AndroidApi {
      */
     @POST("api/me/player-bindings/{id}/sync/confirm")
     suspend fun confirmHarukiPlayerSync(@Path("id") id: kotlin.String, @Body harukiSyncConfirmRequest: HarukiSyncConfirmRequest, @Header("Idempotency-Key") idempotencyKey: kotlin.String? = null): Response<HarukiSyncResult>
+
+    /**
+     * POST api/me/account-deletion/intent
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param accountDeletionIntentRequest
+     * @return [kotlin.Any]
+     */
+    @POST("api/me/account-deletion/intent")
+    suspend fun createAccountDeletionIntent(@Body accountDeletionIntentRequest: AccountDeletionIntentRequest): Response<kotlin.Any>
 
     /**
      * POST api/me/favorites
@@ -369,6 +436,26 @@ interface AndroidApi {
     suspend fun estimateEventPoint(@Body eventPointEstimateRequest: EventPointEstimateRequest): Response<EventPointEstimateResult>
 
     /**
+     * POST api/me/account-deletion/qq/exchange
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param qqAccountDeletionExchangeRequest
+     * @return [AccountDeletionIntentResponse]
+     */
+    @POST("api/me/account-deletion/qq/exchange")
+    suspend fun exchangeQqAccountDeletion(@Body qqAccountDeletionExchangeRequest: QqAccountDeletionExchangeRequest): Response<AccountDeletionIntentResponse>
+
+    /**
      * POST api/auth/qq/web-exchange
      *
      *
@@ -383,10 +470,29 @@ interface AndroidApi {
      *  - 503: Source unavailable
      *
      * @param qqWebHandoffRequest
-     * @return [AuthResponse]
+     * @return [WebAuthResponse]
      */
     @POST("api/auth/qq/web-exchange")
-    suspend fun exchangeQqWebHandoff(@Body qqWebHandoffRequest: QqWebHandoffRequest): Response<AuthResponse>
+    suspend fun exchangeQqWebHandoff(@Body qqWebHandoffRequest: QqWebHandoffRequest): Response<WebAuthResponse>
+
+    /**
+     * GET api/me/export
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @return [kotlin.Any]
+     */
+    @GET("api/me/export")
+    suspend fun exportMyData(): Response<kotlin.Any>
 
     /**
      * GET api/assets/{region}/config
@@ -652,6 +758,25 @@ interface AndroidApi {
      */
     @GET("api/events/{region}/current")
     suspend fun getCurrentEvent(@Path("region") region: RegionId): Response<EventSummary>
+
+    /**
+     * GET api/legal/current
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @return [kotlin.Any]
+     */
+    @GET("api/legal/current")
+    suspend fun getCurrentLegalDocuments(): Response<kotlin.Any>
 
 
     /**
@@ -1064,6 +1189,25 @@ interface AndroidApi {
      */
     @GET("api/master/{region}/catalogs/materials/{itemId}")
     suspend fun getMaterialCatalogItem(@Path("region") region: RegionId, @Path("itemId") itemId: kotlin.String): Response<MaterialDetail>
+
+    /**
+     * GET api/me/legal-acceptances
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @return [kotlin.Any]
+     */
+    @GET("api/me/legal-acceptances")
+    suspend fun getMyLegalAcceptances(): Response<kotlin.Any>
 
     /**
      * GET api/me/player-bindings
@@ -1583,6 +1727,26 @@ interface AndroidApi {
     suspend fun login(@Body loginRequest: LoginRequest): Response<AuthResponse>
 
     /**
+     * POST api/auth/web/login
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param loginRequest
+     * @return [WebAuthResponse]
+     */
+    @POST("api/auth/web/login")
+    suspend fun loginWeb(@Body loginRequest: LoginRequest): Response<WebAuthResponse>
+
+    /**
      * POST api/auth/logout
      *
      *
@@ -1601,6 +1765,25 @@ interface AndroidApi {
      */
     @POST("api/auth/logout")
     suspend fun logout(@Body refreshTokenRequest: RefreshTokenRequest): Response<OkResponse>
+
+    /**
+     * POST api/auth/web/logout
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @return [OkResponse]
+     */
+    @POST("api/auth/web/logout")
+    suspend fun logoutWeb(): Response<OkResponse>
 
     /**
      * POST api/me/haruki/public/preview
@@ -1686,6 +1869,25 @@ interface AndroidApi {
     suspend fun refreshSession(@Body refreshTokenRequest: RefreshTokenRequest): Response<AuthResponse>
 
     /**
+     * POST api/auth/web/refresh
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @return [WebAuthResponse]
+     */
+    @POST("api/auth/web/refresh")
+    suspend fun refreshWebSession(): Response<WebAuthResponse>
+
+    /**
      * POST api/auth/register
      *
      *
@@ -1704,6 +1906,26 @@ interface AndroidApi {
      */
     @POST("api/auth/register")
     suspend fun register(@Body registerRequest: RegisterRequest): Response<AuthResponse>
+
+    /**
+     * POST api/auth/web/register
+     *
+     *
+     * Responses:
+     *  - 201: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param registerRequest
+     * @return [WebAuthResponse]
+     */
+    @POST("api/auth/web/register")
+    suspend fun registerWeb(@Body registerRequest: RegisterRequest): Response<WebAuthResponse>
 
     /**
      * GET api/assets/resolve
@@ -1746,6 +1968,25 @@ interface AndroidApi {
     suspend fun reviewHarukiPlayerSync(@Path("id") id: kotlin.String): Response<HarukiSyncReviewResponse>
 
     /**
+     * POST api/me/account-deletion/email-code
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @return [EmailCodeResponse]
+     */
+    @POST("api/me/account-deletion/email-code")
+    suspend fun startAccountDeletionEmailVerification(): Response<EmailCodeResponse>
+
+    /**
      * POST api/auth/email-code/start
      *
      *
@@ -1784,6 +2025,26 @@ interface AndroidApi {
      */
     @POST("api/me/haruki/oauth/start")
     suspend fun startHarukiOAuth(@Body harukiOAuthStartRequest: HarukiOAuthStartRequest): Response<HarukiOAuthStartResponse>
+
+    /**
+     * GET api/me/account-deletion/qq/start
+     *
+     *
+     * Responses:
+     *  - 200: Successful response
+     *  - 400: Invalid input
+     *  - 401: Authentication required
+     *  - 404: Resource not found
+     *  - 409: Resource conflict
+     *  - 412: Optimistic concurrency check failed
+     *  - 429: Rate limit exceeded
+     *  - 503: Source unavailable
+     *
+     * @param client  (optional, default to "web")
+     * @return [QqAccountDeletionStartResponse]
+     */
+    @GET("api/me/account-deletion/qq/start")
+    suspend fun startQqAccountDeletion(@Query("client") client: kotlin.String? = "web"): Response<QqAccountDeletionStartResponse>
 
     /**
      * POST api/me/player-bindings/{id}/sync

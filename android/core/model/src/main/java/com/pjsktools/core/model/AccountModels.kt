@@ -33,9 +33,23 @@ interface AuthRepository {
     val state: Flow<AuthState>
     suspend fun login(email: String, password: String): Result<Unit>
     suspend fun sendRegistrationCode(email: String): Result<VerificationCodeDelivery>
-    suspend fun register(email: String, password: String, code: String): Result<Unit>
+    suspend fun register(
+        email: String,
+        password: String,
+        code: String,
+        consent: RegistrationConsent
+    ): Result<Unit>
     suspend fun refresh(): Result<Unit>
     suspend fun logout()
+}
+
+data class RegistrationConsent(
+    val privacyPolicyAccepted: Boolean,
+    val termsAccepted: Boolean,
+    val ageConfirmed: Boolean
+) {
+    val isComplete: Boolean
+        get() = privacyPolicyAccepted && termsAccepted && ageConfirmed
 }
 
 data class VerificationCodeDelivery(
