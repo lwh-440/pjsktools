@@ -699,18 +699,17 @@ try {
   for(const pool of [runtimePool,authRuntimePool,complianceRuntimePool,harukiRuntimePool,migrationPool,adminPool]){
     pool?.on("error",()=>undefined);
   }
-  await store?.close().catch(() => undefined);
-  await runtimePool?.end().catch(() => undefined);
-  await authRuntimePool?.end().catch(() => undefined);
-  await complianceRuntimePool?.end().catch(() => undefined);
-  await harukiRuntimePool?.end().catch(() => undefined);
-  await migrationPool?.end().catch(() => undefined);
-  await adminPool?.end().catch(() => undefined);
+  await cleanup("close PgStore pools",()=>store?.close());
+  await cleanup("close runtime pool",()=>runtimePool?.end());
+  await cleanup("close auth runtime pool",()=>authRuntimePool?.end());
+  await cleanup("close compliance runtime pool",()=>complianceRuntimePool?.end());
+  await cleanup("close Haruki runtime pool",()=>harukiRuntimePool?.end());
+  await cleanup("close migration pool",()=>migrationPool?.end());
+  await cleanup("close admin pool",()=>adminPool?.end());
   if(isolatedDatabaseCreated){
-    await cleanup("terminate isolated database connections",()=>controlPool.query(
-      `select pg_terminate_backend(pid) from pg_stat_activity where datname=$1 and pid<>pg_backend_pid()`,[testDatabase]
+    await cleanup("drop isolated database",()=>controlPool.query(
+      `drop database if exists ${quoteIdentifier(testDatabase)} with (force)`
     ));
-    await cleanup("drop isolated database",()=>controlPool.query(`drop database if exists ${quoteIdentifier(testDatabase)}`));
   }
   if(isolatedRolePreflightPassed){
     const cleanupRoles=[
