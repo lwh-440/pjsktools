@@ -1,6 +1,6 @@
 import { Heart } from "lucide-react";
 import { useEffect, useState, type MouseEvent } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import { apiDelete, apiPatch, apiPost } from "../api";
 import { useAuth } from "../AuthContext";
 import type { Favorite, FavoriteType } from "../sharedTypes";

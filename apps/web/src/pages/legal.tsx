@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 const POLICY_EFFECTIVE_DATE = "2026 年 8 月 4 日";
 

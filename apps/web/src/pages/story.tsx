@@ -1,6 +1,6 @@
 import { BookOpen, CalendarDays, Layers3, Play, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { apiGetWithSignal } from "../api";
 import { ArtImage, Pagination } from "../components/ui";
 

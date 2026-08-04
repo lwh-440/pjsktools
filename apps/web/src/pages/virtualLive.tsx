@@ -1,6 +1,6 @@
 import { ArrowLeft, ChevronDown, CircleAlert, Music2, Pause, Play, RefreshCw, Search, SkipBack, SkipForward, Users, Volume2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { apiGet, apiGetWithSignal, apiResourceUrl } from "../api";
 import { ArtImage, Pagination } from "../components/ui";
 

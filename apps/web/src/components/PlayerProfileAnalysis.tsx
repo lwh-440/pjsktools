@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 type Readiness = { ready: boolean; status: string; missingFields: string[]; updatedAt?: string | null };
 type CharacterItem = { characterId: string; name: string; unit: string; rank: number; ownedCardCount: number };

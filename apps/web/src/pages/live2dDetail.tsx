@@ -1,6 +1,6 @@
 import { ArrowLeft, Box, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router";
 import { apiGetWithSignal } from "../api";
 import { Live2dPlayer, type Live2dDetail } from "../components/Live2dPlayer";
 
