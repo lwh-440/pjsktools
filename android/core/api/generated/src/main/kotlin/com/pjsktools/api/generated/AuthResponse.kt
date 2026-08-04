@@ -22,13 +22,14 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param token 
- * @param accessToken 
- * @param refreshToken 
- * @param expiresIn 
- * @param user 
+ *
+ * @param token
+ * @param accessToken
+ * @param refreshToken
+ * @param expiresIn
+ * @param user
+ * @param legalAcceptanceRequired
  */
 @Serializable
 
@@ -47,7 +48,10 @@ data class AuthResponse (
     val expiresIn: kotlin.Int,
 
     @SerialName(value = "user")
-    val user: PublicUser
+    val user: PublicUser,
+
+    @SerialName(value = "legalAcceptanceRequired")
+    val legalAcceptanceRequired: kotlin.Boolean? = null
 
 ) {
 

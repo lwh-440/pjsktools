@@ -1,0 +1,11 @@
+[Unit]
+Description=Frequent pjsktools compliance operation checks
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=15m
+Persistent=true
+Unit=pjsktools-compliance-monitor.service
+
+[Install]
+WantedBy=timers.target

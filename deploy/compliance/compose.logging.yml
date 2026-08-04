@@ -1,0 +1,23 @@
+# Review against the actual production Compose service names before use:
+# docker compose -f compose.prod.yml -f deploy/compliance/compose.logging.yml config
+x-bounded-json-logging: &bounded-json-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  api:
+    environment:
+      SECURITY_EVENT_LOG_PATH: /var/log/pjsktools/security.json
+    volumes:
+      - /var/log/pjsktools:/var/log/pjsktools
+    logging: *bounded-json-logging
+
+  caddy:
+    volumes:
+      - /var/log/pjsktools:/var/log/pjsktools
+    logging: *bounded-json-logging
+
+  postgres:
+    logging: *bounded-json-logging

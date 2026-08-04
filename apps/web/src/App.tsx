@@ -41,9 +41,11 @@ import type { DeckConfig, PlayerBinding } from "./accountTypes";
 import { ArtImage, DetailDrawer, Pagination, SearchBox } from "./components/ui";
 import { CatalogFilterPanel, type CatalogFilterMeta } from "./components/CatalogFilterPanel";
 import { FavoriteButton } from "./components/FavoriteButton";
+import { SiteFooter } from "./components/SiteFooter";
 import type { StoryPlaybackContext } from "./components/StoryPlaybackPlayer";
-import { BoundDeckPage, LoginPage, MeHomePage, MeProfileAnalysisPage, QqCallbackPage, RegisterPage, RequireAuth, ScoresPage } from "./pages/account";
+import { BoundDeckPage, LegalAcceptancePage, LoginPage, MeHomePage, MeProfileAnalysisPage, QqCallbackPage, RegisterPage, RequireAuth, ScoresPage } from "./pages/account";
 import { HarukiConnectionCenter } from "./components/HarukiConnectionCenter";
+import { HARUKI_FEATURE_ENABLED } from "./features";
 import { RealChartPreview } from "./RealChartPreview";
 import type { RankingEntry, RankingPlayerDetail } from "./components/RankingDetailPanel";
 import { RankingDetailPanel } from "./components/RankingDetailPanel";
@@ -52,6 +54,7 @@ import { Live2dCatalogPage } from "./pages/live2d";
 import { LazyRouteBoundary } from "./components/LazyRouteBoundary";
 import { StoryCatalogPage, StoryDetailPage } from "./pages/story";
 import { FavoritesPage } from "./pages/favorites";
+import { PrivacyPage, SecurityPage, TermsPage } from "./pages/legal";
 import type { FavoriteType } from "./sharedTypes";
 
 const LazyLive2dDetailPage = lazy(() => import("./pages/live2dDetail").then((module) => ({ default: module.Live2dDetailPage })));
@@ -1590,6 +1593,9 @@ export function App() {
     if (location.pathname.startsWith("/login")) return "登录";
     if (location.pathname.startsWith("/register")) return "注册";
     if (location.pathname.startsWith("/me")) return "个人信息管理";
+    if (location.pathname.startsWith("/privacy")) return "隐私政策";
+    if (location.pathname.startsWith("/terms")) return "用户协议";
+    if (location.pathname.startsWith("/security")) return "安全与举报";
     return navItems.find((item) => item.id === activeSection)?.label ?? "Project Sekai 工具台";
   }
 
@@ -1616,7 +1622,7 @@ export function App() {
             <div className="mini-rank-list">{topRanks.map((entry) => <div key={entry.rank}><span>#{entry.rank}</span><strong>{entry.playerName ?? entry.name}</strong><small>{formatNumber(entry.score)} pt</small></div>)}{topRanks.length === 0 && <p className="empty-state">等待分数线数据。</p>}</div>
           </article>
           <article className="panel status-panel">
-            <div className="panel-heading"><div><h2>账号状态</h2><p>{auth.isAuthenticated ? "可使用 Haruki 绑定与跨端玩家快照" : "登录后连接玩家数据"}</p></div></div>
+            <div className="panel-heading"><div><h2>账号状态</h2><p>{auth.isAuthenticated ? (HARUKI_FEATURE_ENABLED ? "可使用玩家绑定与跨端快照" : "可同步收藏、成绩、卡组与账号设置") : "登录后同步账号设置"}</p></div></div>
             <Link className="feature-link" to={auth.isAuthenticated ? "/me" : "/login"}>{auth.isAuthenticated ? "进入个人信息管理" : "登录 / 注册"}</Link>
           </article>
           <article className="panel android-download-panel">
@@ -1893,7 +1899,7 @@ export function App() {
   function ProfilePage() {
     return (
       <section className="panel wide">
-        <div className="panel-heading"><div><h2>玩家档案查询</h2><p>公开 UID 仅展示公开资料；登录并通过 Haruki 同步后可进行完整分析。</p></div><Link className="button-link" to="/me/profile">打开我的档案分析</Link></div>
+        <div className="panel-heading"><div><h2>玩家档案查询</h2><p>公开 UID 仅展示公开资料；已有绑定数据可用于完整分析。</p></div><Link className="button-link" to="/me/profile">打开我的档案分析</Link></div>
         <div className="inline-form"><input value={profileId} onChange={(event) => setProfileId(event.target.value)} placeholder="玩家 UID" /><button type="button" onClick={loadProfile}><Search size={16} />查询</button></div>
         {profile && <div className="profile"><strong>{profile.nickname}</strong><span>Lv.{profile.rank} / {profile.region.toUpperCase()} / {profile.source}</span><p>{profile.comment || "暂无公开签名"}</p></div>}
       </section>
@@ -2166,9 +2172,9 @@ export function App() {
           <div className="panel-heading">
             <div>
               <h2>登录态资产联动</h2>
-              <p>{binding ? `当前使用 ${binding.region.toUpperCase()} / ${binding.displayName || binding.playerUid}` : "登录并连接 Haruki 后，可直接用跨端玩家快照驱动计算工具。"}</p>
+              <p>{binding ? `当前使用 ${binding.region.toUpperCase()} / ${binding.displayName || binding.playerUid}` : (HARUKI_FEATURE_ENABLED ? "连接玩家数据后，可直接用跨端玩家快照驱动计算工具。" : "玩家数据连接功能暂未开放；仍可手动填写参数使用计算工具。")}</p>
             </div>
-            <Link className="text-link" to={auth.isAuthenticated ? "/me/assets" : "/login"}>{auth.isAuthenticated ? "连接玩家数据" : "登录 / 注册"}</Link>
+            <Link className="text-link" to={auth.isAuthenticated ? (HARUKI_FEATURE_ENABLED ? "/me/assets" : "/me") : "/login"}>{auth.isAuthenticated ? (HARUKI_FEATURE_ENABLED ? "连接玩家数据" : "账号中心") : "登录 / 注册"}</Link>
           </div>
           <div className="button-row">
             <button type="button" disabled={!binding || !bindingRegionMatches || !songSelectionReady} onClick={calculateBoundPlan}>绑定数据普通活动规划</button>
@@ -2342,7 +2348,7 @@ export function App() {
             <button type="button" onClick={calculateMysekai}><Wand2 size={16} />手动输入计算</button>
             <button type="button" className="secondary" disabled={!binding} onClick={calculateBoundMysekai}>使用绑定 UID 数据</button>
           </div>
-          {!binding && <p className="empty-state">登录并通过 Haruki 同步 UID 后，可直接使用跨端 MySekai 数据计算。</p>}
+          {!binding && <p className="empty-state">{HARUKI_FEATURE_ENABLED ? "连接并同步 UID 后，可直接使用跨端 MySekai 数据计算。" : "玩家数据连接功能暂未开放；请手动填写计算参数。"}</p>}
         </article>
         <article className="panel wide mysekai-result-panel">
           <h3>计算结果</h3>
@@ -3025,14 +3031,19 @@ export function App() {
           <div className="top-actions"><select value={region} onChange={(event) => changeRegion(event.target.value)}>{regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" onClick={() => loadBase(region)}><RefreshCw size={16} />刷新</button></div>
         </header>
 
+        <div className="route-content">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/qq/callback" element={<QqCallbackPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/legal-acceptance" element={<RequireAuth><LegalAcceptancePage /></RequireAuth>} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/security" element={<SecurityPage />} />
           <Route path="/me" element={<RequireAuth><MeHomePage /></RequireAuth>} />
           <Route path="/me/profile" element={<RequireAuth><MeProfileAnalysisPage /></RequireAuth>} />
-          <Route path="/me/bindings" element={<RequireAuth><HarukiConnectionCenter /></RequireAuth>} />
-          <Route path="/me/assets" element={<RequireAuth><HarukiConnectionCenter /></RequireAuth>} />
+          {HARUKI_FEATURE_ENABLED && <Route path="/me/bindings" element={<RequireAuth><HarukiConnectionCenter /></RequireAuth>} />}
+          {HARUKI_FEATURE_ENABLED && <Route path="/me/assets" element={<RequireAuth><HarukiConnectionCenter /></RequireAuth>} />}
           <Route path="/me/deck" element={<RequireAuth><BoundDeckPage eventId={event?.id === "none" ? undefined : event?.id} /></RequireAuth>} />
           <Route path="/me/scores" element={<RequireAuth><ScoresPage songs={songs} region={region} /></RequireAuth>} />
           <Route path="/me/favorites" element={<RequireAuth><FavoritesPage /></RequireAuth>} />
@@ -3047,6 +3058,8 @@ export function App() {
           <Route path="/section/:sectionId" element={LegacySections()} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </div>
+        <SiteFooter />
       </section>
 
       {rankingDetailOpen && (

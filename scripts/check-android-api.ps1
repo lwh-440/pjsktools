@@ -8,7 +8,7 @@ $generated = Join-Path $temp "generated"
 function Normalize-GeneratedKotlin([string]$path) {
     $utf8 = [System.Text.UTF8Encoding]::new($false)
     Get-ChildItem -LiteralPath $path -File -Recurse -Filter "*.kt" |
-        Where-Object { $_.Name -like "Haruki*.kt" -or $_.Name -in @("AndroidApi.kt", "PlayerBinding.kt", "QqWebHandoffRequest.kt") } |
+        Where-Object { $_.Name -like "Haruki*.kt" -or $_.Name -in @("AndroidApi.kt", "PlayerBinding.kt", "QqWebHandoffRequest.kt", "AuthResponse.kt", "LoginRequest.kt", "RegisterRequest.kt", "AccountDeletionConfirmRequest.kt", "AccountDeletionIntentRequest.kt", "AccountDeletionIntentResponse.kt", "LegalAcceptanceRequest.kt", "QqAccountDeletionExchangeRequest.kt", "QqAccountDeletionStartResponse.kt", "WebAuthResponse.kt") } |
         ForEach-Object {
         $content = [System.IO.File]::ReadAllText($_.FullName)
         $normalized = [System.Text.RegularExpressions.Regex]::Replace(
@@ -17,7 +17,7 @@ function Normalize-GeneratedKotlin([string]$path) {
             "",
             [System.Text.RegularExpressions.RegexOptions]::Multiline
         )
-        if ($_.Name -eq "QqWebHandoffRequest.kt") {
+        if ($_.Name -in @("QqWebHandoffRequest.kt", "AccountDeletionConfirmRequest.kt", "AccountDeletionIntentRequest.kt", "AccountDeletionIntentResponse.kt", "LegalAcceptanceRequest.kt", "QqAccountDeletionExchangeRequest.kt", "QqAccountDeletionStartResponse.kt", "WebAuthResponse.kt")) {
             $normalized = $normalized.Replace("`r`n", "`n").Replace("`r", "`n")
             $normalized = $normalized.TrimEnd([char[]]"`r`n") + "`n"
         }

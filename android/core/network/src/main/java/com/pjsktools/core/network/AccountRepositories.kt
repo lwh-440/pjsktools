@@ -17,6 +17,7 @@ import com.pjsktools.core.database.PublicDataDao
 import com.pjsktools.core.model.AccountSession
 import com.pjsktools.core.model.AccountUser
 import com.pjsktools.core.model.AuthRepository
+import com.pjsktools.core.model.RegistrationConsent
 import com.pjsktools.core.model.AuthState
 import com.pjsktools.core.model.Favorite
 import com.pjsktools.core.model.FavoriteBulkMode
@@ -148,8 +149,24 @@ class AccountRepositoryImpl @Inject constructor(
         VerificationCodeDelivery(body.sent, body.expiresIn, body.resendAfter, body.devCode)
     }
 
-    override suspend fun register(email: String, password: String, code: String) = runCatching {
-        val response = api.register(RegisterRequest(email, password, code))
+    override suspend fun register(
+        email: String,
+        password: String,
+        code: String,
+        consent: RegistrationConsent
+    ) = runCatching {
+        require(consent.isComplete) { "Privacy policy, terms and age confirmation are required" }
+        val response = api.register(
+            RegisterRequest(
+                email = email,
+                password = password,
+                code = code,
+                privacyVersion = RegisterRequest.PrivacyVersion._2026_MINUS08_MINUS04,
+                termsVersion = RegisterRequest.TermsVersion._2026_MINUS08_MINUS04,
+                ageConfirmed = consent.ageConfirmed,
+                source = RegisterRequest.Source.ANDROID
+            )
+        )
         sessions.save(requireNotNull(response.body()) { "注册失败 (${response.code()})" }.domainSession())
     }
 

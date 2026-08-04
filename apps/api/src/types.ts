@@ -70,11 +70,40 @@ export interface AuthState {
   provider: OAuthProvider;
   state: string;
   redirectTo: string;
+  privacyVersion?: string;
+  termsVersion?: string;
+  ageConfirmed?: boolean;
   expiresAt: string;
   createdAt: string;
 }
 
-export type EmailVerificationPurpose = "register";
+export interface LegalAcceptance {
+  id: string;
+  userId: string;
+  privacyVersion: string;
+  termsVersion: string;
+  ageConfirmed: true;
+  source: "web" | "android" | "qq";
+  acceptedAt: string;
+}
+
+export interface AccountDeletionIntent {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  consumedAt?: string;
+  createdAt: string;
+}
+
+export interface DeletionTombstone {
+  id: string;
+  userHash: string;
+  emailHash?: string;
+  deletedAt: string;
+}
+
+export type EmailVerificationPurpose = "register" | "delete-account";
 
 export interface EmailVerificationCode {
   id: string;

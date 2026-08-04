@@ -1,0 +1,15 @@
+[Unit]
+Description=Randomly retrieve and verify a pjsktools COS log archive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/pjsktools-compliance/bin/verify-cos-restore.sh
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pjsktools-compliance

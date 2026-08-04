@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { currentPrivacyVersion, currentTermsVersion } from "./legal.js";
 
 type Schema = Record<string, unknown>;
 
@@ -42,19 +43,47 @@ const schemas: Record<string, Schema> = {
     type: "object", required: ["token", "accessToken", "refreshToken", "expiresIn", "user"],
     properties: {
       token: { type: "string" }, accessToken: { type: "string" }, refreshToken: { type: "string" },
-      expiresIn: { type: "integer" }, user: ref("PublicUser")
+      expiresIn: { type: "integer" }, legalAcceptanceRequired: { type: "boolean" }, user: ref("PublicUser")
+    }
+  },
+  WebAuthResponse: {
+    type: "object", required: ["token", "accessToken", "expiresIn", "user"],
+    properties: {
+      token: { type: "string" }, accessToken: { type: "string" }, expiresIn: { type: "integer" },
+      legalAcceptanceRequired: { type: "boolean" }, user: ref("PublicUser")
     }
   },
   LoginRequest: {
     type: "object", required: ["email", "password"],
-    properties: { email: { type: "string", format: "email" }, password: { type: "string", minLength: 8 } }
+    properties: {
+      email: { type: "string", format: "email" }, password: { type: "string", minLength: 8 },
+      privacyVersion: nullable({ type: "string" }), termsVersion: nullable({ type: "string" }),
+      ageConfirmed: nullable({ type: "boolean" }), source: { type: "string", enum: ["web", "android"], default: "android" }
+    }
   },
   RegisterRequest: {
-    type: "object", required: ["email", "password", "code"],
+    type: "object", required: ["email", "password", "code", "privacyVersion", "termsVersion", "ageConfirmed"],
     properties: {
       email: { type: "string", format: "email" }, password: { type: "string", minLength: 10 },
-      code: { type: "string", pattern: "^[0-9]{6}$" }
+      code: { type: "string", pattern: "^[0-9]{6}$" }, privacyVersion: { type: "string", const: currentPrivacyVersion },
+      termsVersion: { type: "string", const: currentTermsVersion }, ageConfirmed: { type: "boolean", description: "Must be true." },
+      source: { type: "string", enum: ["web", "android"], default: "android" }
     }
+  },
+  LegalAcceptanceRequest: {
+    type: "object", additionalProperties: false,
+    required: ["privacyVersion", "termsVersion", "ageConfirmed", "source"],
+    properties: {
+      privacyVersion: { type: "string", const: currentPrivacyVersion }, termsVersion: { type: "string", const: currentTermsVersion },
+      ageConfirmed: { type: "boolean", description: "Must be true." }, source: { type: "string", enum: ["web", "android"] }
+    }
+  },
+  AccountDeletionIntentRequest: {
+    type: "object", additionalProperties: false, required: ["confirmation"],
+    properties: { confirmation: { type: "string", const: "DELETE" }, code: nullable({ type: "string", pattern: "^[0-9]{6}$" }) }
+  },
+  AccountDeletionConfirmRequest: {
+    type: "object", additionalProperties: false, required: ["token"], properties: { token: { type: "string", minLength: 32 } }
   },
   EmailCodeRequest: {
     type: "object", required: ["email"],
@@ -75,6 +104,22 @@ const schemas: Record<string, Schema> = {
   QqWebHandoffRequest: {
     type: "object", additionalProperties: false, required: ["handoff"],
     properties: { handoff: { type: "string", pattern: "^web_[0-9a-f]{32}$" } }
+  },
+  QqAccountDeletionStartResponse: {
+    type: "object", additionalProperties: false, required: ["provider", "authorizeUrl", "expiresIn"],
+    properties: {
+      provider: { type: "string", enum: ["qq"] },
+      authorizeUrl: { type: "string", minLength: 1 },
+      expiresIn: { type: "integer", minimum: 1 }
+    }
+  },
+  QqAccountDeletionExchangeRequest: {
+    type: "object", additionalProperties: false, required: ["handoff"],
+    properties: { handoff: { type: "string", pattern: "^delete_[0-9a-f]{32}$" } }
+  },
+  AccountDeletionIntentResponse: {
+    type: "object", additionalProperties: false, required: ["token", "expiresIn"],
+    properties: { token: { type: "string", minLength: 32 }, expiresIn: { type: "integer", minimum: 1 } }
   },
   OkResponse: {
     type: "object", required: ["ok"], properties: { ok: { type: "boolean" } }
@@ -724,9 +769,32 @@ const overrides: Record<string, OperationOverride> = {
   "POST /api/auth/email-code/start": { operationId: "startEmailVerification", response: ref("EmailCodeResponse"), request: ref("EmailCodeRequest") },
   "POST /api/auth/register": { operationId: "register", response: ref("AuthResponse"), request: ref("RegisterRequest"), successStatus: 201 },
   "POST /api/auth/login": { operationId: "login", response: ref("AuthResponse"), request: ref("LoginRequest") },
+  "POST /api/auth/web/register": { operationId: "registerWeb", response: ref("WebAuthResponse"), request: ref("RegisterRequest"), successStatus: 201 },
+  "POST /api/auth/web/login": { operationId: "loginWeb", response: ref("WebAuthResponse"), request: ref("LoginRequest") },
+  "POST /api/auth/web/refresh": { operationId: "refreshWebSession", response: ref("WebAuthResponse") },
+  "POST /api/auth/web/logout": { operationId: "logoutWeb", response: ref("OkResponse") },
   "POST /api/auth/refresh": { operationId: "refreshSession", response: ref("AuthResponse"), request: ref("RefreshTokenRequest") },
   "POST /api/auth/logout": { operationId: "logout", response: ref("OkResponse"), request: ref("RefreshTokenRequest") },
-  "POST /api/auth/qq/web-exchange": { operationId: "exchangeQqWebHandoff", response: ref("AuthResponse"), request: ref("QqWebHandoffRequest") },
+  "POST /api/auth/qq/web-exchange": { operationId: "exchangeQqWebHandoff", response: ref("WebAuthResponse"), request: ref("QqWebHandoffRequest") },
+  "GET /api/legal/current": { operationId: "getCurrentLegalDocuments", response: { type: "object" } },
+  "GET /api/me/legal-acceptances": { operationId: "getMyLegalAcceptances", response: { type: "object" }, security: true },
+  "POST /api/me/legal-acceptances": { operationId: "acceptCurrentLegalDocuments", response: { type: "object" }, request: ref("LegalAcceptanceRequest"), security: true },
+  "GET /api/me/export": { operationId: "exportMyData", response: { type: "object" }, security: true },
+  "POST /api/me/account-deletion/email-code": { operationId: "startAccountDeletionEmailVerification", response: ref("EmailCodeResponse"), security: true },
+  "POST /api/me/account-deletion/intent": { operationId: "createAccountDeletionIntent", response: { type: "object" }, request: ref("AccountDeletionIntentRequest"), security: true },
+  "POST /api/me/account-deletion/confirm": { operationId: "confirmAccountDeletion", response: ref("OkResponse"), request: ref("AccountDeletionConfirmRequest"), security: true },
+  "GET /api/me/account-deletion/qq/start": {
+    operationId: "startQqAccountDeletion",
+    response: ref("QqAccountDeletionStartResponse"),
+    security: true,
+    parameters: [query("client", { type: "string", pattern: "^(web|android)$", default: "web" })]
+  },
+  "POST /api/me/account-deletion/qq/exchange": {
+    operationId: "exchangeQqAccountDeletion",
+    response: ref("AccountDeletionIntentResponse"),
+    request: ref("QqAccountDeletionExchangeRequest"),
+    security: true
+  },
   "POST /api/tools/score-control": { operationId: "calculateScoreControl", response: ref("ScoreControlResult"), request: ref("ScoreControlRequest") },
   "POST /api/tools/event-point-calc": { operationId: "estimateEventPoint", response: ref("EventPointEstimateResult"), request: ref("EventPointEstimateRequest") },
   "POST /api/me/tools/score-control": { operationId: "calculateBoundScoreControl", response: ref("ScoreControlResult"), request: ref("ScoreControlRequest"), security: true },

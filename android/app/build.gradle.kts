@@ -21,6 +21,9 @@ val temporaryHttpHost = providers.gradleProperty("PJSKTOOLS_TEMP_HTTP_HOST")
     .orElse(providers.environmentVariable("PJSKTOOLS_TEMP_HTTP_HOST"))
     .orElse("")
     .get()
+val debugHarukiFeatureEnabled = providers.gradleProperty("PJSKTOOLS_HARUKI_FEATURE_ENABLED")
+    .orElse("false")
+    .map { it.toBooleanStrict() }
 require(temporaryHttpHost.isBlank() || Regex("^[A-Za-z0-9.-]+$").matches(temporaryHttpHost)) {
     "PJSKTOOLS_TEMP_HTTP_HOST must contain only a hostname or IP address"
 }
@@ -45,6 +48,7 @@ android {
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "WEB_RUNTIME_BASE_URL", quotedBuildConfig(webRuntimeBaseUrl.get()))
         buildConfigField("String", "TEMPORARY_HTTP_HOST", quotedBuildConfig(temporaryHttpHost))
+        buildConfigField("boolean", "HARUKI_FEATURE_ENABLED", "false")
     }
 
     signingConfigs {
@@ -63,6 +67,7 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             buildConfigField("String", "API_BASE_URL", quotedBuildConfig(apiBaseUrl(debugApiBaseUrl)))
+            buildConfigField("boolean", "HARUKI_FEATURE_ENABLED", debugHarukiFeatureEnabled.get().toString())
             manifestPlaceholders["usesCleartextTraffic"] = "true"
         }
         create("staging") {
@@ -71,6 +76,7 @@ android {
             versionNameSuffix = "-staging"
             matchingFallbacks += listOf("debug")
             buildConfigField("String", "API_BASE_URL", quotedBuildConfig(apiBaseUrl(configuredApiBaseUrl.ifBlank { "https://staging.example.invalid/" })))
+            buildConfigField("boolean", "HARUKI_FEATURE_ENABLED", "false")
         }
         release {
             isMinifyEnabled = true
@@ -79,6 +85,7 @@ android {
             // without the unstable post-link shrink step.
             isShrinkResources = false
             buildConfigField("String", "API_BASE_URL", quotedBuildConfig(apiBaseUrl(configuredApiBaseUrl)))
+            buildConfigField("boolean", "HARUKI_FEATURE_ENABLED", "false")
             manifestPlaceholders["usesCleartextTraffic"] = (temporaryHttpHost.isNotBlank()).toString()
             if (signingPropertiesFile.isFile) signingConfig = signingConfigs.getByName("release")
             proguardFiles(

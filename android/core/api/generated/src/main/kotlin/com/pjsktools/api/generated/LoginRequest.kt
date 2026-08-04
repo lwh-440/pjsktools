@@ -21,10 +21,14 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param email 
- * @param password 
+ *
+ * @param email
+ * @param password
+ * @param privacyVersion
+ * @param termsVersion
+ * @param ageConfirmed
+ * @param source
  */
 @Serializable
 
@@ -34,10 +38,32 @@ data class LoginRequest (
     val email: kotlin.String,
 
     @SerialName(value = "password")
-    val password: kotlin.String
+    val password: kotlin.String,
+
+    @SerialName(value = "privacyVersion")
+    val privacyVersion: kotlin.String? = null,
+
+    @SerialName(value = "termsVersion")
+    val termsVersion: kotlin.String? = null,
+
+    @SerialName(value = "ageConfirmed")
+    val ageConfirmed: kotlin.Boolean? = null,
+
+    @SerialName(value = "source")
+    val source: LoginRequest.Source? = Source.ANDROID
 
 ) {
 
+    /**
+     *
+     *
+     * Values: WEB,ANDROID
+     */
+    @Serializable
+    enum class Source(val value: kotlin.String) {
+        @SerialName(value = "web") WEB("web"),
+        @SerialName(value = "android") ANDROID("android");
+    }
 
 }
 

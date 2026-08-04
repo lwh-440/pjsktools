@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily independent account-deletion tombstone export
+
+[Timer]
+OnCalendar=*-*-* 03:45:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=pjsktools-tombstone-export.service
+
+[Install]
+WantedBy=timers.target

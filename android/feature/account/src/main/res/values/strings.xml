@@ -15,6 +15,10 @@
     <string name="account_code_sent">&#x9A8C;&#x8BC1;&#x7801;&#x5DF2;&#x53D1;&#x9001;&#xFF0C;%1$d &#x5206;&#x949F;&#x5185;&#x6709;&#x6548;</string>
     <string name="account_resend_countdown">%1$d s &#x540E;&#x91CD;&#x53D1;</string>
     <string name="account_password_mismatch">&#x4E24;&#x6B21;&#x8F93;&#x5165;&#x7684;&#x5BC6;&#x7801;&#x4E0D;&#x4E00;&#x81F4;</string>
+    <string name="account_accept_privacy">&#x6211;&#x5DF2;&#x9605;&#x8BFB;&#x5E76;&#x540C;&#x610F;&#x9690;&#x79C1;&#x653F;&#x7B56;</string>
+    <string name="account_accept_terms">&#x6211;&#x5DF2;&#x9605;&#x8BFB;&#x5E76;&#x540C;&#x610F;&#x7528;&#x6237;&#x534F;&#x8BAE;</string>
+    <string name="account_confirm_age">&#x6211;&#x786E;&#x8BA4;&#x5DF2;&#x6EE1; 14 &#x5468;&#x5C81;</string>
+    <string name="account_legal_confirmation_required">&#x8BF7;&#x5206;&#x522B;&#x786E;&#x8BA4;&#x9690;&#x79C1;&#x653F;&#x7B56;&#x3001;&#x7528;&#x6237;&#x534F;&#x8BAE;&#x548C;&#x5E74;&#x9F84;&#x8981;&#x6C42;</string>
     <string name="account_dev_code">&#x5F00;&#x53D1;&#x9A8C;&#x8BC1;&#x7801;&#xFF1A;%1$s</string>
     <string name="account_back">&#x8FD4;&#x56DE;</string>
 </resources>

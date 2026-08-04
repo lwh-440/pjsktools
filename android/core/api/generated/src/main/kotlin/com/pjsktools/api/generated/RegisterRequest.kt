@@ -21,11 +21,15 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param email 
- * @param password 
- * @param code 
+ *
+ * @param email
+ * @param password
+ * @param code
+ * @param privacyVersion
+ * @param termsVersion
+ * @param ageConfirmed Must be true.
+ * @param source
  */
 @Serializable
 
@@ -38,10 +42,51 @@ data class RegisterRequest (
     val password: kotlin.String,
 
     @SerialName(value = "code")
-    val code: kotlin.String
+    val code: kotlin.String,
+
+    @SerialName(value = "privacyVersion")
+    val privacyVersion: RegisterRequest.PrivacyVersion,
+
+    @SerialName(value = "termsVersion")
+    val termsVersion: RegisterRequest.TermsVersion,
+
+    /* Must be true. */
+    @SerialName(value = "ageConfirmed")
+    val ageConfirmed: kotlin.Boolean,
+
+    @SerialName(value = "source")
+    val source: RegisterRequest.Source? = Source.ANDROID
 
 ) {
 
+    /**
+     *
+     *
+     * Values: _2026_MINUS08_MINUS04
+     */
+    @Serializable
+    enum class PrivacyVersion(val value: kotlin.String) {
+        @SerialName(value = "2026-08-04") _2026_MINUS08_MINUS04("2026-08-04");
+    }
+    /**
+     *
+     *
+     * Values: _2026_MINUS08_MINUS04
+     */
+    @Serializable
+    enum class TermsVersion(val value: kotlin.String) {
+        @SerialName(value = "2026-08-04") _2026_MINUS08_MINUS04("2026-08-04");
+    }
+    /**
+     *
+     *
+     * Values: WEB,ANDROID
+     */
+    @Serializable
+    enum class Source(val value: kotlin.String) {
+        @SerialName(value = "web") WEB("web"),
+        @SerialName(value = "android") ANDROID("android");
+    }
 
 }
 
