@@ -66,7 +66,9 @@ def upload(path: Path, key: str) -> None:
             Key=key,
             Body=body,
             ServerSideEncryption="AES256",
-            Metadata={"sha256": digest},
+            # The COS SDK forwards Metadata keys verbatim. Prefix the custom
+            # field explicitly so HEAD exposes x-cos-meta-sha256.
+            Metadata={"x-cos-meta-sha256": digest},
         )
     response = {str(name).lower(): value for name, value in client.head_object(Bucket=bucket, Key=key).items()}
     remote_size = int(response.get("content-length", -1))
