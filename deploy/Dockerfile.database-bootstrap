@@ -1,0 +1,5 @@
+FROM postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+RUN apk add --no-cache bash coreutils
+COPY deploy/compliance/bootstrap-database-roles.sh /usr/local/bin/bootstrap-database-roles.sh
+COPY deploy/compliance/bootstrap-pre-migration-roles.sh /usr/local/bin/bootstrap-pre-migration-roles.sh
+RUN chmod 0700 /usr/local/bin/bootstrap-database-roles.sh /usr/local/bin/bootstrap-pre-migration-roles.sh

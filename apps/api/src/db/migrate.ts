@@ -9,10 +9,10 @@ function getApiRoot() {
 }
 
 async function main() {
-  if (!config.databaseUrl) {
-    throw new Error("DATABASE_URL is required for db:migrate");
+  if (!config.databaseMigrationUrl) {
+    throw new Error("DATABASE_MIGRATION_URL is required for db:migrate and must not be exposed to the API runtime");
   }
-  const pool = new Pool({ connectionString: config.databaseUrl });
+  const pool = new Pool({ connectionString: config.databaseMigrationUrl });
   const migrationsDir = path.join(getApiRoot(), "src", "db", "migrations");
   const files = (await readdir(migrationsDir)).filter((file) => file.endsWith(".sql")).sort();
   try {

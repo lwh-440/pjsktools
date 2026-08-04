@@ -102,7 +102,7 @@ def download_and_verify(key: str, expected: str | None, output: Path | None) -> 
             output.unlink(missing_ok=True)
 
 
-def random_verify(prefix: str) -> None:
+def candidate_keys(prefix: str, suffix: str | None = None) -> tuple[CosS3Client, str, list[str]]:
     client, bucket = client_and_bucket()
     prefix = normalized_key(prefix).rstrip("/") + "/"
     keys: list[str] = []
@@ -116,7 +116,7 @@ def random_verify(prefix: str) -> None:
         )
         for item in response.get("Contents", []):
             key = item.get("Key", "")
-            if key and not key.endswith(".sha256"):
+            if key and not key.endswith(".sha256") and (not suffix or key.endswith(suffix)):
                 keys.append(key)
         if str(response.get("IsTruncated", "false")).lower() != "true":
             break
@@ -125,6 +125,11 @@ def random_verify(prefix: str) -> None:
             break
     if not keys:
         raise SystemExit(f"no archive objects found under {prefix}")
+    return client, bucket, keys
+
+
+def random_verify(prefix: str, suffix: str | None = None) -> None:
+    _client, _bucket, keys = candidate_keys(prefix, suffix)
     selected = random.SystemRandom().choice(keys)
     with tempfile.TemporaryDirectory(prefix="cos-pair-verify-") as directory:
         data_path = Path(directory) / "archive"
@@ -135,6 +140,24 @@ def random_verify(prefix: str) -> None:
         if not manifest_fields or manifest_fields[0] != data_digest:
             raise SystemExit("paired SHA-256 manifest does not match downloaded archive")
         print(f"verified paired manifest: {selected}.sha256")
+
+
+def random_download_pair(prefix: str, output_dir: Path, suffix: str | None = None) -> None:
+    if output_dir.is_symlink() or not output_dir.is_dir() or any(output_dir.iterdir()):
+        raise SystemExit("output directory must be an existing empty non-symlink directory")
+    _client, _bucket, keys = candidate_keys(prefix, suffix)
+    selected = random.SystemRandom().choice(keys)
+    data_path = output_dir / "archive"
+    manifest_path = output_dir / "archive.sha256"
+    data_digest = download_and_verify(selected, None, data_path)
+    download_and_verify(f"{selected}.sha256", None, manifest_path)
+    manifest_fields = manifest_path.read_text(encoding="utf-8").strip().split()
+    if not manifest_fields or manifest_fields[0] != data_digest:
+        raise SystemExit("paired SHA-256 manifest does not match downloaded archive")
+    (output_dir / "selected-key.txt").write_text(selected + "\n", encoding="utf-8")
+    for path in (data_path, manifest_path, output_dir / "selected-key.txt"):
+        path.chmod(0o600)
+    print(f"downloaded verified pair: {selected}")
 
 
 def validate_tombstones(path: Path) -> None:
@@ -175,6 +198,11 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--output", type=Path)
     random_parser = sub.add_parser("random-verify")
     random_parser.add_argument("--prefix", required=True)
+    random_parser.add_argument("--suffix")
+    download_parser = sub.add_parser("random-download-pair")
+    download_parser.add_argument("--prefix", required=True)
+    download_parser.add_argument("--suffix")
+    download_parser.add_argument("--output-dir", type=Path, required=True)
     tombstone_parser = sub.add_parser("validate-tombstones")
     tombstone_parser.add_argument("--file", type=Path, required=True)
     return parser
@@ -187,7 +215,9 @@ def main() -> int:
     elif args.command == "verify":
         download_and_verify(normalized_key(args.key), args.sha256, args.output)
     elif args.command == "random-verify":
-        random_verify(args.prefix)
+        random_verify(args.prefix, args.suffix)
+    elif args.command == "random-download-pair":
+        random_download_pair(args.prefix, args.output_dir.resolve(), args.suffix)
     else:
         validate_tombstones(args.file.resolve())
     return 0

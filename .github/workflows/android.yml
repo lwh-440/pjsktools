@@ -8,6 +8,18 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,6 +34,15 @@ jobs:
       - run: npm ci
       - run: npm run build -w apps/api
       - run: npm run test -w apps/api
+      - name: PostgreSQL runtime role and RLS integration
+        run: npm run test:postgres:compliance-rls
+        env:
+          NODE_ENV: test
+          PJSKTOOLS_POSTGRES_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          PJSKTOOLS_ALLOW_DESTRUCTIVE_POSTGRES_TESTS: isolated-only
+          PJSKTOOLS_POSTGRES_TEST_MARKER: gha_${{ github.run_id }}
+      - name: Validate database bootstrap shell syntax
+        run: bash -n deploy/compliance/bootstrap-database-roles.sh
       - run: node apps/api/dist/exportOpenApi.js
       - name: Verify committed OpenAPI
         run: git diff --exit-code -- apps/api/openapi/openapi.json

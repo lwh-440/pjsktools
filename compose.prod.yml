@@ -1,0 +1,195 @@
+name: pjsktools
+
+x-bounded-json-logging: &bounded-json-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pjsktools
+      POSTGRES_USER: pjsktools
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pjsktools -d pjsktools"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *bounded-json-logging
+    networks: [backend]
+
+  bootstrap-pre-migration-roles:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.database-bootstrap
+    restart: "no"
+    environment:
+      NODE_ENV: production
+      DATABASE_ROLE_BOOTSTRAP_CONFIRMATION: pre-migration-fixed-roles-only
+      POSTGRES_ADMIN_URL: ${POSTGRES_ADMIN_URL}
+      DATABASE_MIGRATION_URL: ${DATABASE_MIGRATION_URL}
+      DATABASE_MIGRATION_ROLE: ${DATABASE_MIGRATION_ROLE:-pjsktools_migrate}
+      DATABASE_MIGRATION_PASSWORD: ${DATABASE_MIGRATION_PASSWORD}
+      APP_RUNTIME_ROLE: pjsktools_app
+      AUTH_RUNTIME_ROLE: pjsktools_auth
+      COMPLIANCE_RUNTIME_ROLE: pjsktools_compliance
+    command: ["/usr/local/bin/bootstrap-pre-migration-roles.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *bounded-json-logging
+    networks: [backend]
+
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    restart: "no"
+    environment:
+      NODE_ENV: production
+      DATABASE_MIGRATION_URL: ${DATABASE_MIGRATION_URL}
+    command: ["node", "apps/api/dist/db/migrate.js"]
+    depends_on:
+      bootstrap-pre-migration-roles:
+        condition: service_completed_successfully
+    logging: *bounded-json-logging
+    networks: [backend]
+
+  bootstrap-runtime-roles:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.database-bootstrap
+    restart: "no"
+    environment:
+      NODE_ENV: production
+      DATABASE_ROLE_CONFIG_SOURCE: environment
+      DATABASE_ROLE_BOOTSTRAP_CONFIRMATION: migrations-complete-runtime-logins-only
+      POSTGRES_ADMIN_URL: ${POSTGRES_ADMIN_URL}
+      APP_RUNTIME_ROLE: pjsktools_app
+      APP_RUNTIME_PASSWORD: ${APP_RUNTIME_PASSWORD}
+      AUTH_RUNTIME_ROLE: pjsktools_auth
+      AUTH_RUNTIME_PASSWORD: ${AUTH_RUNTIME_PASSWORD}
+      COMPLIANCE_RUNTIME_ROLE: pjsktools_compliance
+      COMPLIANCE_RUNTIME_PASSWORD: ${COMPLIANCE_RUNTIME_PASSWORD}
+      HARUKI_RUNTIME_ROLE: pjsktools_haruki
+      HARUKI_RUNTIME_PASSWORD: ""
+      DATABASE_URL: ${DATABASE_URL}
+      AUTH_DATABASE_URL: ${AUTH_DATABASE_URL}
+      COMPLIANCE_DATABASE_URL: ${COMPLIANCE_DATABASE_URL}
+    command: ["/usr/local/bin/bootstrap-database-roles.sh"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    logging: *bounded-json-logging
+    networks: [backend]
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      PORT: 4000
+      JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: ${DATABASE_URL}
+      AUTH_DATABASE_URL: ${AUTH_DATABASE_URL}
+      COMPLIANCE_DATABASE_URL: ${COMPLIANCE_DATABASE_URL}
+      DELETION_TOMBSTONE_KEY: ${DELETION_TOMBSTONE_KEY}
+      PUBLIC_WEB_BASE_URL: ${PUBLIC_WEB_BASE_URL}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-${PUBLIC_WEB_BASE_URL}}
+      SECURITY_EVENT_LOG_PATH: /var/log/pjsktools/security.json
+      SECURITY_LOG_HMAC_KEY: ${SECURITY_LOG_HMAC_KEY}
+      MASTER_RAW_BASE_URL: ${MASTER_RAW_BASE_URL:-https://raw.githubusercontent.com}
+      HARUKI_PUBLIC_SUITE_BASE_URL: ${HARUKI_PUBLIC_SUITE_BASE_URL:-https://suite-api.haruki.seiunx.com/public}
+      HARUKI_FEATURE_ENABLED: "false"
+      HARUKI_WEBHOOK_ENABLED: "false"
+      HARUKI_WEBHOOK_SYNC_ENABLED: "false"
+      HARUKI_OAUTH_AUTHORIZE_URL: ""
+      HARUKI_OAUTH_TOKEN_URL: ""
+      HARUKI_OAUTH_PROFILE_URL: ""
+      HARUKI_OAUTH_BINDINGS_URL: ""
+      HARUKI_OAUTH_GAME_DATA_BASE_URL: ""
+      HARUKI_OAUTH_REVOKE_URL: ""
+      HARUKI_OAUTH_CLIENT_ID: ""
+      HARUKI_OAUTH_CLIENT_SECRET: ""
+      HARUKI_OAUTH_REDIRECT_URI: ""
+      HARUKI_TOKEN_ENCRYPTION_KEY: ""
+      HARUKI_WEBHOOK_SECRET: ""
+      AUTO_UPDATE_ENABLED: ${AUTO_UPDATE_ENABLED:-true}
+      PLAYER_REFRESH_MS: ${PLAYER_REFRESH_MS:-60000}
+      RANKING_REFRESH_MS: ${RANKING_REFRESH_MS:-10000}
+      MASTER_REFRESH_MS: ${MASTER_REFRESH_MS:-43200000}
+      QQ_CONNECT_APP_ID: ${QQ_CONNECT_APP_ID:-}
+      QQ_CONNECT_APP_KEY: ${QQ_CONNECT_APP_KEY:-}
+      QQ_CONNECT_REDIRECT_URI: ${QQ_CONNECT_REDIRECT_URI:-}
+      QQ_CONNECT_SCOPE: ${QQ_CONNECT_SCOPE:-get_user_info}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    volumes:
+      - api_data:/app/apps/api/data
+      - /var/log/pjsktools:/var/log/pjsktools
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    depends_on:
+      bootstrap-runtime-roles:
+        condition: service_completed_successfully
+    logging: *bounded-json-logging
+    networks: [backend]
+
+  caddy:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        VITE_API_BASE_URL: ${PUBLIC_API_BASE_URL}
+        VITE_HARUKI_FEATURE_ENABLED: "false"
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      WEB_DOMAIN: ${WEB_DOMAIN}
+      WWW_DOMAIN: ${WWW_DOMAIN}
+      PUBLIC_IP: ${PUBLIC_IP}
+      ANDROID_RELEASE_CERT_SHA256: ${ANDROID_RELEASE_CERT_SHA256}
+      COMPLIANCE_ACCESS_LOG: /var/log/pjsktools/access.json
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./deploy/downloads:/srv/downloads:ro
+      - /var/log/pjsktools:/var/log/pjsktools
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *bounded-json-logging
+    networks: [backend]
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  api_data:
+  caddy_data:
+  caddy_config:

@@ -122,6 +122,15 @@ class AccountRepository(
             RegistrationCodeResult(it.optBoolean("sent"), it.longOrNull("expiresIn"), it.longOrNull("resendAfter"), it.stringOrNull("devCode"))
         }
     }
+    suspend fun currentLegalDocuments() = io {
+        val json = get("/api/legal/current")
+        val privacyVersion = json.stringOrNull("privacyVersion")
+        val termsVersion = json.stringOrNull("termsVersion")
+        if (privacyVersion == null || termsVersion == null) {
+            throw AccountApiException(200, "当前隐私政策或用户协议版本不可用")
+        }
+        LegalDocumentVersions(privacyVersion, termsVersion, json.optInt("minimumAge", 14))
+    }
     suspend fun login(email: String, password: String) = io {
         auth(post("/api/auth/login", JSONObject().put("email", email.trim()).put("password", password)))
     }
@@ -131,7 +140,8 @@ class AccountRepository(
         code: String,
         privacyAccepted: Boolean,
         termsAccepted: Boolean,
-        ageConfirmed: Boolean
+        ageConfirmed: Boolean,
+        legalDocuments: LegalDocumentVersions
     ) = io {
         require(privacyAccepted && termsAccepted && ageConfirmed) {
             "Privacy policy, terms and age confirmation are required"
@@ -140,8 +150,8 @@ class AccountRepository(
             .put("email", email.trim())
             .put("password", password)
             .put("code", code.trim())
-            .put("privacyVersion", PRIVACY_VERSION)
-            .put("termsVersion", TERMS_VERSION)
+            .put("privacyVersion", legalDocuments.privacyVersion)
+            .put("termsVersion", legalDocuments.termsVersion)
             .put("ageConfirmed", ageConfirmed)
             .put("source", "android")))
     }
@@ -175,13 +185,19 @@ class AccountRepository(
             if (error.statusCode == 404) false else throw error
         }
     }
-    suspend fun acceptCurrentLegal(accessToken: String, privacyAccepted: Boolean, termsAccepted: Boolean, ageConfirmed: Boolean) = io {
+    suspend fun acceptCurrentLegal(
+        accessToken: String,
+        privacyAccepted: Boolean,
+        termsAccepted: Boolean,
+        ageConfirmed: Boolean,
+        legalDocuments: LegalDocumentVersions
+    ) = io {
         require(privacyAccepted && termsAccepted && ageConfirmed) {
             "Privacy policy, terms and age confirmation are required"
         }
         post("/api/me/legal-acceptances", JSONObject()
-            .put("privacyVersion", PRIVACY_VERSION)
-            .put("termsVersion", TERMS_VERSION)
+            .put("privacyVersion", legalDocuments.privacyVersion)
+            .put("termsVersion", legalDocuments.termsVersion)
             .put("ageConfirmed", ageConfirmed)
             .put("source", "android"), accessToken)
         Unit
@@ -224,12 +240,16 @@ class AccountRepository(
         binding(patch("/api/me/player-bindings/${encode(id)}", JSONObject().put("isDefault", true), accessToken))
     }
     suspend fun deleteBinding(accessToken: String, id: String) = io { delete("/api/me/player-bindings/${encode(id)}", accessToken); Unit }
-    suspend fun startQqAuth(redirectTo: String? = null) = io {
-        val suffix = redirectTo?.takeIf(String::isNotBlank)?.let { "?redirectTo=${encode(it)}" }.orEmpty()
-        val j = get("/api/auth/qq/start$suffix")
+    suspend fun startQqAuth(
+        redirectTo: String? = null,
+        legalDocuments: LegalDocumentVersions? = null,
+        ageConfirmed: Boolean = false
+    ) = io {
+        val j = get(qqAuthStartPath(redirectTo, legalDocuments, ageConfirmed))
         QqAuthStart(j.optString("state"), j.optString("authorizeUrl"), j.longOrNull("expiresIn"))
     }
-    suspend fun startMobileQqLogin() = startQqAuth("pjsktools://auth/qq")
+    suspend fun startMobileQqLogin(legalDocuments: LegalDocumentVersions, ageConfirmed: Boolean) =
+        startQqAuth("pjsktools://auth/qq", legalDocuments, ageConfirmed)
     suspend fun startMobileQqLink(token: String) = io {
         val j = get("/api/auth/qq/mobile-link/start", token)
         QqAuthStart(j.optString("state"), j.optString("authorizeUrl"), j.longOrNull("expiresIn"))
@@ -373,6 +393,27 @@ class AccountRepository(
     private fun encode(value: String) = java.net.URLEncoder.encode(value, "UTF-8")
     private suspend fun <T> io(block: suspend () -> T): T = withContext(Dispatchers.IO) { block() }
 }
+
+internal fun qqAuthStartPath(
+    redirectTo: String?,
+    legalDocuments: LegalDocumentVersions?,
+    ageConfirmed: Boolean
+): String {
+    val parameters = buildList {
+        redirectTo?.takeIf(String::isNotBlank)?.let { add("redirectTo" to it) }
+        legalDocuments?.let {
+            add("privacyVersion" to it.privacyVersion)
+            add("termsVersion" to it.termsVersion)
+            add("ageConfirmed" to ageConfirmed.toString())
+        }
+    }
+    return "/api/auth/qq/start" + parameters.joinToString(
+        prefix = if (parameters.isEmpty()) "" else "?",
+        separator = "&"
+    ) { (key, value) -> "${encodeQuery(key)}=${encodeQuery(value)}" }
+}
+
+private fun encodeQuery(value: String) = java.net.URLEncoder.encode(value, Charsets.UTF_8.name())
 
 private fun JSONObject.stringOrNull(key: String) = if (!has(key) || isNull(key)) null else optString(key).takeIf { it.isNotBlank() && it != "null" }
 private fun JSONObject.longOrNull(key: String) = if (!has(key) || isNull(key)) null else optLong(key)

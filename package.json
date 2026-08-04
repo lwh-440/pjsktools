@@ -31,6 +31,7 @@
     "dev:web": "npm run dev -w apps/web",
     "build": "npm run build -w apps/api && npm run build -w apps/web",
     "test": "npm run test -w apps/api",
+    "test:postgres:compliance-rls": "npm run build -w apps/api && node scripts/test-compliance-rls-postgres.mjs",
     "parity:moesekai": "npm run build -w apps/api && node scripts/parity-moesekai.mjs",
     "verify:player-interfaces": "npm run build -w apps/api && node scripts/verify-player-interfaces.mjs",
     "verify:local": "npm run build -w apps/api && npx tsc -b apps/web/tsconfig.json && npm run check:encoding && node scripts/smoke-local.mjs",

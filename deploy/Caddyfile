@@ -1,0 +1,67 @@
+{
+    admin off
+}
+
+import /etc/caddy/Caddy.access-log.caddy
+import /etc/caddy/Caddy.web-security-headers.caddy
+
+(security_headers) {
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+}
+
+{$API_DOMAIN} {
+    encode zstd gzip
+    import security_headers
+    import compliance_access_log
+    reverse_proxy api:4000
+}
+
+{$WEB_DOMAIN} {
+    encode zstd gzip
+    import security_headers
+    import web_security_headers_report_only
+    import compliance_access_log
+
+    handle /.well-known/assetlinks.json {
+        header Content-Type application/json
+        respond `[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"com.pjsktools.app","sha256_cert_fingerprints":["{$ANDROID_RELEASE_CERT_SHA256}"]}}]` 200
+    }
+    handle_path /download/* {
+        root * /srv/downloads
+        header Cache-Control "public, max-age=3600"
+        file_server
+    }
+    handle {
+        root * /srv/web
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+{$WWW_DOMAIN} {
+    import compliance_access_log
+    redir https://{$WEB_DOMAIN}{uri} permanent
+}
+
+http://{$PUBLIC_IP} {
+    encode zstd gzip
+    import security_headers
+    import compliance_access_log
+    handle /api/* { reverse_proxy api:4000 }
+    handle /health { reverse_proxy api:4000 }
+    handle_path /download/* {
+        root * /srv/downloads
+        header Cache-Control "public, max-age=3600"
+        file_server
+    }
+    handle {
+        root * /srv/web
+        try_files {path} /index.html
+        file_server
+    }
+}
