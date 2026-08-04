@@ -17,7 +17,7 @@ source "$CONFIG_FILE"
 : "${MONITOR_COS_MAX_AGE_HOURS:=30}"
 : "${MONITOR_CERT_HOST:=sekai-tools.cn}"
 : "${MONITOR_CERT_MIN_DAYS:=21}"
-: "${ALERT_EMAIL:=security@sekai-tools.cn}"
+: "${ALERT_EMAIL:=sekaitools@qq.com}"
 
 problems=()
 disk_used="$(df -P / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
