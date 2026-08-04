@@ -26,6 +26,8 @@ export COS_SECRET_ID COS_SECRET_KEY COS_SESSION_TOKEN COS_REGION COS_BUCKET
 
 : "${COMPLIANCE_STATE_DIR:=/var/lib/pjsktools-compliance}"
 : "${COMPLIANCE_COS_LOG_PREFIX:=logs}"
+: "${COMPLIANCE_COS_DAILY_PREFIX:=backups/daily}"
+: "${COMPLIANCE_COS_WEEKLY_PREFIX:=backups/weekly}"
 : "${COMPLIANCE_PYTHON_BIN:=/opt/pjsktools-compliance/venv/bin/python}"
 [[ -x "$COMPLIANCE_PYTHON_BIN" ]] || { echo "compliance Python is not installed" >&2; exit 1; }
 install -d -m 0700 "$COMPLIANCE_STATE_DIR"
@@ -33,5 +35,7 @@ exec 9>"$COMPLIANCE_STATE_DIR/cos-restore-check.lock"
 flock -n 9 || exit 0
 
 "$COMPLIANCE_PYTHON_BIN" "$SCRIPT_DIR/cos_archive.py" random-verify --prefix "$COMPLIANCE_COS_LOG_PREFIX"
+"$COMPLIANCE_PYTHON_BIN" "$SCRIPT_DIR/cos_archive.py" random-verify --prefix "$COMPLIANCE_COS_DAILY_PREFIX" --suffix .dump.age
+"$COMPLIANCE_PYTHON_BIN" "$SCRIPT_DIR/cos_archive.py" random-verify --prefix "$COMPLIANCE_COS_WEEKLY_PREFIX" --suffix .dump.age
 printf '%s\n' "$(date -u '+%FT%TZ')" >"$COMPLIANCE_STATE_DIR/last-cos-restore-check"
 chmod 0600 "$COMPLIANCE_STATE_DIR/last-cos-restore-check"

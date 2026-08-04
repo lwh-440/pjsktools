@@ -36,6 +36,7 @@ data class ToolContext(val inventoryCount: Int, val playerDataKinds: List<String
 data class ProfileAnalysis(val nickname: String?, val rank: Int?, val comment: String?, val rawJson: String)
 data class DeckRecommendation(val rawJson: String)
 data class QqAuthStart(val state: String, val authorizeUrl: String, val expiresInSeconds: Long? = null)
+data class LegalDocumentVersions(val privacyVersion: String, val termsVersion: String, val minimumAge: Int = 14)
 data class MeProfile(
     val user: AccountUser, val oauthAccounts: List<OAuthAccount> = emptyList(),
     val bindings: List<PlayerBinding> = emptyList(), val bindingSummaries: List<BindingSummary> = emptyList(),
@@ -65,6 +66,7 @@ data class AccountUiState(
     val deckRecommendation: DeckRecommendation? = null,
     val haruki: HarukiUiState = HarukiUiState(),
     val qqAuthStart: QqAuthStart? = null,
+    val legalDocuments: LegalDocumentVersions? = null,
     val legalAcceptanceRequired: Boolean = false,
     val deletionCode: AccountDeletionCodeResult? = null,
     val qqDeletionReady: Boolean = false

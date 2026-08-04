@@ -779,6 +779,10 @@ export class MemoryStore implements AuthStore {
 
 export const store: AuthStore = config.databaseUrl ? new PgStore() : new MemoryStore();
 
+export async function assertDatabaseRuntimeRoleSafety() {
+  return store instanceof PgStore ? store.assertRuntimeRoleSafety() : [];
+}
+
 export function scoreInputWithRegion<T extends { region: string }>(input: T): T & { region: RegionId } {
   return input as T & { region: RegionId };
 }

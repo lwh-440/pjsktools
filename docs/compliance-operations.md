@@ -5,6 +5,32 @@ COS/域名邮箱，也不会自动修改现有 Caddy、Docker Compose、数据�
 
 ## 一、上线门禁
 
+### 生产数据库启动链门禁
+
+生产 Compose 固定执行 `postgres → bootstrap-pre-migration-roles → migrate → bootstrap-runtime-roles → api → caddy`。
+预迁移 bootstrap 使用管理员连接创建并验证固定 NOLOGIN owner/executor/runtime group 角色，且只向
+`DATABASE_MIGRATION_ROLE` 授予迁移所需成员关系；016–018 迁移仅消费并验证这些角色。
+`migrate` 只接收迁移 URL；随后一次性 runtime bootstrap 容器使用生产环境中的三个
+runtime password 创建或轮换 LOGIN，并使用 `DATABASE_URL`、`AUTH_DATABASE_URL`、
+`COMPLIANCE_DATABASE_URL` 实际连接验证用户名、数据库目标和精确角色成员关系。
+任一 URL、密码、目标数据库或成员关系不一致时 bootstrap 非零退出，API 不会启动。
+`POSTGRES_ADMIN_URL` 只注入 pre-migration/runtime bootstrap；`DATABASE_MIGRATION_URL`
+只注入 pre-migration 校验与 migrate，且必须使用不同的数据库 LOGIN。管理员 URL、
+migration/runtime password 只存在于生产私密 env，不传入 API，不得提交 Git。
+Haruki password 保持空值，现存 Haruki LOGIN 会被改为 `NOLOGIN`；四个功能开关继续固定为 false。
+
+上线前只读检查：
+
+```bash
+docker compose --env-file .env.production -f compose.prod.yml config --quiet
+docker compose --env-file .env.production -f compose.prod.yml up --build --wait
+docker compose --env-file .env.production -f compose.prod.yml ps -a bootstrap-pre-migration-roles migrate bootstrap-runtime-roles api
+docker compose --env-file .env.production -f compose.prod.yml logs --no-log-prefix bootstrap-pre-migration-roles migrate bootstrap-runtime-roles
+```
+
+日志不得出现 URL、密码或 token。只有两个 one-shot 服务均为退出码 0 且 API 健康检查通过，
+才允许 Caddy 接入流量。
+
 以下项目全部具备后才可启用定时任务：
 
 1. COS 私有桶、生命周期与最小权限 CAM 子账号已由控制台创建并实测。
@@ -77,10 +103,10 @@ docker compose --env-file .env.production -f compose.prod.yml \
   -f deploy/compliance/compose.logging.yml config
 ```
 
-宿主目录必须由 root 管理且不对其他用户开放；根据上面实际 UID/GID 给 API 和 Caddy
-各自必要的目录写权限，先验证两者新建文件均为 `0600`。不要凭镜像名称猜 UID，也不要
-用 `chmod 777`。若两容器 UID 不同，可用精确 POSIX ACL 授予目录创建权限，文件仍由
-各自进程以 `0600` 创建。确认 bind mount 后再重建最小范围容器。
+宿主目录必须由 root 管理且不对其他用户开放；先检查生产 API 容器的实际数字 UID，填入
+`API_LOG_UID`。安装器会用精确 POSIX ACL 只授予该 UID 目录创建权限；当前 Caddy 以 root
+运行，不需要额外授权。先验证两者新建文件均为 `0600`。不要凭镜像名称猜 UID，也不要用
+`chmod 777`。确认 bind mount 后再重建最小范围容器。
 
 API 当前文件由 `logrotate-pjsktools-security` 每日 `copytruncate`、立即 gzip，保留/
 限制 200 天并在轮转后强制当前及压缩文件为 `0600`。归档器同时发现 Caddy 的
@@ -167,20 +193,28 @@ sudo deploy/compliance/install-compliance-ops.sh --check
 sudo deploy/compliance/harden-ssh.sh --check
 ```
 
-`--apply` 只适用于首次安装；检测到同名目录、unit 或 fail2ban 配置会拒绝覆盖。
-执行后逐个手动运行并检查：
+`--apply` 只适用于首次安装；检测到同名目录、unit 或 fail2ban 配置会拒绝覆盖。安装完成后
+所有 timer 保持禁用，先逐个手动运行并检查：
 
 ```bash
 sudo systemctl start pjsktools-log-archive.service
 sudo systemctl start pjsktools-encrypted-backup.service
 sudo systemctl start pjsktools-cos-restore-check.service
 sudo systemctl start pjsktools-compliance-monitor.service
+```
+
+必须先完成 COS Put/Head/Get/List、密文备份、随机取回、隔离恢复与日志脱敏验收。全部通过后
+才显式启用 timer：
+
+```bash
+sudo deploy/compliance/install-compliance-ops.sh --enable-timers
 sudo systemctl list-timers 'pjsktools-*'
 ```
 
 日志归档每天运行。每个数据对象都生成独立 `.sha256` 清单，数据对象和清单对象分别
 执行 SSE-COS 上传及 HEAD 元数据校验；只有两者全部成功后才写本地验证 marker。
-月度随机取回会同时下载数据对象及配对清单，复算数据哈希并核对清单内容。
+月度随机取回会分别从 `logs/`、`backups/daily/` 和 `backups/weekly/`
+各下载一组数据对象及配对清单，复算数据哈希并核对清单内容。
 数据库每天生成一个直接流式 `age` 加密的 custom-format dump；
 星期日另复制一份 weekly。daily 本地/COS 35 天，weekly 92 天，访问日志 200 天。
 本地清理要求 marker 中的数据键/哈希、清单键/哈希与本地两个文件全部一致；旧格式、
@@ -210,6 +244,10 @@ age-keygen -y pjsktools-backup.agekey
 继续保留现有每周数据库恢复演练；它与这里新增的异地密文校验互不替代。每月还应在
 隔离恢复机随机下载一个 `.dump.age`，用离线 identity 解密并恢复到临时
 PostgreSQL，核对迁移版本、关键表行数和应用只读 smoke；完成后安全销毁临时数据。
+必须在隔离恢复机使用 `verify-encrypted-backup-restore.sh`，并同时显式设置
+`COMPLIANCE_ALLOW_ISOLATED_RESTORE=isolated-only` 与
+`COMPLIANCE_CONFIRM_DISPOSABLE_POSTGRES=create-and-destroy`。脚本只创建
+`--network none` 的一次性 PostgreSQL 容器，退出时强制销毁；不得改为连接现有或生产数据库。
 恢复演练记录只写日期、对象键、哈希、结果和执行人角色，不写数据库内容。
 
 ### 注销墓碑恢复顺序（不得颠倒）

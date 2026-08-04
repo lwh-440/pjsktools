@@ -1,21 +1,24 @@
 # Compliance operations bundle
 
-This directory is intentionally separate from the application deployment. It
-does not assume that COS, domain mail, `age`, fail2ban or an alert transport has
-already been configured, and it never edits Caddy automatically.
+The production Compose/Caddy files integrate the reviewed logging and database
+bootstrap chain from this directory. The host operations installer remains a
+separate, fail-closed step and does not assume that COS, mail, `age`, fail2ban
+or an alert transport has already been configured.
 
 ## Safety model
 
 - `install-compliance-ops.sh` defaults to `--check` and refuses to overwrite an
-  existing installation, systemd unit or fail2ban file.
+  existing installation, systemd unit or fail2ban file. `--apply` installs but
+  deliberately leaves all timers disabled; `--enable-timers` is a separate
+  post-validation operation.
 - `harden-ssh.sh` defaults to `--check`. Applying requires two established SSH
   sessions and the explicit `--confirmed-second-session` acknowledgement.
 - populated configuration belongs under `/etc/pjsktools`, owned by root with
   mode `0600`; only placeholder examples are tracked here.
 - COS and `age` configuration is mandatory. Missing settings fail closed and
   never cause local archive deletion.
-- local deletion is performed only after the exact SHA-256 has a successful COS
-  upload/HEAD verification marker.
+- local deletion is performed only after the exact object key plus SHA-256 pair
+  has a successful COS upload/HEAD verification marker.
 - the server stores only the public `age` recipient. The decryption identity is
   generated and kept offline.
 
@@ -32,13 +35,19 @@ already been configured, and it never edits Caddy automatically.
 | `backup-postgres-encrypted.sh` | Stream PostgreSQL dump directly into `age`, then COS |
 | `export-tombstones-encrypted.sh` | Export irreversible deletion tombstones separately, then age/COS |
 | `verify-cos-restore.sh` | Monthly random COS download and SHA-256 verification |
+| `verify-encrypted-backup-restore.sh` | Explicit offline-only age decrypt and disposable PostgreSQL restore gate |
 | `monitor-compliance.sh` | Disk, backup, COS, TLS and fail2ban checks |
 | `harden-ssh.sh` | Preflighted and rollback-capable SSH hardening |
-| `install-compliance-ops.sh` | Fail-closed first installation of timers and fail2ban rule |
+| `install-compliance-ops.sh` | Fail-closed install; precise API log ACL; separately gated timer enablement |
+| `bootstrap-pre-migration-roles.sh` | Create and validate fixed NOLOGIN roles before migrations |
+| `bootstrap-database-roles.sh` | Non-interactive migrate-to-runtime role bootstrap and URL/role consistency gate |
 
 Read [the operations runbook](../../docs/compliance-operations.md) before any
 production action. COS and mail console setup is described in
 [the external-service guide](../../docs/cos-and-domain-mail-setup.md).
+
+The authoritative production database order is documented in
+[`docs/compliance-operations.md`](../../docs/compliance-operations.md#生产数据库启动链门禁).
 # Deletion tombstones
 
 `DELETION_TOMBSTONE_KEY` must be a dedicated high-entropy HMAC key. It must not

@@ -41,20 +41,33 @@ import com.pjsktools.app.feature.compliance.SECURITY_URL
 import com.pjsktools.app.feature.compliance.TERMS_URL
 import com.pjsktools.app.BuildConfig
 import okhttp3.OkHttpClient
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import com.pjsktools.core.database.PublicDataDao
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface AccountCacheEntryPoint {
+    fun publicDataDao(): PublicDataDao
+}
 
 @Composable
 fun rememberAccountFeatureController(
     baseUrl: String,
     context: Context = LocalContext.current
 ): AccountFeatureController = remember(baseUrl, context.applicationContext) {
+    val appContext = context.applicationContext
+    val harukiCache = HarukiPreviewCache(appContext)
+    val dao = EntryPointAccessors.fromApplication(appContext, AccountCacheEntryPoint::class.java).publicDataDao()
     AccountFeatureController(
-        repository = AccountRepository(baseUrl, SharedPreferencesAccountSessionStore(context, baseUrl)),
+        repository = AccountRepository(baseUrl, SharedPreferencesAccountSessionStore(appContext, baseUrl)),
         harukiGateway = GeneratedHarukiGateway(baseUrl, OkHttpClient()),
-        harukiPreviewCache = HarukiPreviewCache(context)
+        harukiPreviewCache = harukiCache,
+        privateCacheCleaner = androidPrivateAccountCacheCleaner(dao, harukiCache)
     )
 }
 
@@ -141,33 +154,22 @@ private fun AccountEntry(
             }
             state.registrationCode?.let { result -> item { Text("验证码已发送，${(result.expiresInSeconds ?: 300) / 60} 分钟内有效。") } }
             state.registrationCode?.developmentCode?.let { devCode -> item { Text("开发环境验证码：$devCode") } }
-            item {
-                LegalCheckbox(
-                    checked = privacyAccepted,
-                    onCheckedChange = { privacyAccepted = it },
-                    label = "我已阅读并同意隐私政策",
-                    openDocument = { openUri(PRIVACY_URL) }
-                )
+        }
+        item { LegalCheckbox(privacyAccepted, { privacyAccepted = it }, "我已阅读并同意隐私政策") { openUri(PRIVACY_URL) } }
+        item { LegalCheckbox(termsAccepted, { termsAccepted = it }, "我已阅读并同意用户协议") { openUri(TERMS_URL) } }
+        item {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Checkbox(checked = ageConfirmed, onCheckedChange = { ageConfirmed = it })
+                Text("我确认已满 ${state.legalDocuments?.minimumAge ?: 14} 周岁")
             }
-            item {
-                LegalCheckbox(
-                    checked = termsAccepted,
-                    onCheckedChange = { termsAccepted = it },
-                    label = "我已阅读并同意用户协议",
-                    openDocument = { openUri(TERMS_URL) }
-                )
-            }
-            item {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Checkbox(checked = ageConfirmed, onCheckedChange = { ageConfirmed = it })
-                    Text("我确认已满 14 周岁")
-                }
-            }
+        }
+        if (state.legalDocuments == null) item {
+            Text("当前隐私政策与用户协议版本尚未加载，暂时无法注册或使用 QQ 首次登录。", color = MaterialTheme.colorScheme.error)
         }
         item {
             Button(
                 enabled = !state.busy && (state.entryMode == AccountEntryMode.LOGIN ||
-                    password == confirmPassword && code.length == 6 && privacyAccepted && termsAccepted && ageConfirmed),
+                    state.legalDocuments != null && password == confirmPassword && code.length == 6 && privacyAccepted && termsAccepted && ageConfirmed),
                 onClick = { launch {
                     if (state.entryMode == AccountEntryMode.LOGIN) controller.login(email, password)
                     else controller.register(email, password, confirmPassword, code, privacyAccepted, termsAccepted, ageConfirmed)
@@ -175,10 +177,13 @@ private fun AccountEntry(
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (state.busy) "请稍候…" else if (state.entryMode == AccountEntryMode.LOGIN) "登录" else "创建账号") }
         }
+        if (state.entryMode == AccountEntryMode.LOGIN) item {
+            Text("三项确认仅用于首次 QQ 登录；邮箱登录不会提交这些确认。", style = MaterialTheme.typography.bodySmall)
+        }
         item {
             OutlinedButton(
-                enabled = !state.busy,
-                onClick = { launch { openUri(controller.startMobileQq().authorizeUrl) } },
+                enabled = !state.busy && state.legalDocuments != null && privacyAccepted && termsAccepted && ageConfirmed,
+                onClick = { launch { openUri(controller.startMobileQqLogin(privacyAccepted, termsAccepted, ageConfirmed).authorizeUrl) } },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("使用 QQ 登录") }
         }
@@ -239,9 +244,6 @@ private fun AccountWorkspace(
                     OutlinedButton(enabled = !state.busy, onClick = {
                         launch {
                             controller.clearPrivateCache()
-                            withContext(Dispatchers.IO) {
-                                context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-                            }
                         }
                     }) { Text("清除本地缓存") }
                     TextButton(enabled = !state.busy, onClick = { confirmDeleteAccount = true }) {
@@ -258,7 +260,7 @@ private fun AccountWorkspace(
                     Text(qq?.nickname?.let { "已关联：$it" } ?: if (qq != null) "已关联" else "尚未关联")
                     if (qq == null) {
                         OutlinedButton(enabled = !state.busy, onClick = {
-                            launch { openUri(controller.startMobileQq().authorizeUrl) }
+                            launch { openUri(controller.startMobileQqLink().authorizeUrl) }
                         }) { Text("关联当前账号") }
                     } else {
                         TextButton(enabled = !state.busy, onClick = { confirmUnlinkQq = true }) {

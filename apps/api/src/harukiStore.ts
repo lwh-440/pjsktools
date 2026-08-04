@@ -331,13 +331,47 @@ export class MemoryHarukiStore implements HarukiStore {
 }
 
 class PgHarukiStore implements HarukiStore {
-  private pool = new Pool({ connectionString: config.databaseUrl });
+  private pool: Pool;
+
+  constructor(connectionString = config.harukiDatabaseUrl) {
+    if (!config.harukiFeatureEnabled || !connectionString) throw new Error("enabled Haruki requires a dedicated HARUKI_DATABASE_URL");
+    this.pool = new Pool({ connectionString });
+  }
+
+  async assertRuntimeRoleSafety(forbiddenLogins: string[] = []) {
+    const identity=await this.pool.query(`select current_user,rolsuper,rolbypassrls,rolinherit,rolcreatedb,rolcreaterole from pg_roles where rolname=current_user`);
+    const role=identity.rows[0];
+    if(!role||role.rolsuper||role.rolbypassrls||role.rolinherit||role.rolcreatedb||role.rolcreaterole) throw new Error("unsafe Haruki database runtime login");
+    if(forbiddenLogins.includes(role.current_user)) throw new Error("Haruki database runtime login must be distinct");
+    const memberships=await this.pool.query(`select parent.rolname from pg_auth_members m join pg_roles parent on parent.oid=m.roleid join pg_roles member on member.oid=m.member where member.rolname=current_user order by parent.rolname`);
+    if(JSON.stringify(memberships.rows.map((row)=>row.rolname))!==JSON.stringify(["pjsktools_haruki_user","pjsktools_haruki_worker"])) throw new Error("unexpected Haruki runtime role membership");
+    const owned=await this.pool.query(`select (select count(*) from pg_class where relowner=(select oid from pg_roles where rolname=current_user))+(select count(*) from pg_proc where proowner=(select oid from pg_roles where rolname=current_user)) as count`);
+    if(Number(owned.rows[0].count)) throw new Error("Haruki runtime login owns database objects");
+    if((await this.pool.query(`select has_schema_privilege(current_user,'public','CREATE') as allowed`)).rows[0].allowed) throw new Error("Haruki runtime login has schema CREATE");
+  }
 
   private async transaction<T>(userId: string, operation: (client: PoolClient) => Promise<T>) {
     const client = await this.pool.connect();
     try {
       await client.query("begin");
+      await client.query("set local role pjsktools_haruki_user");
       await client.query(`select set_config('pjsktools.user_id', $1, true)`, [userId]);
+      const result = await operation(client);
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async workerTransaction<T>(operation: (client: PoolClient) => Promise<T>) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("set local role pjsktools_haruki_worker");
       const result = await operation(client);
       await client.query("commit");
       return result;
@@ -359,16 +393,12 @@ class PgHarukiStore implements HarukiStore {
 
   async consumeOAuthState(state: string) {
     const stateHash = hashToken(state);
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(`select set_config('pjsktools.haruki_worker', 'true', true)`);
+    return this.workerTransaction(async (client) => {
       const result = await client.query(
         `delete from haruki_oauth_states where state_hash = $1 and expires_at > now() returning *`,
         [stateHash]
       );
       const row = result.rows[0];
-      await client.query("commit");
       return row ? {
         stateHash: row.state_hash,
         userId: row.user_id,
@@ -377,12 +407,7 @@ class PgHarukiStore implements HarukiStore {
         codeVerifierEncrypted: row.code_verifier_encrypted,
         expiresAt: new Date(row.expires_at).toISOString()
       } : null;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async saveMobileHandoff(handoff: string, userId: string, expiresAt: string) {
@@ -470,28 +495,17 @@ class PgHarukiStore implements HarukiStore {
   }
 
   async cleanupExpiredRecords() {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(`select set_config('pjsktools.haruki_worker', 'true', true)`);
+    await this.workerTransaction(async (client) => {
       await client.query(`delete from haruki_oauth_states where expires_at <= now()`);
       await client.query(`delete from haruki_oauth_handoffs where expires_at <= now()`);
       await client.query(`delete from player_sync_reviews where expires_at <= now()`);
       await client.query(`update haruki_connections set refresh_lease_id=null,refresh_lease_expires_at=null where refresh_lease_expires_at <= now()`);
       await client.query(`delete from haruki_rate_limits where expires_at <= now()`);
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async consumeRateLimit(keys: string[], limit: number, windowSeconds: number) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
+    return this.workerTransaction(async (client) => {
       const hashes = [...new Set(keys.map(hashToken))].sort();
       // Lock every bucket, including buckets that do not exist yet. The stable
       // order prevents deadlocks when requests share only part of their keys.
@@ -507,7 +521,6 @@ class PgHarukiStore implements HarukiStore {
         [hashes]
       );
       if (existing.rows.some((row) => Number(row.count) >= limit)) {
-        await client.query("rollback");
         return false;
       }
       for (const bucketHash of hashes) {
@@ -518,14 +531,8 @@ class PgHarukiStore implements HarukiStore {
           [bucketHash, windowSeconds]
         );
       }
-      await client.query("commit");
       return true;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async deleteConnection(userId: string) {
@@ -649,16 +656,12 @@ class PgHarukiStore implements HarukiStore {
   }
 
   async claimDueAutoSync(limit: number) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(`select set_config('pjsktools.haruki_worker', 'true', true)`);
+    return this.workerTransaction(async (client) => {
       await client.query(`delete from haruki_oauth_states where expires_at <= now()`);
       await client.query(`delete from haruki_oauth_handoffs where expires_at <= now()`);
       await client.query(`delete from player_sync_reviews where expires_at <= now()`);
       const lock = await client.query(`select pg_try_advisory_xact_lock(hashtext('pjsktools-haruki-auto-sync')) as acquired`);
       if (!lock.rows[0]?.acquired) {
-        await client.query("rollback");
         return [];
       }
       const result = await client.query(
@@ -673,21 +676,12 @@ class PgHarukiStore implements HarukiStore {
          from due where b.id=due.id returning b.*`,
         [Math.max(1, Math.min(100, limit))]
       );
-      await client.query("commit");
       return result.rows.map(bindingFromRow);
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async saveWebhookEvent(event: HarukiWebhookEvent) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(`select set_config('pjsktools.haruki_worker', 'true', true)`);
+    return this.workerTransaction(async (client) => {
       const result = await client.query(
         `insert into haruki_webhook_events
           (event_id_hash,subject,binding_key,data_type,region,player_uid,upload_time,payload_hash,status,received_at)
@@ -695,56 +689,35 @@ class PgHarukiStore implements HarukiStore {
         [hashToken(event.eventId), event.subject || null, event.bindingKey || null, event.dataType, event.region, event.playerUid,
           event.uploadTime ?? null, event.payloadHash, event.status, event.receivedAt]
       );
-      await client.query("commit");
       return result.rowCount === 1;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally { client.release(); }
+    });
   }
 
   async claimWebhookEvents(limit: number) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(`select set_config('pjsktools.haruki_worker', 'true', true)`);
+    return this.workerTransaction(async (client) => {
       const result = await client.query(
         `select * from haruki_webhook_events where status='pending' order by received_at
          for update skip locked limit $1`, [limit]
       );
       const hashes = result.rows.map((row) => row.event_id_hash);
       if (hashes.length) await client.query(`update haruki_webhook_events set status='processing' where event_id_hash=any($1::text[])`, [hashes]);
-      await client.query("commit");
       return result.rows.map((row) => ({
         eventId: row.event_id_hash, subject: row.subject, bindingKey: row.binding_key, region: row.region,
         dataType: (row.data_type === "mysekai" ? "mysekai" : "suite") as "suite" | "mysekai",
         playerUid: row.player_uid, uploadTime: row.upload_time ? new Date(row.upload_time).toISOString() : undefined,
         payloadHash: row.payload_hash, status: "processing" as const, receivedAt: new Date(row.received_at).toISOString()
       }));
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally { client.release(); }
+    });
   }
 
   async finishWebhookEvent(eventId: string, status: HarukiWebhookEvent["status"]) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(`select set_config('pjsktools.haruki_worker', 'true', true)`);
+    await this.workerTransaction(async (client) => {
       await client.query(`update haruki_webhook_events set status=$2,processed_at=now() where event_id_hash=$1`, [eventId, status]);
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally { client.release(); }
+    });
   }
 
   async markWebhookBinding(event: HarukiWebhookEvent) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(`select set_config('pjsktools.haruki_worker', 'true', true)`);
+    return this.workerTransaction(async (client) => {
       const result = await client.query(
         `with target as (
            select b.id from user_player_bindings b join haruki_connections c on c.id=b.haruki_connection_id
@@ -753,22 +726,14 @@ class PgHarukiStore implements HarukiStore {
          update user_player_bindings b set last_webhook_at=$1,upstream_update_available=true,last_sync_status='ready',updated_at=now()
          from unique_target t where b.id=t.id returning b.id`, [event.receivedAt, event.region, event.playerUid]
       );
-      await client.query("commit");
       return result.rowCount === 1;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally { client.release(); }
+    });
   }
   async resolveWebhookBinding(event: HarukiWebhookEvent) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(`select set_config('pjsktools.haruki_worker', 'true', true)`);
+    return this.workerTransaction(async (client) => {
       const result = await client.query(`select b.* from user_player_bindings b join haruki_connections c on c.id=b.haruki_connection_id where b.region=$1 and b.player_uid=$2 and b.verified and b.source='haruki-oauth' and c.status='active' and c.scope @> array['game-data:read']::text[]`, [event.region, event.playerUid]);
-      await client.query("commit");
       return result.rows.length === 1 ? bindingFromRow(result.rows[0]) : null;
-    } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
+    });
   }
   async saveRevokeAudit(audit: HarukiRevokeAudit) {
     await this.transaction(audit.userId, (client) => client.query(
@@ -778,4 +743,8 @@ class PgHarukiStore implements HarukiStore {
   }
 }
 
-export const harukiStore: HarukiStore = config.databaseUrl ? new PgHarukiStore() : new MemoryHarukiStore();
+export const harukiStore: HarukiStore = config.harukiFeatureEnabled ? new PgHarukiStore() : new MemoryHarukiStore();
+
+export async function assertHarukiDatabaseRuntimeRoleSafety(forbiddenLogins: string[] = []) {
+  if(harukiStore instanceof PgHarukiStore) await harukiStore.assertRuntimeRoleSafety(forbiddenLogins);
+}

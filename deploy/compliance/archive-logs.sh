@@ -44,13 +44,19 @@ host_id="$(hostname -s | tr -cd 'A-Za-z0-9._-')"
 [[ -n "$host_id" ]] || host_id="server"
 uploaded_any=0
 
+marker_for() {
+  local key="$1" digest="$2" marker_id
+  marker_id="$(printf '%s\n%s\n' "$key" "$digest" | sha256sum | awk '{print $1}')"
+  printf '%s/uploaded/%s.ok\n' "$COMPLIANCE_STATE_DIR" "$marker_id"
+}
+
 while IFS= read -r -d '' archive; do
   chmod 0600 "$archive"
   digest="$(sha256sum -- "$archive" | awk '{print $1}')"
   basename="$(basename -- "$archive")"
   date_path="$(date -u -r "$archive" '+%Y/%m/%d')"
   object_key="${COMPLIANCE_COS_LOG_PREFIX%/}/${host_id}/${date_path}/${basename}"
-  marker="$COMPLIANCE_STATE_DIR/uploaded/${digest}.ok"
+  marker="$(marker_for "$object_key" "$digest")"
   printf '%s  %s\n' "$digest" "$basename" >"${archive}.sha256"
   chmod 0600 "${archive}.sha256"
   manifest_digest="$(sha256sum -- "${archive}.sha256" | awk '{print $1}')"
@@ -70,7 +76,10 @@ done < <(find "$COMPLIANCE_LOG_DIR" -maxdepth 1 -type f \( \
 # removes only archives proven uploaded and HEAD-verified by the marker above.
 while IFS= read -r -d '' archive; do
   digest="$(sha256sum -- "$archive" | awk '{print $1}')"
-  marker="$COMPLIANCE_STATE_DIR/uploaded/${digest}.ok"
+  basename="$(basename -- "$archive")"
+  date_path="$(date -u -r "$archive" '+%Y/%m/%d')"
+  expected_key="${COMPLIANCE_COS_LOG_PREFIX%/}/${host_id}/${date_path}/${basename}"
+  marker="$(marker_for "$expected_key" "$digest")"
   if [[ -f "$marker" && -f "${archive}.sha256" ]]; then
     IFS=$'\t' read -r data_key data_digest manifest_key manifest_digest verified_at <"$marker" || true
     actual_manifest_digest="$(sha256sum -- "${archive}.sha256" | awk '{print $1}')"
@@ -82,7 +91,7 @@ while IFS= read -r -d '' archive; do
     verified_at=""
     actual_manifest_digest=""
   fi
-  if [[ "$data_digest" == "$digest" && "$manifest_key" == "${data_key}.sha256" && "$manifest_digest" == "$actual_manifest_digest" && -n "$verified_at" ]]; then
+  if [[ "$data_key" == "$expected_key" && "$data_digest" == "$digest" && "$manifest_key" == "${expected_key}.sha256" && "$manifest_digest" == "$actual_manifest_digest" && -n "$verified_at" ]]; then
     rm -f -- "$archive" "${archive}.sha256"
   fi
 done < <(find "$COMPLIANCE_LOG_DIR" -maxdepth 1 -type f \( \

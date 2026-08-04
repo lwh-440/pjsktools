@@ -51,6 +51,23 @@ install -d -m 0700 "$daily_dir" "$weekly_dir" "$COMPLIANCE_STATE_DIR" "$COMPLIAN
 exec 9>"$COMPLIANCE_STATE_DIR/backup.lock"
 flock -n 9 || exit 0
 
+marker_for() {
+  local key="$1" digest="$2" marker_id
+  marker_id="$(printf '%s\n%s\n' "$key" "$digest" | sha256sum | awk '{print $1}')"
+  printf '%s/uploaded/%s.ok\n' "$COMPLIANCE_STATE_DIR" "$marker_id"
+}
+
+backup_key_for() {
+  local file="$1" prefix="$2" name stamp
+  name="$(basename -- "$file")"
+  stamp="${name#pjsktools-}"
+  [[ "$stamp" =~ ^[0-9]{8}T[0-9]{6}Z\.dump\.age$ ]] || {
+    echo "unexpected backup filename: $name" >&2
+    return 1
+  }
+  printf '%s/%s/%s/%s\n' "${prefix%/}" "${stamp:0:4}" "${stamp:4:2}" "$name"
+}
+
 timestamp="$(date -u '+%Y%m%dT%H%M%SZ')"
 daily="$daily_dir/pjsktools-${timestamp}.dump.age"
 temporary="${daily}.tmp"
@@ -74,8 +91,8 @@ upload_verified() {
   local file="$1" prefix="$2" marker key sum manifest_sum
   sum="$(sha256sum -- "$file" | awk '{print $1}')"
   manifest_sum="$(sha256sum -- "${file}.sha256" | awk '{print $1}')"
-  key="${prefix%/}/$(date -u '+%Y/%m')/$(basename -- "$file")"
-  marker="$COMPLIANCE_STATE_DIR/uploaded/${sum}.ok"
+  key="$(backup_key_for "$file" "$prefix")"
+  marker="$(marker_for "$key" "$sum")"
   "$COMPLIANCE_PYTHON_BIN" "$SCRIPT_DIR/cos_archive.py" upload --file "$file" --key "$key"
   "$COMPLIANCE_PYTHON_BIN" "$SCRIPT_DIR/cos_archive.py" upload --file "${file}.sha256" --key "${key}.sha256"
   printf '%s\t%s\t%s\t%s\t%s\n' "$key" "$sum" "${key}.sha256" "$manifest_sum" "$(date -u '+%FT%TZ')" >"$marker.tmp"
@@ -100,7 +117,12 @@ for spec in "$daily_dir:$COMPLIANCE_DAILY_BACKUP_DAYS" "$weekly_dir:$COMPLIANCE_
   days="${spec##*:}"
   while IFS= read -r -d '' old; do
     old_digest="$(sha256sum -- "$old" | awk '{print $1}')"
-    marker="$COMPLIANCE_STATE_DIR/uploaded/${old_digest}.ok"
+    if [[ "$directory" == "$daily_dir" ]]; then
+      expected_key="$(backup_key_for "$old" "$COMPLIANCE_COS_DAILY_PREFIX")"
+    else
+      expected_key="$(backup_key_for "$old" "$COMPLIANCE_COS_WEEKLY_PREFIX")"
+    fi
+    marker="$(marker_for "$expected_key" "$old_digest")"
     if [[ -f "$marker" && -f "${old}.sha256" ]]; then
       IFS=$'\t' read -r data_key data_digest manifest_key manifest_digest verified_at <"$marker" || true
       actual_manifest_digest="$(sha256sum -- "${old}.sha256" | awk '{print $1}')"
@@ -112,7 +134,7 @@ for spec in "$daily_dir:$COMPLIANCE_DAILY_BACKUP_DAYS" "$weekly_dir:$COMPLIANCE_
       verified_at=""
       actual_manifest_digest=""
     fi
-    if [[ "$data_digest" == "$old_digest" && "$manifest_key" == "${data_key}.sha256" && "$manifest_digest" == "$actual_manifest_digest" && -n "$verified_at" ]]; then
+    if [[ "$data_key" == "$expected_key" && "$data_digest" == "$old_digest" && "$manifest_key" == "${expected_key}.sha256" && "$manifest_digest" == "$actual_manifest_digest" && -n "$verified_at" ]]; then
       rm -f -- "$old" "${old}.sha256"
     fi
   done < <(find "$directory" -maxdepth 1 -type f -name '*.dump.age' -mtime "+$days" -print0)

@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { hashToken } from "./authCrypto.js";
 import { config, type RegionId } from "./config.js";
@@ -44,7 +45,7 @@ function rowToUser(row: any): UserAccount {
   return {
     id: row.id,
     email: row.email ?? undefined,
-    passwordHash: row.password_hash ?? undefined,
+    passwordHash: row.password_hash ?? (row.has_password ? "configured" : undefined),
     nickname: row.nickname ?? undefined,
     avatarUrl: row.avatar_url ?? undefined,
     createdAt: new Date(row.created_at).toISOString(),
@@ -68,11 +69,11 @@ function rowToOAuth(row: any): OAuthAccount {
   };
 }
 
-function rowToSession(row: any): AuthSession {
+function rowToSession(row: any, refreshTokenHash = ""): AuthSession {
   return {
     id: row.id,
     userId: row.user_id,
-    refreshTokenHash: row.refresh_token_hash,
+    refreshTokenHash: row.refresh_token_hash ?? refreshTokenHash,
     expiresAt: new Date(row.expires_at).toISOString(),
     revokedAt: row.revoked_at ? new Date(row.revoked_at).toISOString() : undefined,
     createdAt: new Date(row.created_at).toISOString()
@@ -122,7 +123,7 @@ function rowToEmailCode(row: any): EmailVerificationCode {
     id: row.id,
     email: row.email,
     purpose: row.purpose,
-    codeHash: row.code_hash,
+    codeHash: row.code_hash ?? "",
     expiresAt: new Date(row.expires_at).toISOString(),
     consumedAt: row.consumed_at ? new Date(row.consumed_at).toISOString() : undefined,
     attempts: Number(row.attempts),
@@ -278,34 +279,96 @@ function rowToRankingHistory(row: any): RankingHistorySample {
 }
 
 export class PgStore implements AuthStore {
-  private pool = new Pool({ connectionString: config.databaseUrl });
+  private pool: Pool;
+  private authPool: Pool;
+  private compliancePool: Pool;
+
+  constructor(connectionString = config.databaseUrl, complianceConnectionString = config.complianceDatabaseUrl, authConnectionString = config.authDatabaseUrl) {
+    if (!connectionString || !authConnectionString || !complianceConnectionString) throw new Error("distinct application, authentication and compliance database URLs are required");
+    this.pool = new Pool({ connectionString });
+    this.authPool = new Pool({ connectionString: authConnectionString });
+    this.compliancePool = new Pool({ connectionString: complianceConnectionString });
+  }
+
+  async close() {
+    await Promise.all([this.pool.end(), this.authPool.end(), this.compliancePool.end()]);
+  }
+
+  async assertRuntimeRoleSafety() {
+    const expected = new Map<Pool, string[]>([
+      [this.pool, ["pjsktools_app_user","pjsktools_idempotency_service","pjsktools_ranking_service"]],
+      [this.authPool, ["pjsktools_auth_api"]],
+      [this.compliancePool, ["pjsktools_compliance_maintenance","pjsktools_compliance_user"]]
+    ]);
+    const identities: string[] = [];
+    for (const [pool, membershipsExpected] of expected) {
+      const identity = await pool.query(`select current_user, rolsuper, rolbypassrls, rolinherit, rolcreatedb, rolcreaterole from pg_roles where rolname=current_user`);
+      const role = identity.rows[0];
+      if (!role || role.rolsuper || role.rolbypassrls || role.rolinherit || role.rolcreatedb || role.rolcreaterole) throw new Error("unsafe database runtime login");
+      identities.push(role.current_user);
+      const memberships = await pool.query(`select parent.rolname from pg_auth_members m join pg_roles parent on parent.oid=m.roleid join pg_roles member on member.oid=m.member where member.rolname=current_user order by parent.rolname`);
+      if (JSON.stringify(memberships.rows.map(r=>r.rolname)) !== JSON.stringify(membershipsExpected)) throw new Error("unexpected runtime role membership");
+      const owned = await pool.query(`select (select count(*) from pg_class where relowner=(select oid from pg_roles where rolname=current_user))+(select count(*) from pg_proc where proowner=(select oid from pg_roles where rolname=current_user)) as count`);
+      if (Number(owned.rows[0].count)) throw new Error("runtime login owns database objects");
+      if ((await pool.query(`select has_schema_privilege(current_user,'public','CREATE') as allowed`)).rows[0].allowed) throw new Error("runtime login has schema CREATE");
+    }
+    if (new Set(identities).size !== identities.length) throw new Error("database runtime logins must be distinct");
+    for (const pool of [this.pool,this.compliancePool]) {
+      const privilege=await pool.query(`select has_function_privilege(current_user,'public.pjsktools_auth_get_password(text)','EXECUTE') as allowed`);
+      if(privilege.rows[0]?.allowed) throw new Error("non-auth runtime login can execute authentication functions");
+    }
+    const authTables=await this.authPool.query(`select bool_or(has_table_privilege(current_user,table_name,privilege)) as allowed from unnest(array['public.users','public.oauth_accounts','public.auth_sessions','public.auth_states','public.email_verification_codes','public.email_verification_cooldowns','public.oauth_handoffs']) table_name cross join unnest(array['SELECT','INSERT','UPDATE','DELETE']) privilege`);
+    if(authTables.rows[0]?.allowed) throw new Error("authentication runtime login has direct table privileges");
+    return identities;
+  }
+
+  private async withRole<T>(pool: Pool, role: string, userId: string | undefined, operation: (client: PoolClient)=>Promise<T>) {
+    const client=await pool.connect();
+    try { await client.query("begin"); await client.query(`set local role ${role}`); if(userId) await client.query(`select set_config('pjsktools.user_id',$1,true)`,[userId]); const value=await operation(client); await client.query("commit"); return value; }
+    catch(error){ await client.query("rollback"); throw error; } finally { client.release(); }
+  }
+
+  private withAuthApi<T>(operation: (client: PoolClient)=>Promise<T>) {
+    return this.withRole(this.authPool,"pjsktools_auth_api",undefined,async(client)=>{
+      return operation(client);
+    });
+  }
+
+  private withAppUser<T>(userId: string, operation: (client: PoolClient)=>Promise<T>) {
+    return this.withRole(this.pool,"pjsktools_app_user",userId,operation);
+  }
+
+  private withRankingService<T>(operation: (client: PoolClient)=>Promise<T>) {
+    return this.withRole(this.pool,"pjsktools_ranking_service",undefined,operation);
+  }
+
+  private withIdempotencyService<T>(scope: string, operation: (client: PoolClient)=>Promise<T>) {
+    return this.withRole(this.pool,"pjsktools_idempotency_service",undefined,async (client)=>{
+      await client.query(`select set_config('pjsktools.idempotency_scope',$1,true)`,[scope]);
+      return operation(client);
+    });
+  }
+
+  private withComplianceUser<T>(userId: string, operation: (client: PoolClient)=>Promise<T>) {
+    return this.withRole(this.compliancePool,"pjsktools_compliance_user",userId,operation);
+  }
+
+  private withComplianceMaintenance<T>(operation: (client: PoolClient)=>Promise<T>) {
+    return this.withRole(this.compliancePool,"pjsktools_compliance_maintenance",undefined,operation);
+  }
 
   private async withPlayerUser<T>(userId: string, operation: (client: PoolClient) => Promise<T>) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(`select set_config('pjsktools.user_id', $1, true)`, [userId]);
-      const result = await operation(client);
-      await client.query("commit");
-      return result;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+    return this.withAppUser(userId,operation);
   }
 
   async createUser(email: string, password: string, profile: { nickname?: string; avatarUrl?: string } = {}) {
     const normalizedEmail = normalizeEmail(email);
     const passwordHash = await bcrypt.hash(password, 10);
     try {
-      const result = await this.pool.query(
-        `insert into users (email, password_hash, nickname, avatar_url)
-         values ($1, $2, $3, $4)
-         returning *`,
+      const result = await this.withAuthApi((client) => client.query(
+        `select * from public.pjsktools_auth_create_user($1,$2,$3,$4)`,
         [normalizedEmail, passwordHash, profile.nickname ?? null, profile.avatarUrl ?? null]
-      );
+      ));
       return rowToUser(result.rows[0]);
     } catch (error: any) {
       if (error?.code === "23505") throw new Error("EMAIL_EXISTS");
@@ -314,160 +377,105 @@ export class PgStore implements AuthStore {
   }
 
   async createOAuthUser(input: CreateOAuthInput) {
-    const existing = await this.findOAuthAccount(input.provider, input.providerUserId);
-    if (existing) {
-      const user = await this.getUser(existing.userId);
-      if (user) return user;
-    }
-    const result = await this.pool.query(
-      `insert into users (nickname, avatar_url) values ($1, $2) returning *`,
-      [input.nickname ?? null, input.avatarUrl ?? null]
-    );
-    const user = rowToUser(result.rows[0]);
-    await this.linkOAuthAccount(user.id, input);
-    return user;
+    const userId=randomUUID();
+    return this.withAuthApi(async(client)=>{
+      const result = await client.query(
+        `select * from public.pjsktools_auth_create_oauth_user($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [userId,input.provider,input.providerUserId,input.nickname??null,input.avatarUrl??null,input.accessTokenEncrypted??null,input.refreshTokenEncrypted??null,input.expiresAt??null]
+      );
+      return rowToUser(result.rows[0]);
+    });
   }
 
   async createEmailVerificationCode(input: { email: string; purpose: EmailVerificationPurpose; code: string; expiresAt: string }) {
-    const result = await this.pool.query(
-      `insert into email_verification_codes (email, purpose, code_hash, expires_at) values ($1, $2, $3, $4) returning *`,
-      [normalizeEmail(input.email), input.purpose, await bcrypt.hash(input.code, 10), input.expiresAt]
-    );
+    const codeHash=await bcrypt.hash(input.code,10);
+    const email=normalizeEmail(input.email);
+    const result = await this.withAuthApi((client)=>client.query(
+      `select * from public.pjsktools_auth_create_email_code($1,$2,$3,$4)`,
+      [email, input.purpose, codeHash, input.expiresAt]
+    ));
     return rowToEmailCode(result.rows[0]);
   }
 
   async getLatestEmailVerificationCode(email: string, purpose: EmailVerificationPurpose) {
-    const result = await this.pool.query(
-      `select * from email_verification_codes where email = $1 and purpose = $2 order by created_at desc limit 1`,
-      [normalizeEmail(email), purpose]
-    );
+    const normalizedEmail=normalizeEmail(email);
+    const result = await this.withAuthApi((client)=>client.query(
+      `select * from public.pjsktools_auth_latest_email_code($1,$2)`,
+      [normalizedEmail, purpose]
+    ));
     return result.rows[0] ? rowToEmailCode(result.rows[0]) : null;
   }
 
   async reserveEmailVerificationCooldown(input: { email: string; purpose: EmailVerificationPurpose; reservationId: string; cooldownSeconds: number }) {
     const email = normalizeEmail(input.email);
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(`select pg_advisory_xact_lock(hashtextextended($1, 0))`, [`${email}:${input.purpose}`]);
-      const blocked = await client.query(
-        `select greatest(
-           coalesce((select max(created_at) + ($3 * interval '1 second') from email_verification_codes where email = $1 and purpose = $2), '-infinity'::timestamptz),
-           coalesce((select expires_at from email_verification_cooldowns where email = $1 and purpose = $2), '-infinity'::timestamptz)
-         ) as blocked_until`,
-        [email, input.purpose, input.cooldownSeconds]
-      );
-      const blockedUntil = Date.parse(blocked.rows[0].blocked_until);
-      if (Number.isFinite(blockedUntil) && blockedUntil > Date.now()) {
-        await client.query("commit");
-        return Math.max(1, Math.ceil((blockedUntil - Date.now()) / 1000));
-      }
-      await client.query(
-        `insert into email_verification_cooldowns (email, purpose, reservation_id, expires_at)
-         values ($1, $2, $3, now() + ($4 * interval '1 second'))
-         on conflict (email, purpose) do update set reservation_id = excluded.reservation_id, expires_at = excluded.expires_at`,
-        [email, input.purpose, input.reservationId, input.cooldownSeconds]
-      );
-      await client.query("commit");
-      return 0;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+    return this.withAuthApi(async(client)=>{
+      const result=await client.query(`select public.pjsktools_auth_reserve_email_cooldown($1,$2,$3,$4) as retry_after`,[email,input.purpose,input.reservationId,input.cooldownSeconds]);
+      return Number(result.rows[0].retry_after);
+    });
   }
 
   async releaseEmailVerificationCooldown(input: { email: string; purpose: EmailVerificationPurpose; reservationId: string }) {
-    await this.pool.query(
-      `delete from email_verification_cooldowns where email = $1 and purpose = $2 and reservation_id = $3`,
-      [normalizeEmail(input.email), input.purpose, input.reservationId]
-    );
+    const email=normalizeEmail(input.email);
+    await this.withAuthApi((client)=>client.query(
+      `select public.pjsktools_auth_release_email_cooldown($1,$2,$3)`,
+      [email, input.purpose, input.reservationId]
+    ));
   }
 
   async consumeEmailVerificationCode(input: { email: string; purpose: EmailVerificationPurpose; code: string }) {
-    const result = await this.pool.query(
-      `select * from email_verification_codes
-       where email = $1 and purpose = $2 and consumed_at is null and expires_at > now() and attempts < 5
-       order by created_at desc limit 1`,
-      [normalizeEmail(input.email), input.purpose]
-    );
-    const row = result.rows[0];
-    if (!row) return false;
-    await this.pool.query(`update email_verification_codes set attempts = attempts + 1 where id = $1`, [row.id]);
-    const ok = await bcrypt.compare(input.code, row.code_hash);
-    if (!ok) return false;
-    await this.pool.query(`update email_verification_codes set consumed_at = now() where id = $1`, [row.id]);
-    return true;
+    const email=normalizeEmail(input.email);
+    return this.withAuthApi(async(client)=>{
+      const result=await client.query(`select * from public.pjsktools_auth_lock_email_code($1,$2)`,[email,input.purpose]);
+      const row=result.rows[0];
+      if(!row) return false;
+      const success=await bcrypt.compare(input.code,row.code_hash);
+      const finished=await client.query(`select public.pjsktools_auth_finish_email_code($1,$2,$3,$4) as consumed`,[row.id,email,input.purpose,success]);
+      return finished.rows[0].consumed===true;
+    });
   }
 
   async verifyUser(email: string, password: string) {
-    const result = await this.pool.query(`select * from users where email = $1`, [normalizeEmail(email)]);
+    const normalizedEmail=normalizeEmail(email);
+    const result = await this.withAuthApi((client)=>client.query(`select * from public.pjsktools_auth_get_password($1)`, [normalizedEmail]));
     const row = result.rows[0];
     if (!row?.password_hash) return null;
-    return (await bcrypt.compare(password, row.password_hash)) ? rowToUser(row) : null;
+    return await bcrypt.compare(password,row.password_hash) ? rowToUser(row) : null;
   }
 
   async getUser(id: string) {
-    const result = await this.pool.query(`select * from users where id = $1`, [id]);
+    const result = await this.withAuthApi((client)=>client.query(`select * from public.pjsktools_auth_get_user($1)`, [id]));
     return result.rows[0] ? rowToUser(result.rows[0]) : null;
   }
 
   async deleteUserByEmail(email: string) {
-    const result = await this.pool.query(`delete from users where email = $1`, [normalizeEmail(email)]);
-    return (result.rowCount ?? 0) > 0;
+    void email;
+    return Promise.reject<boolean>(new Error("DELETE_USER_BY_EMAIL_UNAVAILABLE_IN_POSTGRES"));
   }
 
   async deleteUserById(id: string) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      const userResult = await client.query(`select id, email from users where id = $1 for update`, [id]);
+    return this.withComplianceUser(id, async (client) => {
+      const userResult = await client.query(`select user_id as id, email from public.pjsktools_lock_account_deletion_identity($1)`, [id]);
       const user = userResult.rows[0];
-      if (!user) {
-        await client.query("rollback");
-        return false;
-      }
-      await client.query(
-        `insert into account_deletion_tombstones (user_hash, email_hash, deleted_at)
-         values ($1, $2, now()) on conflict (user_hash) do nothing`,
-        [deletionIdentifierHash("user", user.id), user.email ? deletionIdentifierHash("email", user.email) : null]
-      );
-      await client.query(`delete from api_idempotency_records where scope like $1`, [`${id}:%`]);
-      const result = await client.query(`delete from users where id = $1`, [id]);
-      await client.query("commit");
-      return (result.rowCount ?? 0) > 0;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+      if (!user) return false;
+      const result=await client.query(`select public.pjsktools_delete_account_with_tombstone($1,$2,$3) as deleted`,[
+        id,deletionIdentifierHash("user",user.id),user.email?deletionIdentifierHash("email",user.email):null
+      ]);
+      return result.rows[0]?.deleted === true;
+    });
   }
 
   async findOAuthAccount(provider: OAuthProvider, providerUserId: string) {
-    const result = await this.pool.query(`select * from oauth_accounts where provider = $1 and provider_user_id = $2`, [
+    const result = await this.withAuthApi((client)=>client.query(`select * from public.pjsktools_auth_find_oauth($1,$2)`, [
       provider,
       providerUserId
-    ]);
+    ]));
     return result.rows[0] ? rowToOAuth(result.rows[0]) : null;
   }
 
   async linkOAuthAccount(userId: string, input: CreateOAuthInput) {
     try {
-      const result = await this.pool.query(
-        `insert into oauth_accounts
-          (user_id, provider, provider_user_id, nickname, avatar_url, access_token_encrypted, refresh_token_encrypted, expires_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)
-         on conflict (provider, provider_user_id) do update set
-          nickname = excluded.nickname,
-          avatar_url = excluded.avatar_url,
-          access_token_encrypted = excluded.access_token_encrypted,
-          refresh_token_encrypted = excluded.refresh_token_encrypted,
-          expires_at = excluded.expires_at,
-          updated_at = now()
-         where oauth_accounts.user_id = excluded.user_id
-         returning *`,
+      const result = await this.withAuthApi((client)=>client.query(
+        `select * from public.pjsktools_auth_link_oauth($1,$2,$3,$4,$5,$6,$7,$8)`,
         [
           userId,
           input.provider,
@@ -478,13 +486,8 @@ export class PgStore implements AuthStore {
           input.refreshTokenEncrypted ?? null,
           input.expiresAt ?? null
         ]
-      );
+      ));
       if (!result.rows[0]) throw new Error("OAUTH_ACCOUNT_EXISTS");
-      await this.pool.query(`update users set nickname = coalesce(nickname, $2), avatar_url = coalesce(avatar_url, $3), updated_at = now() where id = $1`, [
-        userId,
-        input.nickname ?? null,
-        input.avatarUrl ?? null
-      ]);
       return rowToOAuth(result.rows[0]);
     } catch (error: any) {
       if (error?.code === "23503") throw new Error("USER_NOT_FOUND");
@@ -493,50 +496,52 @@ export class PgStore implements AuthStore {
   }
 
   async unlinkOAuthAccount(userId: string, provider: OAuthProvider) {
-    const user = await this.getUser(userId);
-    const accounts = await this.listOAuthAccounts(userId);
-    if (!user?.passwordHash && accounts.length <= 1) throw new Error("LAST_LOGIN_METHOD");
-    const result = await this.pool.query(`delete from oauth_accounts where user_id = $1 and provider = $2`, [userId, provider]);
-    return (result.rowCount ?? 0) > 0;
+    try {
+      const result=await this.withAuthApi((client)=>client.query(`select public.pjsktools_auth_unlink_oauth($1,$2) as deleted`,[userId,provider]));
+      return result.rows[0]?.deleted===true;
+    } catch(error:any) {
+      if(error?.message?.includes("LAST_LOGIN_METHOD")) throw new Error("LAST_LOGIN_METHOD");
+      throw error;
+    }
   }
 
   async listOAuthAccounts(userId: string) {
-    const result = await this.pool.query(`select * from oauth_accounts where user_id = $1 order by created_at`, [userId]);
+    const result = await this.withAuthApi((client)=>client.query(`select * from public.pjsktools_auth_list_oauth($1)`, [userId]));
     return result.rows.map(rowToOAuth);
   }
 
   async createSession(userId: string, refreshToken: string, expiresAt: string) {
-    const result = await this.pool.query(
-      `insert into auth_sessions (user_id, refresh_token_hash, expires_at) values ($1, $2, $3) returning *`,
+    const result = await this.withAuthApi((client)=>client.query(
+      `select * from public.pjsktools_auth_create_session($1,$2,$3)`,
       [userId, hashToken(refreshToken), expiresAt]
-    );
-    return rowToSession(result.rows[0]);
+    ));
+    return rowToSession(result.rows[0],hashToken(refreshToken));
   }
 
   async getSessionByRefreshToken(refreshToken: string) {
-    const result = await this.pool.query(
-      `select * from auth_sessions where refresh_token_hash = $1 and revoked_at is null and expires_at > now()`,
-      [hashToken(refreshToken)]
-    );
-    return result.rows[0] ? rowToSession(result.rows[0]) : null;
+    const refreshHash=hashToken(refreshToken);
+    const result = await this.withAuthApi((client)=>client.query(
+      `select * from public.pjsktools_auth_get_session($1)`,
+      [refreshHash]
+    ));
+    return result.rows[0] ? rowToSession(result.rows[0],refreshHash) : null;
   }
 
   async revokeSession(id: string) {
-    const result = await this.pool.query(`update auth_sessions set revoked_at = now() where id = $1 and revoked_at is null`, [id]);
-    return (result.rowCount ?? 0) > 0;
+    const result = await this.withAuthApi((client)=>client.query(`select public.pjsktools_auth_revoke_session($1) as revoked`, [id]));
+    return result.rows[0].revoked===true;
   }
 
   async createAuthState(provider: OAuthProvider, state: string, redirectTo: string, expiresAt: string, legal?: { privacyVersion: string; termsVersion: string; ageConfirmed: boolean }) {
-    const result = await this.pool.query(
-      `insert into auth_states (provider, state, redirect_to, expires_at, privacy_version, terms_version, age_confirmed)
-       values ($1, $2, $3, $4, $5, $6, $7) returning *`,
+    const result = await this.withAuthApi((client) => client.query(
+      `select * from public.pjsktools_auth_create_state($1,$2,$3,$4,$5,$6,$7)`,
       [provider, state, redirectTo, expiresAt, legal?.privacyVersion ?? null, legal?.termsVersion ?? null, legal?.ageConfirmed ?? false]
-    );
+    ));
     return rowToAuthState(result.rows[0]);
   }
 
   async listDeletionTombstones() {
-    const result = await this.pool.query(`select * from account_deletion_tombstones order by deleted_at`);
+    const result = await this.withComplianceMaintenance((client)=>client.query(`select * from account_deletion_tombstones order by deleted_at`));
     return result.rows.map((row) => ({
       id: row.id,
       userHash: row.user_hash,
@@ -546,95 +551,90 @@ export class PgStore implements AuthStore {
   }
 
   async getLegalAcceptance(userId: string) {
-    const result = await this.pool.query(`select * from legal_acceptances where user_id = $1 order by accepted_at desc limit 1`, [userId]);
+    const result = await this.withComplianceUser(userId,(client)=>client.query(`select * from legal_acceptances where user_id = $1 order by accepted_at desc limit 1`, [userId]));
     return result.rows[0] ? rowToLegalAcceptance(result.rows[0]) : null;
   }
 
   async recordLegalAcceptance(userId: string, input: { privacyVersion: string; termsVersion: string; ageConfirmed: true; source: LegalAcceptance["source"] }) {
-    const result = await this.pool.query(
+    const result = await this.withComplianceUser(userId,(client)=>client.query(
       `insert into legal_acceptances (user_id, privacy_version, terms_version, age_confirmed, source)
        values ($1, $2, $3, true, $4)
        on conflict (user_id, privacy_version, terms_version) do nothing
        returning *`,
       [userId, input.privacyVersion, input.termsVersion, input.source]
-    );
+    ));
     if (result.rows[0]) return rowToLegalAcceptance(result.rows[0]);
-    const existing = await this.pool.query(
+    const existing = await this.withComplianceUser(userId,(client)=>client.query(
       `select * from legal_acceptances where user_id = $1 and privacy_version = $2 and terms_version = $3`,
       [userId, input.privacyVersion, input.termsVersion]
-    );
+    ));
     return rowToLegalAcceptance(existing.rows[0]);
   }
 
   async createAccountDeletionIntent(userId: string, token: string, expiresAt: string) {
-    const result = await this.pool.query(
+    const result = await this.withComplianceUser(userId, (client) => client.query(
       `insert into account_deletion_intents (user_id, token_hash, expires_at) values ($1, $2, $3) returning *`,
       [userId, hashToken(token), expiresAt]
-    );
+    ));
     return rowToDeletionIntent(result.rows[0]);
   }
 
   async consumeAccountDeletionIntent(userId: string, token: string) {
-    const result = await this.pool.query(
+    const result = await this.withComplianceUser(userId, (client) => client.query(
       `update account_deletion_intents set consumed_at = now()
        where id in (select id from account_deletion_intents where user_id = $1 and token_hash = $2
          and consumed_at is null and expires_at > now() limit 1) returning id`,
       [userId, hashToken(token)]
-    );
+    ));
     return Boolean(result.rows[0]);
   }
 
   async consumeAuthState(provider: OAuthProvider, state: string) {
-    const result = await this.pool.query(
-      `delete from auth_states where id in (
-        select id from auth_states where provider = $1 and state = $2 and expires_at > now() limit 1
-      ) returning *`,
+    const result = await this.withAuthApi((client)=>client.query(
+      `select * from public.pjsktools_auth_consume_state($1,$2)`,
       [provider, state]
-    );
+    ));
     return result.rows[0] ? rowToAuthState(result.rows[0]) : null;
   }
 
   async createOAuthHandoff(handoff: string, input: OAuthHandoff, expiresAt: string) {
-    await this.pool.query(
-      `insert into oauth_handoffs (handoff_hash, provider, kind, user_id, oauth_payload, expires_at)
-       values ($1, $2, $3, $4, $5::jsonb, $6)`,
-      [hashToken(handoff), input.oauth.provider, input.kind, input.userId ?? null, JSON.stringify(input.oauth), expiresAt]
-    );
+    const handoffHash=hashToken(handoff);
+    await this.withAuthApi((client)=>client.query(
+      `select public.pjsktools_auth_create_handoff($1,$2,$3,$4,$5::jsonb,$6)`,
+      [handoffHash, input.oauth.provider, input.kind, input.userId ?? null, JSON.stringify(input.oauth), expiresAt]
+    ));
   }
 
   async consumeOAuthHandoff(handoff: string, kind: OAuthHandoffKind, userId?: string) {
-    const result = await this.pool.query(
-      `delete from oauth_handoffs where id in (
-         select id from oauth_handoffs
-         where handoff_hash = $1 and kind = $2 and ($3::uuid is null or user_id = $3) and expires_at > now()
-         limit 1
-       ) returning *`,
-      [hashToken(handoff), kind, userId ?? null]
-    );
+    const handoffHash=hashToken(handoff);
+    const result = await this.withAuthApi((client)=>client.query(
+      `select * from public.pjsktools_auth_consume_handoff($1,$2,$3)`,
+      [handoffHash, kind, userId ?? null]
+    ));
     const row = result.rows[0];
     if (!row) return null;
     return { kind: row.kind, userId: row.user_id ?? undefined, oauth: row.oauth_payload } as OAuthHandoff;
   }
 
   async listFavoriteFolders(userId: string) {
-    const result = await this.pool.query(
+    const result = await this.withAppUser(userId,(client)=>client.query(
       `select folder.*
        from favorite_folders folder
        where folder.user_id = $1
        order by folder.updated_at desc`,
       [userId]
-    );
+    ));
     return result.rows.map(rowToFavoriteFolder);
   }
 
   async createFavoriteFolder(input: Omit<FavoriteFolder, "id" | "createdAt" | "updatedAt">) {
     try {
-      const result = await this.pool.query(
+      const result = await this.withAppUser(input.userId,(client)=>client.query(
         `insert into favorite_folders (user_id, name, description)
          values ($1, trim($2), $3)
          returning *`,
         [input.userId, input.name, input.description ?? null]
-      );
+      ));
       return rowToFavoriteFolder(result.rows[0]);
     } catch (error: any) {
       if (error?.code === "23505") throw new Error("FOLDER_EXISTS");
@@ -644,13 +644,13 @@ export class PgStore implements AuthStore {
 
   async updateFavoriteFolder(userId: string, id: string, patch: Pick<FavoriteFolder, "name"> & { description?: string }) {
     try {
-      const result = await this.pool.query(
+      const result = await this.withAppUser(userId,(client)=>client.query(
         `update favorite_folders
          set name = trim($3), description = $4, updated_at = now()
          where user_id = $1 and id = $2
          returning *`,
         [userId, id, patch.name, patch.description ?? null]
-      );
+      ));
       return result.rows[0] ? rowToFavoriteFolder(result.rows[0]) : null;
     } catch (error: any) {
       if (error?.code === "23505") throw new Error("FOLDER_EXISTS");
@@ -659,9 +659,7 @@ export class PgStore implements AuthStore {
   }
 
   async deleteFavoriteFolder(userId: string, id: string) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
+    return this.withAppUser(userId,async(client)=>{
       const affected = await client.query(
         `select items.favorite_id
          from favorite_folder_items items
@@ -672,18 +670,12 @@ export class PgStore implements AuthStore {
       const result = await client.query(`delete from favorite_folders where user_id = $1 and id = $2`, [userId, id]);
       const favoriteIds = affected.rows.map((row) => row.favorite_id);
       if (favoriteIds.length) await client.query(`update favorites set updated_at = now() where id = any($1::uuid[])`, [favoriteIds]);
-      await client.query("commit");
       return (result.rowCount ?? 0) > 0;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async listFavorites(userId: string) {
-    const result = await this.pool.query(
+    const result = await this.withAppUser(userId,(client)=>client.query(
       `select favorite.*,
         coalesce(array_agg(items.folder_id) filter (where items.folder_id is not null), '{}') as folder_ids
        from favorites favorite
@@ -692,14 +684,12 @@ export class PgStore implements AuthStore {
        group by favorite.id
        order by favorite.updated_at desc`,
       [userId]
-    );
+    ));
     return result.rows.map(rowToFavorite);
   }
 
   async addFavorite(input: Omit<Favorite, "id" | "createdAt" | "updatedAt" | "target">) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
+    return this.withAppUser(input.userId,async(client)=>{
       const folderIds = [...new Set(input.folderIds)];
       if (folderIds.length) {
         const owned = await client.query(
@@ -725,14 +715,9 @@ export class PgStore implements AuthStore {
           [folderId, favoriteId]
         );
       }
-      await client.query("commit");
-      return (await this.listFavorites(input.userId)).find((favorite) => favorite.id === favoriteId)!;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+      const updated=await client.query(`select favorite.*,coalesce(array_agg(items.folder_id) filter(where items.folder_id is not null),'{}') as folder_ids from favorites favorite left join favorite_folder_items items on items.favorite_id=favorite.id where favorite.id=$1 group by favorite.id`,[favoriteId]);
+      return rowToFavorite(updated.rows[0]);
+    });
   }
 
   async updateFavoriteFolders(userId: string, id: string, folderIds: string[]) {
@@ -743,9 +728,7 @@ export class PgStore implements AuthStore {
   async bulkUpdateFavoriteFolders(userId: string, ids: string[], folderIds: string[], mode: "add" | "remove" | "replace") {
     const uniqueIds = [...new Set(ids)];
     const uniqueFolderIds = [...new Set(folderIds)];
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
+    return this.withAppUser(userId,async(client)=>{
       const favorites = await client.query(
         `select id from favorites where user_id = $1 and id = any($2::uuid[]) for update`,
         [userId, uniqueIds]
@@ -778,34 +761,30 @@ export class PgStore implements AuthStore {
         );
       }
       await client.query(`update favorites set updated_at = now() where id = any($1::uuid[])`, [uniqueIds]);
-      await client.query("commit");
-      const updated = await this.listFavorites(userId);
-      return updated.filter((favorite) => uniqueIds.includes(favorite.id));
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+      const updated=await client.query(`select favorite.*,coalesce(array_agg(items.folder_id) filter(where items.folder_id is not null),'{}') as folder_ids from favorites favorite left join favorite_folder_items items on items.favorite_id=favorite.id where favorite.id=any($1::uuid[]) group by favorite.id`,[uniqueIds]);
+      return updated.rows.map(rowToFavorite);
+    });
   }
 
   async deleteFavorite(userId: string, id: string) {
-    const result = await this.pool.query(`delete from favorites where user_id = $1 and id = $2`, [userId, id]);
+    const result = await this.withAppUser(userId,(client)=>client.query(`delete from favorites where user_id = $1 and id = $2`, [userId, id]));
     return (result.rowCount ?? 0) > 0;
   }
 
   async listScores(userId: string) {
-    const result = await this.pool.query(`select * from scores where user_id = $1 order by updated_at desc`, [userId]);
+    const result = await this.withAppUser(userId,(client)=>client.query(`select * from scores where user_id = $1 order by updated_at desc`, [userId]));
     return result.rows.map(rowToScore);
   }
 
   async getScoreById(id: string) {
-    const result = await this.pool.query(`select * from scores where id = $1`, [id]);
+    // Score sharing resolves an opaque UUID and returns one record; use the
+    // ranking/read service rather than fabricating a user's identity.
+    const result = await this.withRankingService((client)=>client.query(`select * from scores where id = $1`, [id]));
     return result.rows[0] ? rowToScore(result.rows[0]) : null;
   }
 
   async upsertScore(input: Omit<ScoreRecord, "id" | "updatedAt"> & { id?: string }) {
-    const result = await this.pool.query(
+    const result = await this.withAppUser(input.userId,(client)=>client.query(
       `insert into scores (id, user_id, region, song_id, difficulty, clear_status, score, target_score, note, updated_at)
        values (coalesce($1, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, now())
        on conflict (id) do update set
@@ -829,12 +808,12 @@ export class PgStore implements AuthStore {
         input.targetScore ?? null,
         input.note ?? null
       ]
-    );
+    ));
     return rowToScore(result.rows[0]);
   }
 
   async deleteScore(userId: string, id: string) {
-    const result = await this.pool.query(`delete from scores where user_id = $1 and id = $2`, [userId, id]);
+    const result = await this.withAppUser(userId,(client)=>client.query(`delete from scores where user_id = $1 and id = $2`, [userId, id]));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -972,12 +951,12 @@ export class PgStore implements AuthStore {
   }
 
   async listDeckConfigs(userId: string) {
-    const result = await this.pool.query(`select * from user_deck_configs where user_id = $1 order by updated_at desc`, [userId]);
+    const result = await this.withAppUser(userId,(client)=>client.query(`select * from user_deck_configs where user_id = $1 order by updated_at desc`, [userId]));
     return result.rows.map(rowToDeckConfig);
   }
 
   async upsertDeckConfig(input: Omit<DeckConfig, "id" | "createdAt" | "updatedAt"> & { id?: string }) {
-    const result = await this.pool.query(
+    const result = await this.withAppUser(input.userId,(client)=>client.query(
       `insert into user_deck_configs (id, user_id, binding_id, region, name, event_id, leader_card_id, card_ids, note)
        values (coalesce($1, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9)
        on conflict (id) do update set
@@ -991,13 +970,13 @@ export class PgStore implements AuthStore {
         updated_at = now()
        returning *`,
       [input.id ?? null, input.userId, input.bindingId ?? null, input.region, input.name, input.eventId ?? null, input.leaderCardId ?? null, input.cardIds, input.note ?? null]
-    );
+    ));
     if (result.rows[0].user_id !== input.userId) throw new Error("DECK_CONFIG_NOT_FOUND");
     return rowToDeckConfig(result.rows[0]);
   }
 
   async deleteDeckConfig(userId: string, id: string) {
-    const result = await this.pool.query(`delete from user_deck_configs where user_id = $1 and id = $2`, [userId, id]);
+    const result = await this.withAppUser(userId,(client)=>client.query(`delete from user_deck_configs where user_id = $1 and id = $2`, [userId, id]));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -1038,9 +1017,10 @@ export class PgStore implements AuthStore {
   }
 
   async saveRankingHistorySamples(inputs: RankingHistoryInput[]) {
+    return this.withRankingService(async (client)=>{
     const result: RankingHistorySample[] = [];
     for (const input of inputs) {
-      const row = await this.pool.query(
+      const row = await client.query(
         `insert into ranking_history_samples
           (region, event_id, sample_type, rank, score, sampled_at, bucket_at, player_name, user_id, leader_card_id, leader_card_image_url, raw_payload, source_metadata)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '{}'::jsonb, $12)
@@ -1072,6 +1052,7 @@ export class PgStore implements AuthStore {
       result.push(rowToRankingHistory(row.rows[0]));
     }
     return result;
+    });
   }
 
   async deleteInventoryCard(userId: string, bindingId: string, cardId: string) {
@@ -1085,7 +1066,7 @@ export class PgStore implements AuthStore {
   }
 
   async listRankingHistory(query: RankingHistoryQuery) {
-    const result = await this.pool.query(
+    const result = await this.withRankingService((client)=>client.query(
       `select * from ranking_history_samples
        where region = $1
         and event_id = $2
@@ -1106,13 +1087,14 @@ export class PgStore implements AuthStore {
         query.windowHours ?? null,
         query.limit ?? 1000
       ]
-    );
+    ));
     return result.rows.map(rowToRankingHistory);
   }
 
   async getIdempotencyRecord(scope: string, key: string) {
-    await this.pool.query(`delete from api_idempotency_records where expires_at <= now()`);
-    const result = await this.pool.query(
+    return this.withIdempotencyService(scope,async(client)=>{
+    await client.query(`delete from api_idempotency_records where expires_at <= now()`);
+    const result = await client.query(
       `select * from api_idempotency_records where scope = $1 and idempotency_key = $2 and expires_at > now()`,
       [scope, key]
     );
@@ -1127,10 +1109,11 @@ export class PgStore implements AuthStore {
       createdAt: new Date(row.created_at).toISOString(),
       expiresAt: new Date(row.expires_at).toISOString()
     } satisfies IdempotencyRecord;
+    });
   }
 
   async saveIdempotencyRecord(record: IdempotencyRecord) {
-    await this.pool.query(
+    await this.withIdempotencyService(record.scope,(client)=>client.query(
       `insert into api_idempotency_records
         (scope, idempotency_key, request_hash, status_code, response_body, created_at, expires_at)
        values ($1, $2, $3, $4, $5, $6, $7)
@@ -1140,23 +1123,21 @@ export class PgStore implements AuthStore {
         expires_at = excluded.expires_at
        where api_idempotency_records.request_hash = excluded.request_hash`,
       [record.scope, record.key, record.requestHash, record.statusCode, JSON.stringify(record.responseBody), record.createdAt, record.expiresAt]
-    );
+    ));
   }
 
   async cleanupIdempotencyRecords() {
-    await this.pool.query(`delete from api_idempotency_records where expires_at <= now()`);
+    // Per-scope cleanup occurs on every idempotency operation; global cleanup
+    // belongs to the separately privileged maintenance job.
   }
 
   async cleanupExpiredData() {
-    await this.pool.query(`delete from email_verification_codes where expires_at < now() - interval '24 hours'`);
-    await this.pool.query(`delete from email_verification_cooldowns where expires_at <= now()`);
-    await this.pool.query(`delete from auth_states where expires_at <= now()`);
-    await this.pool.query(`delete from oauth_handoffs where expires_at <= now()`);
-    await this.pool.query(`delete from auth_sessions where expires_at <= now() or revoked_at < now() - interval '24 hours'`);
-    await this.pool.query(`delete from account_deletion_intents where expires_at <= now() or consumed_at < now() - interval '24 hours'`);
-    await this.pool.query(`delete from account_deletion_tombstones where deleted_at < now() - interval '200 days'`);
+    await this.withAuthApi((client)=>client.query(`select public.pjsktools_auth_cleanup_expired()`).then(()=>undefined));
+    await this.withComplianceMaintenance(async(client)=>{
+      await client.query(`delete from account_deletion_intents where expires_at <= now() or consumed_at < now() - interval '24 hours'`);
+      await client.query(`delete from account_deletion_tombstones where deleted_at < now() - interval '200 days'`);
     await this.cleanupIdempotencyRecords();
-    await this.pool.query(
+    await client.query(
       `insert into ranking_history_minute_rollups
         (region, event_id, sample_type, rank, minute_at, score_min, score_max, score_avg, sample_count)
        select region, event_id, sample_type, rank, date_trunc('minute', sampled_at), min(score), max(score), round(avg(score)), count(*)
@@ -1167,12 +1148,14 @@ export class PgStore implements AuthStore {
         score_max = greatest(ranking_history_minute_rollups.score_max, excluded.score_max),
         score_avg = excluded.score_avg, sample_count = excluded.sample_count`
     );
-    await this.pool.query(`delete from ranking_history_samples where sampled_at < now() - interval '14 days'`);
+    await client.query(`delete from ranking_history_samples where sampled_at < now() - interval '14 days'`);
+    });
   }
 
   async reserveIdempotencyRecord(record: IdempotencyRecord) {
-    await this.pool.query(`delete from api_idempotency_records where expires_at <= now()`);
-    const reserved = await this.pool.query(
+    return this.withIdempotencyService(record.scope,async(client)=>{
+    await client.query(`delete from api_idempotency_records where expires_at <= now()`);
+    const reserved = await client.query(
       `insert into api_idempotency_records
         (scope, idempotency_key, request_hash, status_code, response_body, created_at, expires_at)
        values ($1, $2, $3, 0, '{}'::jsonb, $4, $5)
@@ -1187,7 +1170,10 @@ export class PgStore implements AuthStore {
       [record.scope, record.key, record.requestHash, record.createdAt, record.expiresAt]
     );
     if (reserved.rows[0]) return "reserved" as const;
-    return (await this.getIdempotencyRecord(record.scope, record.key)) ?? "reserved";
+    const current=await client.query(`select * from api_idempotency_records where scope=$1 and idempotency_key=$2 and expires_at>now()`,[record.scope,record.key]);
+    const row=current.rows[0];
+    return row ? {scope:row.scope,key:row.idempotency_key,requestHash:row.request_hash,statusCode:Number(row.status_code),responseBody:row.response_body,createdAt:new Date(row.created_at).toISOString(),expiresAt:new Date(row.expires_at).toISOString()} : "reserved";
+    });
   }
 
 }
