@@ -5,7 +5,7 @@ describe.sequential("public API contracts", () => {
   let store: typeof import("./store.js")["store"];
   let token = "";
   let userId = "";
-  let shareScoreId = "";
+  const shareProfileId = "123456789012345678";
 
   beforeAll(async () => {
     process.env.PJSKTOOLS_FORCE_MEMORY_STORE = "true";
@@ -13,18 +13,19 @@ describe.sequential("public API contracts", () => {
     const appModule = await import("./app.js");
     const storeModule = await import("./store.js");
     store = storeModule.store;
-    app = await appModule.buildApp();
+    app = await appModule.buildApp({
+      shareCardProfileResolver: async (region, profileUserId) => ({
+        region,
+        userId: profileUserId,
+        nickname: "API Contract Test Player",
+        rank: 321,
+        comment: "Deterministic share-card fixture",
+        updatedAt: new Date(0).toISOString(),
+        source: "api-contract-test"
+      })
+    });
     const user = await store.createUser(`contract-${Date.now()}@example.com`, "Contract123!");
     userId = user.id;
-    shareScoreId = (await store.upsertScore({
-      userId,
-      region: "jp",
-      songId: "1",
-      difficulty: "expert",
-      clearStatus: "fc",
-      score: 987654,
-      note: "API contract share-card rendering test"
-    })).id;
     token = app.jwt.sign({ sub: user.id, email: user.email, tokenType: "access" });
   }, 30_000);
 
@@ -99,7 +100,7 @@ describe.sequential("public API contracts", () => {
   });
 
   it("renders an actual PNG share card", async () => {
-    const response = await app.inject({ method: "GET", url: `/api/share/cards/score/${shareScoreId}.png?region=jp` });
+    const response = await app.inject({ method: "GET", url: `/api/share/cards/profile/${shareProfileId}.png?region=jp` });
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toBe("image/png");
     expect(response.rawPayload.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
