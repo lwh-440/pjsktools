@@ -1,6 +1,6 @@
 import { RefreshCw, Search, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router";
 import { apiGetWithSignal } from "../api";
 import { Pagination } from "../components/ui";
 

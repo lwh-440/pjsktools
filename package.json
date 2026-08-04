@@ -2,10 +2,30 @@
   "name": "pjsktools",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.22.0"
+  },
   "workspaces": [
     "apps/api",
     "apps/web"
   ],
+  "overrides": {
+    "@fastify/ajv-compiler": {
+      "fast-uri": "3.1.5"
+    },
+    "ajv": {
+      "fast-uri": "3.1.5"
+    },
+    "fast-json-stringify@6": {
+      "fast-uri": "3.1.5"
+    },
+    "fastify": {
+      "find-my-way": "9.7.0"
+    },
+    "vite": {
+      "postcss": "8.5.23"
+    }
+  },
   "scripts": {
     "dev": "npm run dev -w apps/api",
     "dev:web": "npm run dev -w apps/web",

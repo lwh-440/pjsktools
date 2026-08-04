@@ -6,7 +6,7 @@ import {
   UserRound,
   Wand2
 } from "lucide-react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiDelete, apiGet, apiPost } from "../api";
 import { useAuth } from "../AuthContext";
