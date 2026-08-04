@@ -696,7 +696,10 @@ try {
   // Pool clients can receive the expected administrator-termination event
   // while the isolated database is being removed. Keep it from surfacing as
   // an unhandled EventEmitter error during cleanup.
-  for(const pool of [runtimePool,authRuntimePool,complianceRuntimePool,harukiRuntimePool,migrationPool,adminPool]){
+  for(const pool of [
+    runtimePool,authRuntimePool,complianceRuntimePool,harukiRuntimePool,migrationPool,adminPool,
+    store?.pool,store?.authPool,store?.compliancePool
+  ]){
     pool?.on("error",()=>undefined);
   }
   await cleanup("close PgStore pools",()=>store?.close());
