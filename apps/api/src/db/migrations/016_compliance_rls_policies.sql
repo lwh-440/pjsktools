@@ -226,8 +226,8 @@ grant execute on function public.pjsktools_lock_account_deletion_identity(uuid)
   to pjsktools_compliance_user;
 
 -- Transfer ownership only after every policy, privilege and function change is
--- complete. The migration LOGIN is NOINHERIT, so moving ownership earlier in
--- this transaction would correctly remove its direct DDL access mid-migration.
+-- complete. The deployment-only migration LOGIN inherits only the fixed DDL
+-- roles; keeping ownership transfer last preserves a clear privilege boundary.
 alter table legal_acceptances owner to pjsktools_compliance_owner;
 alter table account_deletion_intents owner to pjsktools_compliance_owner;
 alter table account_deletion_tombstones owner to pjsktools_compliance_owner;

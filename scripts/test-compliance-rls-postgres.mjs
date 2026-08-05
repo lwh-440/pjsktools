@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { lstat, readdir, readFile } from "node:fs/promises";
 import { mkdir, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -13,11 +13,15 @@ const dockerCommand=process.platform==="win32"?"docker.exe":"docker";
 const quoteIdentifier=(value)=>`"${value.replaceAll('"','""')}"`;
 const requiredConfirmation="isolated-only";
 const managementUrlValue=process.env.PJSKTOOLS_POSTGRES_TEST_URL;
+const capabilityFileValue=process.env.PJSKTOOLS_POSTGRES_TEST_CAPABILITY_FILE;
 if(!managementUrlValue){
   throw new Error("PJSKTOOLS_POSTGRES_TEST_URL is required and must point to an isolated cluster management database");
 }
 if(process.env.PJSKTOOLS_ALLOW_DESTRUCTIVE_POSTGRES_TESTS!==requiredConfirmation){
   throw new Error(`PJSKTOOLS_ALLOW_DESTRUCTIVE_POSTGRES_TESTS must equal ${requiredConfirmation}`);
+}
+if(!capabilityFileValue){
+  throw new Error("PJSKTOOLS_POSTGRES_TEST_CAPABILITY_FILE is required");
 }
 if(process.env.NODE_ENV==="production"){
   throw new Error("destructive PostgreSQL integration tests are forbidden when NODE_ENV=production");
@@ -25,6 +29,28 @@ if(process.env.NODE_ENV==="production"){
 const marker=process.env.PJSKTOOLS_POSTGRES_TEST_MARKER??"";
 if(!/^[a-zA-Z0-9_]{12,24}$/.test(marker)){
   throw new Error("PJSKTOOLS_POSTGRES_TEST_MARKER must be a unique 12-24 character alphanumeric/underscore marker");
+}
+const capabilityFile=path.resolve(capabilityFileValue);
+const capabilityStat=await lstat(capabilityFile);
+if(!capabilityStat.isFile()||capabilityStat.isSymbolicLink()){
+  throw new Error("PostgreSQL test capability must be a regular non-symlink file");
+}
+if(process.platform!=="win32"&&(capabilityStat.mode&0o077)!==0){
+  throw new Error("PostgreSQL test capability permissions are too broad");
+}
+const capability=JSON.parse(await readFile(capabilityFile,"utf8"));
+if(capability.marker!==marker||capability.managementUrl!==managementUrlValue||
+   capability.confirmation!==requiredConfirmation){
+  throw new Error("PostgreSQL test capability does not match this isolated run");
+}
+if(process.platform!=="win32"&&capabilityStat.uid!==process.getuid()){
+  throw new Error("PostgreSQL test capability has an unexpected owner");
+}
+if(process.platform!=="win32"&&(capabilityStat.mode&0o777)!==0o600){
+  throw new Error("PostgreSQL test capability permissions must be exactly 0600");
+}
+if(typeof capability.containerId!=="string"||!/^[a-f0-9]{64}$/.test(capability.containerId)){
+  throw new Error("PostgreSQL test capability has an invalid container ID");
 }
 const managementUrl=new URL(managementUrlValue);
 if(managementUrl.search!==""||managementUrl.hash!==""){
@@ -48,6 +74,28 @@ if(!loopbackHosts.has(normalizedHost)){
      process.env.PJSKTOOLS_CONFIRM_EPHEMERAL_POSTGRES_CLUSTER!=="yes-drop-databases-and-roles"){
     throw new Error("non-loopback test clusters require both isolated CI cluster confirmations");
   }
+}
+const {stdout:inspectionOutput}=await execFileAsync(dockerCommand,["inspect",capability.containerId],{
+  env:process.env,maxBuffer:2*1024*1024
+});
+const inspections=JSON.parse(inspectionOutput);
+if(!Array.isArray(inspections)||inspections.length!==1){
+  throw new Error("PostgreSQL test container inspection was not unique");
+}
+const inspection=inspections[0];
+const binding=inspection?.NetworkSettings?.Ports?.["5432/tcp"];
+const labels=inspection?.Config?.Labels??{};
+const tmpfs=inspection?.HostConfig?.Tmpfs??{};
+if(inspection?.Id!==capability.containerId||inspection?.State?.Running!==true||
+   inspection?.Config?.Image!=="postgres:16-alpine"||
+   labels["pjsktools.purpose"]!=="isolated-compliance-test"||
+   !Object.hasOwn(tmpfs,"/var/lib/postgresql/data")||
+   !Array.isArray(binding)||binding.length!==1||binding[0]?.HostIp!=="127.0.0.1"||
+   !/^\d+$/.test(binding[0]?.HostPort??"")||Number(binding[0].HostPort)===5432){
+  throw new Error("PostgreSQL test capability is not bound to the required disposable container");
+}
+if(normalizedHost!=="127.0.0.1"||Number(managementUrl.port)!==Number(binding[0].HostPort)){
+  throw new Error("PostgreSQL test URL does not match the inspected container loopback binding");
 }
 const controlPool=new Pool({connectionString:managementUrl.toString(),max:1,idleTimeoutMillis:0});
 const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
@@ -315,6 +363,22 @@ try {
   const disabledHaruki=await adminPool.query(`select rolcanlogin,rolpassword is null as password_cleared from pg_authid where rolname=$1`,[harukiRuntimeRole]);
   assert.equal(disabledHaruki.rowCount,0,"fresh disabled bootstrap must not create a Haruki LOGIN");
   await runBootstrap(runtimePassword);
+  const runtimeProperties=await adminPool.query(`select rolname,rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolinherit,rolreplication,rolbypassrls
+    from pg_roles where rolname=any($1::text[]) order by rolname`,[[runtimeRole,authRuntimeRole,complianceRuntimeRole,harukiRuntimeRole]]);
+  assert.equal(runtimeProperties.rowCount,4);
+  for(const role of runtimeProperties.rows){
+    assert.equal(role.rolcanlogin,true);
+    assert.equal(role.rolsuper,false);
+    assert.equal(role.rolcreatedb,false);
+    assert.equal(role.rolcreaterole,false);
+    assert.equal(role.rolinherit,false);
+    assert.equal(role.rolreplication,false);
+    assert.equal(role.rolbypassrls,false);
+  }
+  const runtimeOwners=await adminPool.query(`select r.rolname,count(objects.owner)::int as owned from pg_roles r left join (
+      select n.nspowner as owner from pg_namespace n union all select c.relowner from pg_class c union all select p.proowner from pg_proc p
+    ) objects on objects.owner=r.oid where r.rolname=any($1::text[]) group by r.rolname order by r.rolname`,[[runtimeRole,authRuntimeRole,complianceRuntimeRole,harukiRuntimeRole]]);
+  assert.ok(runtimeOwners.rows.every(row=>row.owned===0),"runtime LOGINs must not own schemas, relations, sequences, or functions");
   await adminPool.query(`grant pjsktools_compliance_user to ${runtimeRole}`);
   await adminPool.query(`grant pjsktools_app_user to ${authRuntimeRole}`);
   await adminPool.query(`grant pjsktools_auth_api to ${complianceRuntimeRole}`);
@@ -329,8 +393,8 @@ try {
   await exactMemberships(complianceRuntimeRole,['pjsktools_compliance_maintenance','pjsktools_compliance_user']);
   await exactMemberships(harukiRuntimeRole,['pjsktools_haruki_user','pjsktools_haruki_worker']);
   await runBootstrap("");
-  const disabledExistingHaruki=await adminPool.query(`select rolcanlogin,rolpassword is null as password_cleared from pg_authid where rolname=$1`,[harukiRuntimeRole]);
-  assert.deepEqual(disabledExistingHaruki.rows[0],{rolcanlogin:false,password_cleared:true});
+  const disabledExistingHaruki=await adminPool.query(`select rolcanlogin,rolpassword is null as password_cleared,rolreplication from pg_authid where rolname=$1`,[harukiRuntimeRole]);
+  assert.deepEqual(disabledExistingHaruki.rows[0],{rolcanlogin:false,password_cleared:true,rolreplication:false});
   await exactMemberships(harukiRuntimeRole,[]);
   await runBootstrap(runtimePassword);
   await exactMemberships(harukiRuntimeRole,['pjsktools_haruki_user','pjsktools_haruki_worker']);

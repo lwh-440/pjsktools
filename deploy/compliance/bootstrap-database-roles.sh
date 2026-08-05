@@ -111,19 +111,19 @@ declare
   parent_role text;
 begin
   if not exists (select 1 from pg_roles where rolname = app_role) then
-    execute format('create role %I login password %L nosuperuser nocreatedb nocreaterole noinherit nobypassrls', app_role, app_password);
+    execute format('create role %I login password %L nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls', app_role, app_password);
   else
-    execute format('alter role %I login password %L nosuperuser nocreatedb nocreaterole noinherit nobypassrls', app_role, app_password);
+    execute format('alter role %I login password %L nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls', app_role, app_password);
   end if;
   if not exists (select 1 from pg_roles where rolname = compliance_role) then
-    execute format('create role %I login password %L nosuperuser nocreatedb nocreaterole noinherit nobypassrls', compliance_role, compliance_password);
+    execute format('create role %I login password %L nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls', compliance_role, compliance_password);
   else
-    execute format('alter role %I login password %L nosuperuser nocreatedb nocreaterole noinherit nobypassrls', compliance_role, compliance_password);
+    execute format('alter role %I login password %L nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls', compliance_role, compliance_password);
   end if;
   if not exists (select 1 from pg_roles where rolname = auth_role) then
-    execute format('create role %I login password %L nosuperuser nocreatedb nocreaterole noinherit nobypassrls', auth_role, auth_password);
+    execute format('create role %I login password %L nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls', auth_role, auth_password);
   else
-    execute format('alter role %I login password %L nosuperuser nocreatedb nocreaterole noinherit nobypassrls', auth_role, auth_password);
+    execute format('alter role %I login password %L nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls', auth_role, auth_password);
   end if;
 
   for parent_role in select parent.rolname from pg_auth_members m join pg_roles parent on parent.oid=m.roleid join pg_roles member on member.oid=m.member where member.rolname=app_role loop
@@ -140,9 +140,9 @@ begin
   execute format('grant pjsktools_compliance_user, pjsktools_compliance_maintenance to %I', compliance_role);
   if haruki_password <> '' then
     if not exists (select 1 from pg_roles where rolname = haruki_role) then
-      execute format('create role %I login password %L nosuperuser nocreatedb nocreaterole noinherit nobypassrls', haruki_role, haruki_password);
+      execute format('create role %I login password %L nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls', haruki_role, haruki_password);
     else
-      execute format('alter role %I login password %L nosuperuser nocreatedb nocreaterole noinherit nobypassrls', haruki_role, haruki_password);
+      execute format('alter role %I login password %L nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls', haruki_role, haruki_password);
     end if;
     for parent_role in select parent.rolname from pg_auth_members m join pg_roles parent on parent.oid=m.roleid join pg_roles member on member.oid=m.member where member.rolname=haruki_role loop
       execute format('revoke %I from %I',parent_role,haruki_role);
@@ -152,7 +152,7 @@ begin
     for parent_role in select parent.rolname from pg_auth_members m join pg_roles parent on parent.oid=m.roleid join pg_roles member on member.oid=m.member where member.rolname=haruki_role loop
       execute format('revoke %I from %I',parent_role,haruki_role);
     end loop;
-    execute format('alter role %I nologin password null nosuperuser nocreatedb nocreaterole noinherit nobypassrls',haruki_role);
+    execute format('alter role %I nologin password null nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls',haruki_role);
   end if;
 end
 $bootstrap$;
@@ -165,6 +165,12 @@ verify_runtime_login() {
   actual_memberships="$(psql "$url" -X -v ON_ERROR_STOP=1 -Atc \
     "select coalesce(string_agg(parent.rolname, ',' order by parent.rolname),'') from pg_auth_members membership join pg_roles parent on parent.oid=membership.roleid join pg_roles member on member.oid=membership.member where member.rolname=current_user")"
   [[ "$actual_memberships" == "$expected_memberships" ]] || { echo "runtime role membership verification failed for $expected_role" >&2; exit 1; }
+  psql "$url" -X -v ON_ERROR_STOP=1 -Atc \
+    "select case when rolcanlogin and not rolsuper and not rolcreatedb and not rolcreaterole and not rolinherit and not rolreplication and not rolbypassrls then 0 else 1 end from pg_roles where rolname=current_user" \
+    | grep -qx '0' || { echo "runtime role has forbidden attributes: $expected_role" >&2; exit 1; }
+  psql "$url" -X -v ON_ERROR_STOP=1 -Atc \
+    "select count(*) from (select n.oid from pg_namespace n join pg_roles r on r.oid=n.nspowner where r.rolname=current_user union all select c.oid from pg_class c join pg_roles r on r.oid=c.relowner where r.rolname=current_user union all select p.oid from pg_proc p join pg_roles r on r.oid=p.proowner where r.rolname=current_user) owned" \
+    | grep -qx '0' || { echo "runtime role unexpectedly owns database objects: $expected_role" >&2; exit 1; }
   target="$(psql "$url" -X -v ON_ERROR_STOP=1 -Atc "select current_database() || '|' || coalesce(inet_server_addr()::text,'local') || '|' || inet_server_port()")"
   admin_target="$(psql "$POSTGRES_ADMIN_URL" -X -v ON_ERROR_STOP=1 -Atc "select current_database() || '|' || coalesce(inet_server_addr()::text,'local') || '|' || inet_server_port()")"
   [[ "$target" == "$admin_target" ]] || { echo "runtime URL does not target the migrated database" >&2; exit 1; }
