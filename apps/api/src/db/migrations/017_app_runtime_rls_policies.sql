@@ -206,7 +206,7 @@ create policy user_player_data_haruki_worker on user_player_data for all to pjsk
  using (true) with check (true);
 
 -- Hand DDL custody to the fixed NOLOGIN owner only after all grants and RLS
--- policies are complete; the migration LOGIN intentionally uses NOINHERIT.
+-- policies are complete; the deployment LOGIN inherits only fixed DDL roles.
 do $$
 declare table_name text;
 begin

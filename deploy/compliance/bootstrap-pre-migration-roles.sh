@@ -32,6 +32,7 @@ export PGAUTH_RUNTIME_ROLE="$AUTH_RUNTIME_ROLE"
 export PGCOMPLIANCE_RUNTIME_ROLE="$COMPLIANCE_RUNTIME_ROLE"
 
 psql "$POSTGRES_ADMIN_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+begin;
 \getenv migration_role PGDATABASE_MIGRATION_ROLE
 \getenv migration_password PGDATABASE_MIGRATION_PASSWORD
 \getenv app_runtime_role PGAPP_RUNTIME_ROLE
@@ -197,6 +198,7 @@ begin
   end loop;
 end
 $bootstrap$;
+commit;
 SQL
 
 admin_role="$(psql "$POSTGRES_ADMIN_URL" -X -v ON_ERROR_STOP=1 -Atqc 'select current_user')"

@@ -8,18 +8,6 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,14 +23,46 @@ jobs:
       - run: npm run build -w apps/api
       - run: npm run test -w apps/api
       - name: PostgreSQL runtime role and RLS integration
-        run: npm run test:postgres:compliance-rls
-        env:
-          NODE_ENV: test
-          PJSKTOOLS_POSTGRES_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
-          PJSKTOOLS_ALLOW_DESTRUCTIVE_POSTGRES_TESTS: isolated-only
-          PJSKTOOLS_POSTGRES_TEST_MARKER: gha_${{ github.run_id }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          suffix="$(openssl rand -hex 6)"
+          container="pjsktools-pg16-ci-$suffix"
+          password="$(openssl rand -hex 24)"
+          marker="gha_${suffix}"
+          capability="$(mktemp)"
+          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; rm -f "$capability"; }
+          trap cleanup EXIT
+          container_id="$(docker run -d --rm --name "$container" \
+            --label pjsktools.purpose=isolated-compliance-test \
+            --tmpfs /var/lib/postgresql/data:rw,noexec,nosuid,size=1g \
+            -p 127.0.0.1::5432 -e POSTGRES_PASSWORD="$password" -e POSTGRES_DB=postgres \
+            postgres:16-alpine)"
+          port="$(docker inspect -f '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}' "$container_id")"
+          url="postgresql://postgres:${password}@127.0.0.1:${port}/postgres"
+          printf '{"marker":"%s","managementUrl":"%s","confirmation":"isolated-only","containerId":"%s"}\n' \
+            "$marker" "$url" "$container_id" >"$capability"
+          chmod 0600 "$capability"
+          ready=false
+          for attempt in $(seq 1 60); do
+            if docker exec "$container_id" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != true ]]; then
+            docker inspect -f 'running={{.State.Running}} status={{.State.Status}} exit={{.State.ExitCode}}' "$container_id" >&2 || true
+            echo "Isolated PostgreSQL service did not become ready within 60 seconds." >&2
+            exit 1
+          fi
+          NODE_ENV=test PJSKTOOLS_POSTGRES_TEST_URL="$url" \
+            PJSKTOOLS_ALLOW_DESTRUCTIVE_POSTGRES_TESTS=isolated-only \
+            PJSKTOOLS_POSTGRES_TEST_MARKER="$marker" \
+            PJSKTOOLS_POSTGRES_TEST_CAPABILITY_FILE="$capability" \
+            npm run test:postgres:compliance-rls
       - name: Validate database bootstrap shell syntax
-        run: bash -n deploy/compliance/bootstrap-database-roles.sh
+        run: bash -n deploy/compliance/bootstrap-pre-migration-roles.sh deploy/compliance/bootstrap-database-roles.sh
       - run: node apps/api/dist/exportOpenApi.js
       - name: Verify committed OpenAPI
         run: git diff --exit-code -- apps/api/openapi/openapi.json
