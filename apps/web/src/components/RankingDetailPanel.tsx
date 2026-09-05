@@ -2,7 +2,7 @@ import { ArtImage } from "./ui";
 
 export type RankingTracePoint = { timestamp: number; userId?: string; score: number; rank: number };
 export type RankingEntry = {
-  rank: number; userId: string; name: string; playerName?: string; score: number; updatedAt?: string; hourlyGrowth?: number;
+  rank: number; userId: string; name: string; playerName?: string; profileWord?: string; score: number; updatedAt?: string; hourlyGrowth?: number;
   cardId?: number; leaderCardId?: number; cardLevel?: number; leaderCardLevel?: number; cardMasterRank?: number; leaderCardMasterRank?: number;
   cardDefaultImage?: string; leaderCardDefaultImage?: string; leaderCardImageUrl?: string; leaderCardImageCandidates?: string[];
   leaderCharacterImageCandidates?: string[]; leaderAssetStatus?: "matched" | "card-master-missing" | "asset-unavailable";

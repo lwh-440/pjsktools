@@ -1698,7 +1698,7 @@ export function App() {
             {filteredRanking.map((entry) => (
               <button key={`${region}:${rankingBoard}:${worldLinkCharacterId ?? "overall"}:${entry.userId || entry.rank}`} type="button" className="ranking-row" onClick={() => openRankingDetail(entry.rank)}>
                 <strong>#{entry.rank}</strong>
-                <span className="ranking-player-cell"><ArtImage src={entry.leaderCardImageUrl} srcCandidates={[...(entry.leaderCardImageCandidates ?? []), ...(entry.leaderCharacterImageCandidates ?? [])]} label={`${entry.playerName ?? entry.name} 当前队长`} variant="avatar" eager={entry.rank <= 10} /><span>{entry.playerName ?? entry.name}<small>{entry.userId}</small></span></span>
+                <span className="ranking-player-cell"><ArtImage src={entry.leaderCardImageUrl} srcCandidates={[...(entry.leaderCardImageCandidates ?? []), ...(entry.leaderCharacterImageCandidates ?? [])]} label={`${entry.playerName ?? entry.name} 当前队长`} variant="avatar" eager={entry.rank <= 10} /><span>{entry.playerName ?? entry.name}<small>{entry.profileWord || "暂无公开签名"}</small></span></span>
                 <b>{formatNumber(entry.score)}</b><em>{entry.hourlyGrowth ? `+${formatNumber(entry.hourlyGrowth)}/h` : "-"}</em><small>{formatDate(entry.updatedAt)}</small>
               </button>
             ))}

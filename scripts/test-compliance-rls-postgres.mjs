@@ -638,6 +638,61 @@ try {
   const { PgStore } = await import("../apps/api/dist/pgStore.js");
   store = new PgStore(runtimeUrl.toString(), complianceRuntimeUrl.toString(), authRuntimeUrl.toString());
   await store.assertRuntimeRoleSafety();
+  const scoreId=randomUUID();
+  await store.upsertScore({
+    id:scoreId,userId:userA,region:"jp",songId:"score-song-a",difficulty:"expert",
+    clearStatus:"clear",score:123,targetScore:456,note:"original score"
+  });
+  const updatedScore=await store.upsertScore({
+    id:scoreId,userId:userA,region:"jp",songId:"score-song-b",difficulty:"master",
+    clearStatus:"fc",score:789,targetScore:1000,note:"updated score"
+  });
+  assert.equal(updatedScore.userId,userA);
+  assert.equal(updatedScore.score,789);
+  const scoreSnapshot=(await adminPool.query(
+    `select user_id, region, song_id, difficulty, clear_status, score, target_score, note
+     from scores where id = $1`,
+    [scoreId]
+  )).rows[0];
+  assert.ok(scoreSnapshot);
+  await expectRejected(()=>store.upsertScore({
+    id:scoreId,userId:userB,region:"en",songId:"cross-user-score",difficulty:"easy",
+    clearStatus:"ap",score:1,targetScore:2,note:"cross-user score"
+  }));
+  const scoreAfterCrossUserWrite=(await adminPool.query(
+    `select user_id, region, song_id, difficulty, clear_status, score, target_score, note
+     from scores where id = $1`,
+    [scoreId]
+  )).rows[0];
+  assert.deepEqual(scoreAfterCrossUserWrite,scoreSnapshot);
+
+  const deckId=randomUUID();
+  await store.upsertDeckConfig({
+    id:deckId,userId:userA,region:"jp",name:"original deck",eventId:"event-a",
+    leaderCardId:"leader-a",cardIds:["1","2","3"],note:"original deck"
+  });
+  const updatedDeck=await store.upsertDeckConfig({
+    id:deckId,userId:userA,region:"en",name:"updated deck",eventId:"event-b",
+    leaderCardId:"leader-b",cardIds:["4","5"],note:"updated deck"
+  });
+  assert.equal(updatedDeck.userId,userA);
+  assert.equal(updatedDeck.name,"updated deck");
+  const deckSnapshot=(await adminPool.query(
+    `select user_id, binding_id, region, name, event_id, leader_card_id, card_ids, note
+     from user_deck_configs where id = $1`,
+    [deckId]
+  )).rows[0];
+  assert.ok(deckSnapshot);
+  await expectRejected(()=>store.upsertDeckConfig({
+    id:deckId,userId:userB,region:"kr",name:"cross-user deck",eventId:"event-c",
+    leaderCardId:"leader-c",cardIds:["6"],note:"cross-user deck"
+  }));
+  const deckAfterCrossUserWrite=(await adminPool.query(
+    `select user_id, binding_id, region, name, event_id, leader_card_id, card_ids, note
+     from user_deck_configs where id = $1`,
+    [deckId]
+  )).rows[0];
+  assert.deepEqual(deckAfterCrossUserWrite,deckSnapshot);
   const handoffUser=await store.createOAuthUser({
     provider:"qq",
     providerUserId:`handoff-user-${suffix}`,
@@ -745,6 +800,7 @@ try {
         "missing, malformed and anonymous identities denied",
         "NOLOGIN table owner cannot bypass FORCE RLS",
         "maintenance role restricted to retention windows",
+        "PgStore score and deck upserts reject cross-user UUID collisions",
         "OAuth handoff and state concurrent consumption is exactly once",
         "PgStore account deletion and tombstone are atomic",
         "PgStore account deletion rolls back on failure"
