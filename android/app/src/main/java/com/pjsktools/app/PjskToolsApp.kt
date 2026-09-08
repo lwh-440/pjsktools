@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -194,16 +195,24 @@ fun PjskToolsApp(
                         }
                         entries.forEach { item ->
                             item {
-                                NavigationDrawerItem(
-                                    label = { Text(item.label) },
-                                    selected = section == item,
-                                    onClick = { open(item) },
-                                    colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f),
-                                        selectedTextColor = androidx.compose.ui.graphics.Color.White,
-                                        unselectedTextColor = androidx.compose.ui.graphics.Color(0xFFCBD8DC)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        Modifier.width(3.dp).height(32.dp).background(
+                                            if (section == item) SekaiPink else androidx.compose.ui.graphics.Color.Transparent
+                                        )
                                     )
-                                )
+                                    NavigationDrawerItem(
+                                        label = { Text(item.label) },
+                                        selected = section == item,
+                                        onClick = { open(item) },
+                                        modifier = Modifier.weight(1f),
+                                        colors = NavigationDrawerItemDefaults.colors(
+                                            selectedContainerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f),
+                                            selectedTextColor = androidx.compose.ui.graphics.Color.White,
+                                            unselectedTextColor = androidx.compose.ui.graphics.Color(0xFFCBD8DC)
+                                        )
+                                    )
+                                }
                             }
                         }
                     }

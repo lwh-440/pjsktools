@@ -1,5 +1,6 @@
 package com.pjsktools.app.core
 
+import com.pjsktools.app.feature.shell.settingErrorMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
@@ -69,5 +70,15 @@ class ApiOriginTest {
     @Test fun debugDefaultsToEmulatorAndAllowsLocalHttp() {
         assertEquals(ApiOrigin.DEBUG_EMULATOR_DEFAULT, ApiOrigin.resolve(null, "", true).origin)
         assertEquals(ApiOrigin.DEBUG_EMULATOR_DEFAULT, ApiOrigin.resolve(null, ApiOrigin.DEBUG_EMULATOR_DEFAULT, true).origin)
+    }
+
+    @Test fun settingsExplainCorrectableOriginInputProblems() {
+        fun messageFor(value: String) = runCatching { ApiOrigin.normalize(value, false) }
+            .exceptionOrNull()?.message.let(::settingErrorMessage)
+
+        assertEquals("服务器地址不能包含账号或密码。", messageFor("https://user:pass@api.example"))
+        assertEquals("服务器地址不能包含 ? 参数或 # 片段。", messageFor("https://api.example?region=jp"))
+        assertEquals("请只填写协议、域名和可选端口，不要附加路径。", messageFor("https://api.example/v1"))
+        assertEquals("远程服务器请使用 HTTPS；开发时仅允许本机或模拟器使用 HTTP。", messageFor("http://api.example"))
     }
 }

@@ -62,6 +62,8 @@ fun CatalogFeatureScreen(
     var costumeFilters by remember { mutableStateOf(CostumeFilters()) }
     var costumeFiltersExpanded by rememberSaveable { mutableStateOf(false) }
     var pageData by remember { mutableStateOf<CatalogPage?>(null) }
+    var catalogResultGeneration by remember { mutableIntStateOf(0) }
+    var technicalDetailsExpanded by remember(catalogResultGeneration) { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selectedItem by remember { mutableStateOf<CatalogItem?>(null) }
@@ -95,6 +97,7 @@ fun CatalogFeatureScreen(
             val result = repository.catalog(region, type, query, page, pageSize, costumeFilters)
             currentCoroutineContext().ensureActive()
             pageData = result
+            catalogResultGeneration++
             loading = false
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -224,7 +227,11 @@ fun CatalogFeatureScreen(
                     loading -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator() }
                     error != null -> ErrorCard(error.orEmpty()) { reloadKey++ }
                     else -> pageData?.let { data ->
-                        Text(listOfNotNull("共 ${data.total} 项", data.sourceStatus?.let { "数据状态：$it" }, data.syncedAt?.let { "同步：$it" }, data.masterVersion?.let { "版本：$it" }, data.source?.let { "来源：$it" }, data.unavailableReason).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                        CatalogDataStatus(
+                            data = data,
+                            technicalDetailsExpanded = technicalDetailsExpanded,
+                            onToggleTechnicalDetails = { technicalDetailsExpanded = !technicalDetailsExpanded }
+                        )
                     }
                 }
             }
@@ -288,9 +295,9 @@ private fun CatalogItemCard(baseUrl: String, item: CatalogItem, onClick: () -> U
                 aspectRatio = catalogListImageAspectRatio(item.type),
                 contentScale = catalogListContentScale(item.type)
             )
-            Text(item.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            item.subtitle?.let { Text(it) }
-            Text("ID ${item.id}", style = MaterialTheme.typography.bodySmall)
+            Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            CatalogItemMetadata(item)
+            Text("编号 ${item.id}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -338,15 +345,12 @@ private fun DetailContent(
     onNavigateRelated: (CatalogNavigationTarget) -> Unit
 ) {
     var selectedChart by remember(detail.item.id) { mutableStateOf<ChartAsset?>(null) }
-    detail.item.description?.let { Text(it) }
-    if (detail.item.startAt != null || detail.item.endAt != null) {
-        Text("开放时间：${detail.item.startAt ?: "-"} ～ ${detail.item.endAt ?: "-"}")
-    }
     when (detail) {
         is SongCatalogDetail -> {
             RemoteCatalogImage(baseUrl, detail.assetUrls, detail.item.title, aspectRatio = 1f, contentScale = ContentScale.Crop)
             Text(listOfNotNull(detail.unit, detail.durationSeconds?.let { "${it}s" }, detail.bpm?.let { "BPM $it" }).joinToString(" · "))
             if (detail.categories.isNotEmpty()) Text("分类：${detail.categories.joinToString(" / ")}")
+            DetailDescription(detail.item)
             SectionTitle("谱面")
             detail.difficulties.forEach { difficulty ->
                 val chart = detail.charts.firstOrNull { it.difficulty.equals(difficulty.difficulty, ignoreCase = true) }
@@ -380,9 +384,9 @@ private fun DetailContent(
             RelatedItems("演唱版本", detail.vocals, onNavigateRelated)
         }
         is CardCatalogDetail -> {
-            Text(listOfNotNull(detail.character, detail.rarity?.let { "星级 $it" }, detail.attribute).joinToString(" · "))
-            SectionTitle("特训前")
             RemoteCatalogImage(baseUrl, detail.normalImageCandidates, "${detail.item.title} 特训前", aspectRatio = 2338f / 1440f)
+            CatalogItemMetadata(detail.item, character = detail.character, attribute = detail.attribute, rarity = detail.rarity?.toString())
+            DetailDescription(detail.item)
             if ((detail.rarity ?: 0) >= 3) {
                 SectionTitle("特训后")
                 RemoteCatalogImage(baseUrl, detail.afterTrainingImageCandidates, "${detail.item.title} 特训后", aspectRatio = 2338f / 1440f)
@@ -397,16 +401,17 @@ private fun DetailContent(
                 baseUrl, detail.assetUrls, detail.item.title,
                 aspectRatio = catalogDetailImageAspectRatio(detail.item.type)
             )
-            Text(listOfNotNull(detail.item.category, detail.item.rarity).joinToString(" · "))
+            CatalogItemMetadata(detail.item)
+            DetailDescription(detail.item)
             detail.costume?.let { costume ->
                 SectionTitle("服装信息")
-                Text("部件：${costume.partTypes.joinToString(" / ").ifBlank { "缺失" }}")
-                Text("来源：${costume.source ?: "未知"} · 稀有度：${costume.rarity ?: "未知"}")
-                Text("性别：${costume.gender ?: "未知"}${costume.designer?.let { " · 设计：$it" }.orEmpty()}")
+                Text("部件：${costume.partTypes.joinToString(" / ", transform = ::costumePartTypeLabel).ifBlank { "缺失" }}")
+                Text("来源：${costume.source?.let(::costumeSourceLabel) ?: "未知"} · 稀有度：${costume.rarity?.let(::costumeRarityLabel) ?: "未知"}")
+                Text("性别：${costume.gender?.let(::costumeGenderLabel) ?: "未知"}${costume.designer?.let { " · 设计：$it" }.orEmpty()}")
                 if (costume.characterIds.isNotEmpty()) Text("适用角色：${costume.characterIds.joinToString("、")}")
-                costume.partVariants.forEach { (part, variants) -> Text("$part：${variants.joinToString("、")}") }
+                costume.partVariants.forEach { (part, variants) -> Text("${costumePartTypeLabel(part)}：${variants.joinToString("、")}") }
                 costume.extraParts.forEach { extra ->
-                    Text("${extra.partType ?: "extra"} / 角色 ${extra.characterId ?: "-"}：${extra.variants.joinToString("、")}")
+                    Text("${extra.partType?.let(::costumePartTypeLabel) ?: "extra"} / 角色 ${extra.characterId ?: "-"}：${extra.variants.joinToString("、")}")
                 }
             }
             RelatedItems("相关卡牌", detail.relatedCards, onNavigateRelated)
@@ -436,7 +441,8 @@ private fun RelatedItems(
     if (entries.isEmpty()) return
     SectionTitle(title)
     entries.take(30).forEach { entry ->
-        val label = "${entry.title}${entry.subtitle?.let { value -> " · $value" }.orEmpty()} · ID ${entry.id}"
+        val subtitle = entry.subtitle?.let { catalogCategoryLabel(entry.kind, it) }
+        val label = "${entry.title}${subtitle?.let { value -> " · $value" }.orEmpty()} · ID ${entry.id}"
         if (entry.kind == RelatedKind.DISPLAY_ONLY) {
             Text(label)
         } else {
@@ -464,6 +470,124 @@ private fun CostumeFilterPanel(value: CostumeFilters, onChange: (CostumeFilters)
             TextButton(onClick = { onChange(CostumeFilters()) }) { Text("清除服装筛选") }
         }
     }
+}
+
+@Composable
+private fun CatalogItemMetadata(
+    item: CatalogItem,
+    character: String? = item.character,
+    attribute: String? = item.attribute,
+    rarity: String? = item.rarity
+) {
+    val values = if (item.type == CatalogType.CARDS) {
+        listOfNotNull(character, attribute?.let { "属性：${playerAttributeLabel(it)}" }, rarity?.let { "星级 $it" })
+    } else if (item.type == CatalogType.COSTUMES) {
+        listOfNotNull(
+            item.partTypes.takeIf { it.isNotEmpty() }?.joinToString(" / ", transform = ::costumePartTypeLabel),
+            item.source?.let { "来源：${costumeSourceLabel(it)}" },
+            item.category?.let { "类型：${costumeTypeLabel(it)}" },
+            rarity?.let { "稀有度：${costumeRarityLabel(it)}" }
+        )
+    } else {
+        listOfNotNull(
+            item.subtitle?.let { catalogCategoryLabel(item.type, it) },
+            item.category?.takeUnless { it == item.subtitle }?.let { catalogCategoryLabel(item.type, it) },
+            rarity?.let { "稀有度 $it" }
+        )
+    }
+    if (values.isNotEmpty()) Text(values.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+}
+
+@Composable
+private fun DetailDescription(item: CatalogItem) {
+    item.description?.let { Text(it) }
+    if (item.startAt != null || item.endAt != null) {
+        Text("开放时间：${item.startAt ?: "-"} ～ ${item.endAt ?: "-"}", style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun CatalogDataStatus(
+    data: CatalogPage,
+    technicalDetailsExpanded: Boolean,
+    onToggleTechnicalDetails: () -> Unit
+) {
+    Text("共 ${data.total} 项 · ${catalogSourceStatusLabel(data.sourceStatus)}", style = MaterialTheme.typography.bodySmall)
+    val technicalDetails = listOfNotNull(
+        data.sourceStatus?.let { "资料状态：$it" },
+        data.syncedAt?.let { "同步时间：$it" },
+        data.masterVersion?.let { "资料版本：$it" },
+        data.source?.let { "资料来源：$it" },
+        data.unavailableReason?.let { "说明：$it" }
+    )
+    if (technicalDetails.isNotEmpty()) {
+        TextButton(onClick = onToggleTechnicalDetails) {
+            Text(if (technicalDetailsExpanded) "收起技术信息" else "查看技术信息")
+        }
+        if (technicalDetailsExpanded) {
+            technicalDetails.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+        }
+    }
+}
+
+internal fun catalogSourceStatusLabel(value: String?): String = when (value) {
+    "fresh", "ready", "ok" -> "资料已同步"
+    "stale-refreshing" -> "资料正在更新"
+    "missing-data" -> "部分资料尚未同步"
+    "source-unavailable" -> "资料来源暂时不可用"
+    "empty" -> "当前暂无可用资料"
+    null, "" -> "资料状态待确认"
+    else -> "资料状态待确认"
+}
+
+internal fun catalogCategoryLabel(type: CatalogType, value: String): String =
+    if (type == CatalogType.GACHAS) when (value) {
+        "normal" -> "普通卡池"
+        "ceil" -> "卡池资料"
+        else -> value
+    } else value
+
+private fun catalogCategoryLabel(kind: RelatedKind, value: String): String =
+    if (kind == RelatedKind.GACHA) catalogCategoryLabel(CatalogType.GACHAS, value) else value
+
+internal fun costumePartTypeLabel(value: String): String = when (value.lowercase()) {
+    "body" -> "衣装"
+    "hair" -> "发型"
+    "head" -> "头饰"
+    else -> value
+}
+
+internal fun costumeSourceLabel(value: String): String = when (value.lowercase()) {
+    "card" -> "卡牌"
+    "shop" -> "商店"
+    "other" -> "其他"
+    else -> value
+}
+
+internal fun costumeTypeLabel(value: String): String = when (value.lowercase()) {
+    "normal" -> "普通"
+    else -> value
+}
+
+internal fun costumeRarityLabel(value: String): String = when (value.lowercase()) {
+    "normal" -> "常驻"
+    "rare" -> "稀有"
+    else -> value
+}
+
+internal fun costumeGenderLabel(value: String): String = when (value.lowercase()) {
+    "female" -> "女性"
+    "male" -> "男性"
+    else -> value
+}
+
+internal fun playerAttributeLabel(value: String): String = when (value.lowercase()) {
+    "cool" -> "冷酷"
+    "cute" -> "可爱"
+    "happy" -> "活力"
+    "mysterious" -> "神秘"
+    "pure" -> "纯真"
+    else -> value
 }
 
 internal fun CostumeFilters.activeCount(): Int = listOf(partType, source, rarity, gender, characterId)

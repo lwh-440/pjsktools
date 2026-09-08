@@ -16,6 +16,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -47,13 +48,24 @@ internal fun StatusPanel(
         sourceHealth.isEmpty() && syncedAt == null && unavailableCollections.isEmpty() && lookupDiagnostics.isEmpty()) return
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            capabilityStatus?.let { Text("数据能力：${statusLabel(it)}", fontWeight = FontWeight.SemiBold) }
-            unavailableReason?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            warnings.distinct().take(8).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+            capabilityStatus?.let { Text("资料状态：${statusLabel(it)}", fontWeight = FontWeight.SemiBold) }
+            unavailableReason?.let { Text("暂时无法提供：$it", color = MaterialTheme.colorScheme.error) }
+            warnings.distinct().take(8).forEach { Text("• ${playerNotice(it)}", style = MaterialTheme.typography.bodySmall) }
             syncedAt?.let { Text("同步时间：$it", style = MaterialTheme.typography.bodySmall) }
-            if (sourceHealth.isNotEmpty()) Text("数据源：${sourceHealth.entries.joinToString { "${it.key}=${it.value}" }}", style = MaterialTheme.typography.bodySmall)
-            if (unavailableCollections.isNotEmpty()) Text("不可用集合：${unavailableCollections.joinToString()}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            if (lookupDiagnostics.isNotEmpty()) Text("解析诊断：${lookupDiagnostics.entries.joinToString { "${it.key}=${it.value}" }}", style = MaterialTheme.typography.bodySmall)
+            if (sourceHealth.isNotEmpty()) Text("资料来源：${sourceHealth.entries.joinToString { "${it.key}（${statusLabel(it.value)}）" }}", style = MaterialTheme.typography.bodySmall)
+            if (unavailableCollections.isNotEmpty()) Text("部分资料暂不可用：${unavailableCollections.joinToString()}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (lookupDiagnostics.isNotEmpty()) {
+                var diagnosticsExpanded by remember(lookupDiagnostics) { mutableStateOf(false) }
+                Text("有额外资料诊断可供核对。", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }) {
+                    Text(if (diagnosticsExpanded) "收起技术信息" else "查看技术信息")
+                }
+                if (diagnosticsExpanded) {
+                    lookupDiagnostics.forEach { (key, value) ->
+                        Text("$key=$value", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
                 OutlinedButton(onClick = onRetry) { Text("重试") }
@@ -70,8 +82,8 @@ internal fun ContentListCard(baseUrl: String, item: Any, onClick: () -> Unit) {
             if (images.isNotEmpty()) RemoteContentImage(baseUrl, images, itemTitle(item), height = 148)
             Text(itemTitle(item), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(itemSubtitle(item), style = MaterialTheme.typography.bodySmall)
-            Text(itemMeta(item), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            itemSubtitle(item).takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            itemMeta(item).takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 }
@@ -129,8 +141,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.informationDetail(
 ) {
     item {
         DetailCard(detail.item.title) {
-            Text("${detail.item.type.orEmpty()} ${detail.item.tag.orEmpty()} · ${dateRange(detail.item.startAt, detail.item.endAt)}")
             if (detail.item.imageCandidates.isNotEmpty()) RemoteContentImage(baseUrl, detail.item.imageCandidates, detail.item.title)
+            Text("${detail.item.type.orEmpty()} ${detail.item.tag.orEmpty()} · ${dateRange(detail.item.startAt, detail.item.endAt)}")
             StatusPanel(detail.embedStatus, detail.warnings, null, null, onRetry = {})
             detail.embeddedDetailUrl?.let { InformationWebContent(baseUrl, it) }
             detail.detailUrl?.let { url -> OutlinedButton(onClick = { onNavigate(ContentNavigationTarget.ExternalUrl(url)) }) { Text("使用外部应用打开") } }
@@ -417,6 +429,12 @@ private fun statusLabel(value: String?): String = when (value) {
     "source-unavailable" -> "数据源不可用"
     "not-released" -> "本区未实装"
     null, "" -> "未知"
+    else -> value
+}
+
+private fun playerNotice(value: String): String = when (value) {
+    "missing-resource" -> "部分资源暂未收录"
+    "source-unavailable" -> "资料来源暂时不可用"
     else -> value
 }
 

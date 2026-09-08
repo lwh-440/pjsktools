@@ -231,6 +231,33 @@ private fun AccountWorkspace(
                 }
             }
         }
+        item { Text("玩家账号", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+        if (state.profile?.bindings.isNullOrEmpty()) item { Text("暂无玩家 UID 绑定。") }
+        items(state.profile?.bindings.orEmpty(), key = { it.id }) { binding ->
+            BindingCard(binding, state.profile?.summaryFor(binding.id), binding.id == state.selectedBinding?.id,
+                state.busy, { launch { controller.selectBinding(binding.id) } },
+                { launch { controller.setDefault(binding.id) } },
+                { pendingDeleteId = binding.id })
+        }
+        item { AccountDataPanels(state, controller, launch) }
+        item {
+            val qq = state.profile?.oauthAccounts?.firstOrNull { it.provider == "qq" }
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("QQ 账号", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(qq?.nickname?.let { "已关联：$it" } ?: if (qq != null) "已关联" else "尚未关联")
+                    if (qq == null) {
+                        OutlinedButton(enabled = !state.busy, onClick = {
+                            launch { openUri(controller.startMobileQqLink().authorizeUrl) }
+                        }) { Text("关联当前账号") }
+                    } else {
+                        TextButton(enabled = !state.busy, onClick = { confirmUnlinkQq = true }) {
+                            Text("解除关联", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+        }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -253,33 +280,6 @@ private fun AccountWorkspace(
                 }
             }
         }
-        item {
-            val qq = state.profile?.oauthAccounts?.firstOrNull { it.provider == "qq" }
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("QQ 账号", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(qq?.nickname?.let { "已关联：$it" } ?: if (qq != null) "已关联" else "尚未关联")
-                    if (qq == null) {
-                        OutlinedButton(enabled = !state.busy, onClick = {
-                            launch { openUri(controller.startMobileQqLink().authorizeUrl) }
-                        }) { Text("关联当前账号") }
-                    } else {
-                        TextButton(enabled = !state.busy, onClick = { confirmUnlinkQq = true }) {
-                            Text("解除关联", color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
-            }
-        }
-        item { Text("玩家账号", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
-        if (state.profile?.bindings.isNullOrEmpty()) item { Text("暂无玩家 UID 绑定。") }
-        items(state.profile?.bindings.orEmpty(), key = { it.id }) { binding ->
-            BindingCard(binding, state.profile?.summaryFor(binding.id), binding.id == state.selectedBinding?.id,
-                state.busy, { launch { controller.selectBinding(binding.id) } },
-                { launch { controller.setDefault(binding.id) } },
-                { pendingDeleteId = binding.id })
-        }
-        item { AccountDataPanels(state, controller, launch) }
         item { ComplianceLinks(Modifier.fillMaxWidth()) }
     }
     pendingDeleteId?.let { id ->

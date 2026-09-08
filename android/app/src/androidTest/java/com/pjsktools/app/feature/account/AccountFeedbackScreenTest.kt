@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -63,6 +64,38 @@ class AccountFeedbackScreenTest {
         composeRule.onNodeWithText("登录状态已失效，请重新登录").assertIsDisplayed()
     }
 
+    @Test fun selectingAnotherUidKeepsTheDefaultUidAndExistingPlayerRecordsAvailable() {
+        val controller = controllerFor(AccountScenario.BINDING_SELECTION, StoredAccountSession("access", "refresh"))
+        composeRule.setContent { MaterialTheme { AccountFeatureScreen("http://fixture/", controller = controller) } }
+        composeRule.waitUntil {
+            controller.state.value.profile != null && controller.state.value.selectedBinding?.id == "binding-jp"
+        }
+        check(controller.state.value.profile?.bindings?.firstOrNull { it.isDefault }?.id == "binding-jp")
+        check(controller.state.value.profile?.favorites?.size == 1)
+        check(controller.state.value.profile?.scores?.size == 1)
+        check(controller.state.value.profile?.deckConfigs?.size == 1)
+
+        composeRule.scrollTo("EN 候选")
+        composeRule.onNode(
+            hasClickAction() and hasAnyDescendant(hasText("EN 候选")),
+            useUnmergedTree = true
+        ).performClick()
+        composeRule.waitUntil {
+            controller.state.value.selectedBinding?.id == "binding-en" &&
+                controller.state.value.profileAnalysis?.nickname == "EN 资料" && !controller.state.value.busy
+        }
+
+        check(controller.state.value.profile?.bindings?.firstOrNull { it.isDefault }?.id == "binding-jp")
+        composeRule.scrollTo("当前使用")
+        composeRule.onNodeWithText("当前使用").assertIsDisplayed()
+        composeRule.scrollTo("保留收藏 · jp/song")
+        composeRule.onNodeWithText("保留收藏 · jp/song").assertIsDisplayed()
+        composeRule.scrollTo("1 EXPERT · clear · 123")
+        composeRule.onNodeWithText("1 EXPERT · clear · 123").assertIsDisplayed()
+        composeRule.scrollTo("保留卡组 · 1 张")
+        composeRule.onNodeWithText("保留卡组 · 1 张").assertIsDisplayed()
+    }
+
     private fun androidx.compose.ui.test.junit4.AndroidComposeTestRule<*, *>.textField(label: String) =
         onNode(hasSetTextAction() and hasAnyDescendant(hasText(label)), useUnmergedTree = true)
 
@@ -83,7 +116,7 @@ class AccountFeedbackScreenTest {
     }
 }
 
-private enum class AccountScenario { CODE_FEEDBACK, FAVORITE_401 }
+private enum class AccountScenario { CODE_FEEDBACK, FAVORITE_401, BINDING_SELECTION }
 
 private class MemoryStore(private var value: StoredAccountSession?) : AccountSessionStore {
     override fun load() = value
@@ -103,7 +136,28 @@ private class FixtureInterceptor(private val scenario: AccountScenario) : Interc
                 500 to """{"message":"模拟验证码失败"}"""
             }
             "/api/me/legal-acceptances" -> 200 to """{"required":false}"""
-            "/api/me/profile" -> 200 to """{"user":{"id":"fixture-user","email":"fixture@example.test"},"bindings":[],"favorites":[],"scores":[],"deckConfigs":[]}"""
+            "/api/me/profile" -> if (scenario == AccountScenario.BINDING_SELECTION) {
+                200 to """{
+                    "user":{"id":"fixture-user","email":"fixture@example.test"},
+                    "bindings":[
+                        {"id":"binding-jp","region":"jp","playerUid":"100","displayName":"JP 默认","isDefault":true},
+                        {"id":"binding-en","region":"en","playerUid":"200","displayName":"EN 候选","isDefault":false}
+                    ],
+                    "bindingSummaries":[
+                        {"binding":{"id":"binding-jp"},"inventoryCount":12,"playerData":[{"kind":"profile"}],"completeness":{"uploadedPlayerDataKinds":["profile"]}},
+                        {"binding":{"id":"binding-en"},"inventoryCount":8,"playerData":[],"completeness":{"uploadedPlayerDataKinds":[]}}
+                    ],
+                    "favorites":[{"id":"fav","type":"song","region":"jp","targetId":"1","label":"保留收藏"}],
+                    "scores":[{"id":"score","region":"jp","songId":"1","difficulty":"expert","clearStatus":"clear","score":123,"note":"保留成绩"}],
+                    "deckConfigs":[{"id":"deck","bindingId":"binding-jp","region":"jp","name":"保留卡组","cardIds":["1"]}]
+                }"""
+            } else {
+                200 to """{"user":{"id":"fixture-user","email":"fixture@example.test"},"bindings":[],"favorites":[],"scores":[],"deckConfigs":[]}"""
+            }
+            "/api/me/player-bindings/binding-jp/profile-analysis" -> 200 to """{"profileSummary":{"nickname":"JP 资料","rank":1}}"""
+            "/api/me/player-bindings/binding-en/profile-analysis" -> 200 to """{"profileSummary":{"nickname":"EN 资料","rank":2}}"""
+            "/api/me/player-bindings/binding-jp/tool-context", "/api/me/player-bindings/binding-en/tool-context" ->
+                200 to """{"inventoryCount":0,"playerDataKinds":[],"toolContextWarnings":[],"completeness":{}}"""
             "/api/me/favorites", "/api/auth/refresh" -> 401 to """{"message":"expired"}"""
             else -> 404 to """{"message":"unexpected fixture route: $path"}"""
         }

@@ -106,7 +106,7 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
         val title = json.text("title") ?: json.text("name") ?: "未命名条目"
         val subtitle = (when (type) {
             CatalogType.SONGS -> listOfNotNull(json.text("unit"), json.text("durationSeconds")?.let { "${it}s" }).joinToString(" · ")
-            CatalogType.CARDS -> listOfNotNull(json.text("character"), json.text("attribute"), json.text("rarity")?.let { "星级 $it" }).joinToString(" · ")
+            CatalogType.CARDS -> null
             CatalogType.COSTUMES -> listOfNotNull(json.stringList("partTypes").takeIf { it.isNotEmpty() }?.joinToString(" / "), json.text("source")).joinToString(" · ")
             else -> json.text("category") ?: json.text("rarity")
         }).takeUnless { it.isNullOrBlank() }
@@ -114,6 +114,12 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
             id = json.text("id") ?: "unknown",
             type = type,
             title = title,
+            character = json.text("character"),
+            attribute = json.text("attribute"),
+            partTypes = json.stringList("partTypes"),
+            source = json.text("source"),
+            gender = json.text("gender"),
+            designer = json.text("designer"),
             subtitle = subtitle,
             description = json.text("description"),
             category = json.text("category"),
@@ -149,7 +155,12 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
                 )
             },
             relatedEvents = relatedItems(relations.optJSONArray("relatedEvents"), RelatedKind.EVENT),
-            vocals = relatedItems(relations.optJSONArray("vocals") ?: relations.optJSONArray("musicVocals"), RelatedKind.DISPLAY_ONLY)
+            vocals = relations.optJSONArray("vocals")?.let { relatedItems(it, RelatedKind.DISPLAY_ONLY) }
+                ?: relatedItems(
+                    relations.optJSONArray("musicVocals"),
+                    RelatedKind.DISPLAY_ONLY,
+                    generatedTitlePrefix = "musicVocals"
+                )
         )
     }
 
@@ -224,10 +235,20 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
         )
     }
 
-    private fun relatedItems(array: JSONArray?, kind: RelatedKind): List<RelatedItem> = array.objects().map { json ->
+    private fun relatedItems(
+        array: JSONArray?,
+        kind: RelatedKind,
+        generatedTitlePrefix: String? = null
+    ): List<RelatedItem> = array.objects().map { json ->
+        val id = json.text("id") ?: "unknown"
         RelatedItem(
-            id = json.text("id") ?: "unknown",
-            title = json.text("title") ?: json.text("name") ?: "未命名条目",
+            id = id,
+            title = relatedItemTitle(
+                kind = kind,
+                id = id,
+                title = json.text("title") ?: json.text("name"),
+                generatedTitlePrefix = generatedTitlePrefix
+            ),
             subtitle = json.text("character") ?: json.text("category"),
             kind = kind
         )
@@ -261,9 +282,28 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
     }
 }
 
+internal fun relatedItemFallbackTitle(kind: RelatedKind): String = when (kind) {
+    RelatedKind.DISPLAY_ONLY -> "演唱版本"
+    else -> "未命名条目"
+}
+
+internal fun relatedItemTitle(
+    kind: RelatedKind,
+    id: String,
+    title: String?,
+    generatedTitlePrefix: String? = null
+): String = when {
+    generatedTitlePrefix != null && title == "$generatedTitlePrefix $id" -> relatedItemFallbackTitle(kind)
+    !title.isNullOrBlank() -> title
+    else -> relatedItemFallbackTitle(kind)
+}
+
 private fun CatalogItem.withFallback(fallback: CatalogItem): CatalogItem = copy(
     id = id.takeUnless { it == "unknown" } ?: fallback.id,
     title = title.takeUnless { it == "未命名条目" } ?: fallback.title,
+    character = character ?: fallback.character, attribute = attribute ?: fallback.attribute,
+    partTypes = partTypes.ifEmpty { fallback.partTypes }, source = source ?: fallback.source,
+    gender = gender ?: fallback.gender, designer = designer ?: fallback.designer,
     subtitle = subtitle ?: fallback.subtitle, description = description ?: fallback.description,
     category = category ?: fallback.category, rarity = rarity ?: fallback.rarity,
     startAt = startAt ?: fallback.startAt, endAt = endAt ?: fallback.endAt,

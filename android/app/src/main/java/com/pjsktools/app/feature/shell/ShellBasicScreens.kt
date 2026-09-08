@@ -2,10 +2,11 @@ package com.pjsktools.app.feature.shell
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -91,9 +91,9 @@ fun HomeFeatureScreen(
             Surface(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shadowElevation = 4.dp
+                color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shadowElevation = 2.dp
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(Modifier.fillMaxWidth().height(5.dp)) {
@@ -110,20 +110,8 @@ fun HomeFeatureScreen(
                         Text(
                             "活动、图鉴、玩家资料与计算工具，和网页版共用同一套实时数据。",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            dashboard?.regions?.ifEmpty { null }?.forEach { item ->
-                                if (item.id == region) Button(onClick = {}) { Text(item.id.uppercase()) }
-                                else OutlinedButton(onClick = { onRegionChange(item.id) }) { Text(item.id.uppercase()) }
-                            } ?: listOf("jp", "en", "tw", "kr", "cn").forEach { id ->
-                                if (id == region) Button(onClick = {}) { Text(id.uppercase()) }
-                                else OutlinedButton(onClick = { onRegionChange(id) }) { Text(id.uppercase()) }
-                            }
-                        }
                     }
                 }
             }
@@ -133,12 +121,23 @@ fun HomeFeatureScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                MetricCard("区服", region.uppercase(), SekaiTeal, Modifier.weight(1f))
                 MetricCard("歌曲", dashboard?.songCount?.toString() ?: "-", SekaiPink, Modifier.weight(1f))
                 MetricCard("卡牌", dashboard?.cardCount?.toString() ?: "-", SekaiYellow, Modifier.weight(1f))
             }
         }
-        if (loading && dashboard == null) item { LoadingCard("正在加载真实仪表盘数据") }
+        item {
+            ShellCard("常用入口", "先进入最常使用的图鉴、活动与玩家工具。") {
+                ShellShortcut.entries.chunked(2).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { item ->
+                            OutlinedButton(onClick = { onShortcut(item) }, modifier = Modifier.weight(1f)) { Text(item.label) }
+                        }
+                        if (row.size == 1) Text("", Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+        if (loading && dashboard == null) item { LoadingCard("正在加载首页数据") }
         error?.let { message -> item { ErrorCard(message) { refreshKey += 1 } } }
         dashboard?.let { data ->
             item {
@@ -160,27 +159,15 @@ fun HomeFeatureScreen(
                 }
             }
             if (data.warnings.isNotEmpty()) item {
-                ShellCard("数据状态", "部分上游数据未就绪；页面没有使用示例数据。") {
+                ShellCard("部分资料暂不可用", "可稍后刷新查看，其他已经加载的内容仍可使用。") {
                     data.warnings.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                 }
             }
         }
         item {
-            ShellCard("账号状态", if (isAuthenticated) "已登录，可使用绑定 UID 与上传资产。" else "登录后启用资产联动。") {
+            ShellCard("账号状态", if (isAuthenticated) "已登录，可使用绑定 UID 与上传资产。" else "登录后可管理 UID 与玩家资料。") {
                 accountLabel?.takeIf(String::isNotBlank)?.let { Text(it, fontWeight = FontWeight.SemiBold) }
-                Button(onClick = onOpenAccount) { Text(if (isAuthenticated) "进入个人信息管理" else "登录 / 注册") }
-            }
-        }
-        item {
-            ShellCard("常用入口", "按网页端工作流分组，点击后由主壳导航。") {
-                ShellShortcut.entries.chunked(2).forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        row.forEach { item ->
-                            OutlinedButton(onClick = { onShortcut(item) }, modifier = Modifier.weight(1f)) { Text(item.label) }
-                        }
-                        if (row.size == 1) Text("", Modifier.weight(1f))
-                    }
-                }
+                Button(onClick = onOpenAccount) { Text(if (isAuthenticated) "管理个人信息" else "登录 / 注册") }
             }
         }
         item { Text("", Modifier.padding(8.dp)) }
@@ -257,6 +244,7 @@ fun PublicProfileFeatureScreen(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun SettingsFeatureScreen(
     settings: ShellSettings,
     onSave: (ShellSettings) -> Unit,
@@ -274,14 +262,20 @@ fun SettingsFeatureScreen(
     var cacheNotice by remember { mutableStateOf<String?>(null) }
     var visibleCacheSize by remember(cacheSizeLabel) { mutableStateOf(cacheSizeLabel) }
     LazyColumn(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        configurationError?.let { message -> item { ErrorCard(message) {} } }
+        configurationError?.let { message ->
+            item {
+                ShellCard("需要设置服务器地址", settingErrorMessage(message)) {
+                    Text("请在下方检查服务器地址后保存。", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         item {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("设置", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("设置会持久化并直接驱动所有 Android API 请求与默认区服。每个 API 来源使用独立登录会话，切换服务器后需要在该服务器单独登录。")
-                OutlinedTextField(value = baseUrl, onValueChange = { baseUrl = it }, label = { Text("API Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("选择默认区服并设置要连接的工具台服务器。切换服务器后，需要在该服务器重新登录。")
+                OutlinedTextField(value = baseUrl, onValueChange = { baseUrl = it }, label = { Text("服务器地址") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text("默认区服", fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf("jp", "en", "tw", "kr", "cn").forEach { id ->
                         if (id == region) Button(onClick = {}) { Text(id.uppercase()) }
                         else OutlinedButton(onClick = { region = id }) { Text(id.uppercase()) }
@@ -289,13 +283,13 @@ fun SettingsFeatureScreen(
                 }
             }
         }
-        item { ShellCard("运行诊断", "用于确认账号状态与本地缓存，不展示令牌内容。") {
-            Text("会话：$sessionLabel")
-            Text("Shell 缓存：$visibleCacheSize")
-            Text("当前 API：${settings.apiBaseUrl}")
+        item { ShellCard("连接状态", "用于确认登录和本地缓存；不会显示登录凭据。") {
+            Text("账号：$sessionLabel")
+            Text("本地缓存：$visibleCacheSize")
+            Text("已保存服务器：${settings.apiBaseUrl}")
         } }
         item {
-            ShellCard("缓存原则", "缓存必须按区服、接口路径和参数隔离，禁止跨区借用。") {
+            ShellCard("缓存方式", "缓存会按区服分开保存，切换区服时不会混用资料。") {
                 ShellCachePolicy.entries.forEach { policy ->
                     if (policy == cachePolicy) Button(onClick = {}) { Text(policy.label) }
                     else OutlinedButton(onClick = { cachePolicy = policy }) { Text(policy.label) }
@@ -303,7 +297,13 @@ fun SettingsFeatureScreen(
                 }
             }
         }
-        error?.let { item { ErrorCard(it) { error = null } } }
+        error?.let { message ->
+            item {
+                ShellCard("请检查服务器地址", "地址格式有误") {
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         cacheNotice?.let { item { ShellCard("缓存清理结果", it) {} } }
         item {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -314,7 +314,7 @@ fun SettingsFeatureScreen(
                 Button(onClick = {
                     runCatching { ApiOrigin.normalize(baseUrl, BuildConfig.DEBUG, BuildConfig.TEMPORARY_HTTP_HOST) }
                         .onSuccess { normalized -> error = null; onSave(ShellSettings(normalized, region, cachePolicy)) }
-                        .onFailure { error = it.message ?: "API Base URL 不安全" }
+                        .onFailure { error = settingErrorMessage(it.message) }
                 }) { Text("保存设置") }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
@@ -491,3 +491,14 @@ internal fun ErrorCard(message: String, retry: () -> Unit) {
 }
 
 private fun resolveImageUrl(baseUrl: String, imageUrl: String) = if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) imageUrl else "${baseUrl.trimEnd('/')}/${imageUrl.trimStart('/')}"
+
+internal fun settingErrorMessage(raw: String?): String = when {
+    raw.isNullOrBlank() -> "服务器地址暂时不可用。"
+    raw.contains("配置 HTTPS API", ignoreCase = true) -> "请填写服务器地址。"
+    raw.contains("有效的 http", ignoreCase = true) -> "请输入有效的服务器地址，例如 https://api.example.com。"
+    raw.contains("用户名或密码") -> "服务器地址不能包含账号或密码。"
+    raw.contains("查询参数或片段") -> "服务器地址不能包含 ? 参数或 # 片段。"
+    raw.contains("不允许附加路径") -> "请只填写协议、域名和可选端口，不要附加路径。"
+    raw.contains("必须使用 HTTPS") -> "远程服务器请使用 HTTPS；开发时仅允许本机或模拟器使用 HTTP。"
+    else -> "设置未保存：$raw"
+}
