@@ -211,11 +211,11 @@ function useDialogAccessibility(onClose: () => void) {
   return { dialogRef, titleId, close: () => onCloseRef.current() };
 }
 
-export function DetailDrawer({ title, onClose, children, elevated = false }: { title: string; onClose: () => void; children: ReactNode; elevated?: boolean }) {
+export function DetailDrawer({ title, onClose, children, elevated = false, topmost = false }: { title: string; onClose: () => void; children: ReactNode; elevated?: boolean; topmost?: boolean }) {
   const { dialogRef, titleId, close } = useDialogAccessibility(onClose);
 
   return (
-    <div className={`drawer-backdrop ${elevated ? "drawer-backdrop-elevated" : ""}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+    <div className={`drawer-backdrop ${elevated ? "drawer-backdrop-elevated" : ""} ${topmost ? "drawer-backdrop-topmost" : ""}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <aside ref={dialogRef} className="detail-drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <div className="drawer-head">
           <h2 id={titleId}>{title}</h2>

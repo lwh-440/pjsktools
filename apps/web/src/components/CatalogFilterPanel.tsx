@@ -1,6 +1,7 @@
-import { Check, RotateCcw, SlidersHorizontal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, RotateCcw, SlidersHorizontal, X } from "lucide-react";
+import { useState } from "react";
 import { apiResourceUrl } from "../api";
+import { catalogFilterOptionLabel } from "../playerLabels";
 
 export type CatalogFilterOption = {
   value: string;
@@ -23,6 +24,8 @@ export type CatalogFilterMeta = {
   groups?: CatalogFilterGroup[];
   toggles?: Array<{ key: string; label: string; value: boolean }>;
 };
+
+type ActiveFilter = { key: string; value: string; label: string; toggle?: boolean };
 
 function OptionIcon({ option }: { option: CatalogFilterOption }) {
   const image = option.iconCandidates?.[0];
@@ -53,19 +56,14 @@ export function CatalogFilterPanel({
   onToggleBoolean: (key: string) => void;
   onClear: () => void;
 }) {
-  const initiallyNarrow = typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
-  const [open, setOpen] = useState(!initiallyNarrow);
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 760px)");
-    const update = () => {
-      setOpen(!query.matches);
-    };
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
+  const [open, setOpen] = useState(false);
   const groups = meta?.groups ?? [];
   const toggleOptions = meta?.toggles ?? [];
   const activeCount = Object.values(selected).reduce((sum, values) => sum + values.length, 0) + Object.values(toggles).filter(Boolean).length;
+  const activeFilters: ActiveFilter[] = [
+    ...groups.flatMap((group) => group.options.filter((option) => selected[group.key]?.includes(option.value)).map((option) => ({ key: group.key, value: option.value, label: `${group.label}：${catalogFilterOptionLabel(group.key, option.value, option.label)}` }))),
+    ...toggleOptions.filter((toggle) => toggles[toggle.key]).map((toggle) => ({ key: toggle.key, value: "", label: toggle.label, toggle: true }))
+  ];
   if (!groups.length && !toggleOptions.length) return null;
   return (
     <details
@@ -75,18 +73,22 @@ export function CatalogFilterPanel({
         const next = event.currentTarget.open;
         if (next !== open) setOpen(next);
       }}
-    >
+      >
       <summary>
         <span><SlidersHorizontal size={17} />筛选</span>
-        <small>{total} 条结果{activeCount ? ` · 已选 ${activeCount}` : ""}</small>
+        <span className="catalog-filter-summary-meta"><small>{total} 条结果{activeCount ? ` · 已选 ${activeCount}` : ""}</small>{activeFilters.slice(0, 2).map((filter) => <i key={`${filter.key}:${filter.value}`}>{filter.label}</i>)}{activeFilters.length > 2 && <i>另 {activeFilters.length - 2} 项</i>}</span>
       </summary>
       <div className="catalog-filter-content">
+        {activeFilters.length > 0 && <div className="catalog-filter-chips" aria-label="已选筛选条件">
+          {activeFilters.map((filter) => <button type="button" key={`${filter.key}:${filter.value}`} onClick={() => filter.toggle ? onToggleBoolean(filter.key) : onToggle(filter.key, filter.value)}>{filter.label}<X size={13} aria-hidden="true" /></button>)}
+        </div>}
         {groups.map((group) => (
           <fieldset className="catalog-filter-group" key={group.key}>
             <legend>{group.label}{group.match === "all" && <small>需同时满足</small>}</legend>
             <div className="catalog-filter-options">
               {group.options.map((option) => {
                 const active = selected[group.key]?.includes(option.value) ?? false;
+                const optionLabel = catalogFilterOptionLabel(group.key, option.value, option.label);
                 return (
                   <button
                     type="button"
@@ -96,7 +98,7 @@ export function CatalogFilterPanel({
                     onClick={() => onToggle(group.key, option.value)}
                   >
                     <OptionIcon option={option} />
-                    <span>{option.label}</span>
+                    <span>{optionLabel}</span>
                     <small>{option.count}</small>
                     {active && <Check size={13} />}
                   </button>
@@ -115,7 +117,10 @@ export function CatalogFilterPanel({
             ))}
           </div>
         )}
-        {activeCount > 0 && <button type="button" className="secondary catalog-filter-clear" onClick={onClear}><RotateCcw size={15} />清空筛选</button>}
+        <div className="catalog-filter-actions">
+          {activeCount > 0 && <button type="button" className="secondary catalog-filter-clear" onClick={onClear}><RotateCcw size={15} />清空筛选</button>}
+          <button type="button" onClick={() => setOpen(false)}>查看 {total} 条结果</button>
+        </div>
       </div>
     </details>
   );

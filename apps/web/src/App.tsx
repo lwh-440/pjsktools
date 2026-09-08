@@ -37,6 +37,7 @@ import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from
 import { apiGet, apiGetWithSignal, apiPost, apiResourceUrl } from "./api";
 import { loadCachedCatalog } from "./catalogCache";
 import { resolveCatalogUiState } from "./catalogUiState";
+import { cardAttributeLabel, collectionCategoryLabel, eventTypeLabel, eventUnitLabel, playerErrorMessage, playerFieldLabel, playerStatusLabel, playerWarningMessage, technicalDiagnosticMessage } from "./playerLabels";
 import { useAuth } from "./AuthContext";
 import type { DeckConfig, PlayerBinding } from "./accountTypes";
 import { ArtImage, DetailDrawer, ModalDialog, Pagination, SearchBox } from "./components/ui";
@@ -444,11 +445,11 @@ type CatalogBodyProps = {
 
 function CatalogBody({ viewState, hasVisibleData, error, hasActiveFilters, onRetry, onClear, children }: CatalogBodyProps) {
   if (viewState === "loading" && !hasVisibleData) return <div className="catalog-feedback loading" role="status"><strong>正在加载图鉴</strong><span>已保留当前搜索、筛选和分页条件。</span></div>;
-  if (viewState === "error" && !hasVisibleData) return <div className="catalog-feedback error" role="alert"><strong>图鉴加载失败</strong><span>{error ?? "请检查网络后重试。"}</span><button type="button" className="secondary" onClick={onRetry}>重试</button></div>;
+  if (viewState === "error" && !hasVisibleData) return <div className="catalog-feedback error" role="alert"><strong>图鉴加载失败</strong><span>{playerErrorMessage(error)}</span><button type="button" className="secondary" onClick={onRetry}>重试</button></div>;
   if (viewState === "empty") return <div className="catalog-feedback empty"><strong>没有符合条件的资料</strong><span>{hasActiveFilters ? "可以清空筛选或修改搜索词。" : "当前区服暂未返回这类资料。"}</span>{hasActiveFilters && <button type="button" className="secondary" onClick={onClear}>清空筛选</button>}</div>;
   return <>
     {viewState === "loading" && <p className="catalog-refresh-state" role="status">正在更新图鉴结果，当前内容会保留到新结果返回。</p>}
-    {viewState === "error" && <div className="catalog-refresh-state error" role="alert"><span>更新失败，正在显示上次结果：{error ?? "请检查网络后重试。"}</span><button type="button" className="secondary" onClick={onRetry}>重试</button></div>}
+    {viewState === "error" && <div className="catalog-refresh-state error" role="alert"><span>更新失败，正在显示上次结果：{playerErrorMessage(error)}</span><button type="button" className="secondary" onClick={onRetry}>重试</button></div>}
     {children}
   </>;
 }
@@ -465,7 +466,8 @@ function ToolResultWarnings({ result }: { result: any }) {
   const missing = result?.missingFields ?? [];
   const warnings = result?.warnings ?? [];
   if (!missing.length && !warnings.length) return null;
-  return <div className="tool-notice"><strong>数据完整性提示</strong><span>缺失数据会使用估算或使部分结果不可用，详细字段保留在完整结果中。</span>{missing.length > 0 && <p>缺失：{missing.slice(0, 8).join(" / ")}</p>}{warnings.length > 0 && <p>警告：{warnings.slice(0, 8).join(" / ")}</p>}</div>;
+  const missingLabels: string[] = missing.map(playerFieldLabel).filter((label: string, index: number, all: string[]) => all.indexOf(label) === index);
+  return <div className="tool-notice"><strong>资料完整性提示</strong><span>缺少的资料可能会让部分结果使用估算或暂时不可用。</span>{missingLabels.length > 0 && <p>暂缺：{missingLabels.join("、")}</p>}{warnings.length > 0 && <p>{playerWarningMessage(warnings[0])}</p>}<details><summary>查看技术字段</summary>{missing.length > 0 && <p>{missing.slice(0, 8).join(" / ")}</p>}{warnings.slice(0, 8).map((warning: string, index: number) => <p key={`${warning}:${index}`}>{technicalDiagnosticMessage(warning)}</p>)}</details></div>;
 }
 
 function DeckRecommendationPreview({ result }: { result: any }) {
@@ -1255,14 +1257,16 @@ export function App() {
     navigate(section === "home" ? "/" : `/section/${section}`);
   }
 
-  async function openSong(id: string, title = "歌曲详情") {
+  async function openSong(id: string, title = "歌曲详情", preserveParent = false) {
     const requestId = ++detailRequestId.current;
     const requestRegion = region;
     setSelectedSong(null);
-    setSelectedCard(null);
-    setSelectedEvent(null);
-    setSelectedCollection(null);
-    setPendingDetail({ kind: "song", id, title });
+    if (!preserveParent) {
+      setSelectedCard(null);
+      setSelectedEvent(null);
+      setSelectedCollection(null);
+    }
+    setPendingDetail({ kind: "song", id, title, preserveParent });
     try {
       const detail = await apiGet<FullSong>(`/api/master/${requestRegion}/music/${id}/full`);
       if (requestId === detailRequestId.current && regionRef.current === requestRegion) {
@@ -1271,7 +1275,7 @@ export function App() {
       }
     } catch (error) {
       if (requestId === detailRequestId.current && regionRef.current === requestRegion) {
-        setPendingDetail({ kind: "song", id, title, error: error instanceof Error ? error.message : String(error) });
+        setPendingDetail({ kind: "song", id, title, preserveParent, error: error instanceof Error ? error.message : String(error) });
       }
     }
   }
@@ -1349,7 +1353,7 @@ export function App() {
 
   function retryPendingDetail() {
     if (!pendingDetail) return;
-    if (pendingDetail.kind === "song") void openSong(pendingDetail.id, pendingDetail.title);
+    if (pendingDetail.kind === "song") void openSong(pendingDetail.id, pendingDetail.title, pendingDetail.preserveParent);
     if (pendingDetail.kind === "card") void openCard(pendingDetail.id, pendingDetail.preserveParent, pendingDetail.title);
     if (pendingDetail.kind === "event") void openEvent(pendingDetail.id, pendingDetail.title);
     if (pendingDetail.kind === "collection" && pendingDetail.collectionType) void openCollection(pendingDetail.collectionType, pendingDetail.id, pendingDetail.title);
@@ -1453,7 +1457,7 @@ export function App() {
     const candidates = card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates ?? [];
     return <button key={key} type="button" className="related-card related-card-visual" onClick={() => openCard(card.id, true)}>
       <ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={candidates} label={card.title} variant="square" />
-      <span className="related-card-copy"><strong>{card.title}</strong><span>{card.character}</span><small>星级 {card.rarity} · {card.attribute} · ID {card.id}</small></span>
+      <span className="related-card-copy"><strong>{card.title}</strong><span>{card.character}</span><small>属性 {cardAttributeLabel(card.attribute)} · {card.rarity}★</small><small>ID {card.id}</small></span>
     </button>;
   }
 
@@ -1797,7 +1801,6 @@ export function App() {
             <p>快速查看活动、图鉴与个人资料，在清晰顺手的工作台里完成计算和比较。</p>
           </div>
           <div className="hero-metrics">
-            <div><span>区服</span><strong>{region.toUpperCase()}</strong></div>
             <div><span>歌曲</span><strong>{catalogTotals.songs === null ? "-" : formatNumber(catalogTotals.songs)}</strong></div>
             <div><span>卡牌</span><strong>{catalogTotals.cards === null ? "-" : formatNumber(catalogTotals.cards)}</strong></div>
           </div>
@@ -2069,13 +2072,13 @@ export function App() {
       onClear: () => { setFilter(""); setPage(1); setCatalogFilters({}); setCatalogToggles({}); }
     };
     if (type === "events") {
-      return <section className="panel wide"><div className="panel-heading"><div><h1>活动图鉴</h1><p>浏览历次活动、加成角色与相关资料。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索活动名称或 ID" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid event-grid">{pageData?.items.map((eventItem: EventInfo) => { const candidates = imageCandidates(eventItem.assets); return <article key={`${region}:event:${eventItem.id}`} className="catalog-card event-card"><button type="button" className="catalog-card-main" onClick={() => void openEvent(eventItem.id, eventItem.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={eventItem.name} variant="event" /><strong>{eventItem.name}</strong><span>{eventItem.eventType ?? "活动"}{eventItem.eventUnit ? ` · ${eventItem.eventUnit}` : ""}</span><small>{formatDate(eventItem.startAt)} · ID {eventItem.id}</small></button><FavoriteButton compact type="event" region={region} targetId={eventItem.id} label={eventItem.name} /></article>; })}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h1>活动图鉴</h1><p>浏览历次活动、加成角色与相关资料。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索活动名称或 ID" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid event-grid">{pageData?.items.map((eventItem: EventInfo) => { const candidates = imageCandidates(eventItem.assets); const eventUnit = eventUnitLabel(eventItem.eventUnit); return <article key={`${region}:event:${eventItem.id}`} className="catalog-card event-card"><button type="button" className="catalog-card-main" onClick={() => void openEvent(eventItem.id, eventItem.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={eventItem.name} variant="event" /><strong>{eventItem.name}</strong><span>{eventTypeLabel(eventItem.eventType)}{eventUnit ? ` · ${eventUnit}` : ""}</span><small>{formatDate(eventItem.startAt)} · ID {eventItem.id}</small></button><FavoriteButton compact type="event" region={region} targetId={eventItem.id} label={eventItem.name} /></article>; })}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     if (type === "songs") {
       return <section className="panel wide"><div className="panel-heading"><div><h1>歌曲图鉴</h1><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索歌曲、ID、分类" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid songs">{pageData?.items.map((song: Song, index: number) => <article key={`${region}:song:${song.id}`} className="catalog-card song-card"><button type="button" className="catalog-card-main" onClick={() => void openSong(song.id, song.title)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span className="song-card-copy"><strong>{song.title}</strong><span>{song.unit} · ID {song.id}</span><small>{song.durationSeconds ? `时长 ${song.durationSeconds}s` : "时长待同步"}</small></span></button><FavoriteButton compact type="song" region={region} targetId={song.id} label={song.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     if (type === "cards") {
-      return <section className="panel wide"><div className="panel-heading"><div><h1>卡牌图鉴</h1><p>浏览卡面、角色信息与各等级技能效果。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索角色、卡名、属性" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid cards">{pageData?.items.map((card: Card, index: number) => <article key={`${region}:card:${card.id}`} className="catalog-card card-card"><button type="button" className="catalog-card-main" onClick={() => void openCard(card.id, false, card.title)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates} label={card.title} variant="square" eager={index < 8} /><strong>{card.title}</strong><span>{card.character}</span><small>星级 {card.rarity} / {card.attribute} / ID {card.id}</small></button><FavoriteButton compact type="card" region={region} targetId={card.id} label={card.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h1>卡牌图鉴</h1><p>浏览卡面、角色信息与各等级技能效果。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索角色、卡名、属性" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid cards">{pageData?.items.map((card: Card, index: number) => <article key={`${region}:card:${card.id}`} className="catalog-card card-card"><button type="button" className="catalog-card-main" onClick={() => void openCard(card.id, false, card.title)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates} label={card.title} variant="square" eager={index < 8} /><strong>{card.title}</strong><span>{card.character}</span><small>属性 {cardAttributeLabel(card.attribute)} · {card.rarity}★</small><small>ID {card.id}</small></button><FavoriteButton compact type="card" region={region} targetId={card.id} label={card.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     const collectionType = collectionMeta[type].type;
     return (
@@ -2084,7 +2087,7 @@ export function App() {
         {pageData && renderCatalogFilters(pageData)}
         <CatalogBody {...bodyProps}><div className={`catalog-grid collection-grid collection-grid-${collectionType}`}>{pageData?.items.map((item: CollectionItem) => {
           const candidates = collectionImageCandidates(collectionType, item.assets);
-          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card collection-card collection-card-${collectionType}`}><button type="button" className="catalog-card-main" onClick={() => void openCollection(collectionType, item.id, item.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : item.category ?? item.rarity ?? "详细资料"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
+          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card collection-card collection-card-${collectionType}`}><button type="button" className="catalog-card-main" onClick={() => void openCollection(collectionType, item.id, item.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : collectionCategoryLabel(collectionType, item.category ?? item.rarity)}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
         })}</div>
         {pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody>
       </section>
@@ -2376,8 +2379,8 @@ export function App() {
         <article className="panel wide normal-plan-panel">
           <div className="panel-heading compact-heading"><div><h2>普通活动规划</h2><p>一次计算推荐卡组、单局 PT、到目标所需局数、歌曲效率和区域道具建议。</p></div><span className="status-pill">当前区服 {region.toUpperCase()}</span></div>
           {toolDataLoading && <div className="tool-data-state"><RefreshCw size={16} className="spin" /><span>正在加载完整歌曲与卡牌数据…</span></div>}
-          {toolSongsStatus === "error" && <div className="tool-data-state error"><span>歌曲列表加载失败：{toolSongsError || toolDataError || "未知错误"}</span><button type="button" className="secondary" onClick={() => ensureFullToolData(true).catch((error) => setMessage(error instanceof Error ? error.message : String(error)))}>重试加载</button></div>}
-          {toolDataError && toolSongsStatus !== "error" && <div className="tool-data-state error"><span>完整工具数据加载失败：{toolDataError}</span><button type="button" className="secondary" onClick={() => ensureFullToolData().catch((error) => setMessage(error instanceof Error ? error.message : String(error)))}>重试加载</button></div>}
+          {toolSongsStatus === "error" && <div className="tool-data-state error"><span>歌曲列表加载失败：{playerErrorMessage(toolSongsError || toolDataError)}</span><button type="button" className="secondary" onClick={() => ensureFullToolData(true).catch((error) => setMessage(playerErrorMessage(error)))}>重试加载</button></div>}
+          {toolDataError && toolSongsStatus !== "error" && <div className="tool-data-state error"><span>完整工具数据加载失败：{playerErrorMessage(toolDataError)}</span><button type="button" className="secondary" onClick={() => ensureFullToolData().catch((error) => setMessage(playerErrorMessage(error)))}>重试加载</button></div>}
           {toolSongsStatus === "ready" && songs.length === 0 && <div className="tool-data-state"><span>当前区服暂无歌曲数据，暂不能进行普通活动规划或活动 PT 计算。</span><button type="button" className="secondary" onClick={() => ensureFullToolData(true).catch((error) => setMessage(error instanceof Error ? error.message : String(error)))}>重新检查</button></div>}
           <div className="tool-form-grid">
             <ToolField label="目标活动 PT" unit="pt" help="活动页面右上角的目标总分，例如 1,000,000 PT。"><input type="number" min="0" value={normalPlanForm.targetPt} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, targetPt: event.target.value })} placeholder="例如 1000000" /></ToolField>
@@ -2409,7 +2412,7 @@ export function App() {
           <div className="panel-heading compact-heading"><div><h2>组卡推荐</h2><p>卡牌 ID 可在卡牌图鉴详情中查看，公开模式只使用手动填写的持有卡。</p></div></div>
           <ToolField label="持有卡牌 ID" help="以逗号或空格分隔，只填写真正持有的卡。"><textarea value={deckOwnedIds} onChange={(event) => setDeckOwnedIds(event.target.value)} placeholder="例如 1, 2, 109, 325" /></ToolField>
           <button type="button" onClick={calculateDeck} disabled={deckLoading}><Wand2 size={16} />{deckLoading ? "正在推荐…" : "推荐卡组"}</button>
-          {deckError && <div className="catalog-feedback error" role="alert"><strong>组卡推荐失败</strong><span>{deckError}</span><button type="button" className="secondary" onClick={calculateDeck}>重试</button></div>}
+          {deckError && <div className="catalog-feedback error" role="alert"><strong>组卡推荐失败</strong><span>{playerErrorMessage(deckError)}</span><button type="button" className="secondary" onClick={calculateDeck}>重试</button></div>}
           {deckResult && <><DeckRecommendationPreview result={deckResult} /><ToolResultWarnings result={deckResult} /><ToolJsonDetails value={deckResult} /></>}
         </article>
         <article className="panel wide tool-card-panel"><div className="panel-heading compact-heading"><div><h2>周回歌曲推荐</h2><p>按共享活动 PT 公式计算候选歌曲，再按每分钟 PT 排序。</p></div></div><div className="tool-form-grid">
@@ -2632,12 +2635,14 @@ export function App() {
     const source = sourceMetadata(data);
     const warnings = asArray(data?.warnings);
     const unavailableGroups = asArray(data?.unavailableGroups);
+    const capability = data?.capabilityStatus ?? data?.status;
     return (
       <article className="source-panel-card">
-        <div><strong>数据状态</strong><span>{source.fetchedAt ? `更新于 ${formatDate(source.fetchedAt)}` : "等待同步"}</span></div>
-        {(source.unavailableReason || data?.unavailableReason) && <p className="warning-text">{source.unavailableReason ?? data.unavailableReason}</p>}
-        {warnings.length > 0 && <p className="warning-text">{warnings.slice(0, 3).join(" / ")}</p>}
-        {unavailableGroups.length > 0 && <small>缺失分组：{unavailableGroups.map((item: any) => item.group).join("、")}</small>}
+        <div><strong>资料状态</strong><span>{capability ? playerStatusLabel(capability) : source.fetchedAt ? `更新于 ${formatDate(source.fetchedAt)}` : "等待同步"}</span></div>
+        {(source.unavailableReason || data?.unavailableReason) && <p className="warning-text">{playerWarningMessage(source.unavailableReason ?? data.unavailableReason)}</p>}
+        {warnings.length > 0 && <p className="warning-text">{playerWarningMessage(warnings[0])}</p>}
+        {unavailableGroups.length > 0 && <p className="source-panel-missing">暂缺：{unavailableGroups.map((item: any) => playerFieldLabel(item.group)).filter((item, index, all) => all.indexOf(item) === index).join("、")}</p>}
+        {(source.sourceType || unavailableGroups.length > 0 || warnings.length > 0) && <details className="source-panel-diagnostics"><summary>查看资料诊断</summary>{source.sourceType && <p>资料来源：数据同步记录</p>}{warnings.slice(0, 3).map((warning: string, index: number) => <p key={`${warning}:${index}`}>{technicalDiagnosticMessage(warning)}</p>)}{unavailableGroups.length > 0 && <p>技术字段：{unavailableGroups.map((item: any) => String(item.group)).join("、")}</p>}</details>}
       </article>
     );
   }
@@ -3261,17 +3266,17 @@ export function App() {
       )}
 
       {selectedSong && (
-        <DetailDrawer title={selectedSong.music.title} onClose={() => setSelectedSong(null)}>
+        <DetailDrawer title={selectedSong.music.title} onClose={() => setSelectedSong(null)} elevated={Boolean(selectedEvent || selectedCollection)}>
           <FavoriteButton type="song" region={region} targetId={selectedSong.music.id} label={selectedSong.music.title} />
           <div className="detail-hero"><ArtImage src={stringAsset(selectedSong.assets, "jacketUrl")} label={selectedSong.music.title} /><div><strong>{selectedSong.music.title}</strong><span>ID {selectedSong.music.id}</span><p>{selectedSong.music.categories?.join(" / ") || selectedSong.music.unit}</p><small>时长 {selectedSong.music.durationSeconds ?? "-"}s / BPM {selectedSong.music.bpm ?? "-"}</small></div></div>
           <h3>谱面</h3><div className="difficulty-grid">{(selectedSong.music.difficultyDetails ?? []).map((detail) => <button key={detail.difficulty} type="button" className="difficulty-card" onClick={() => setSelectedChart({ musicId: selectedSong.music.id, title: selectedSong.music.title, detail })}><span>{detail.difficulty}</span><strong>Lv.{detail.playLevel}</strong><small>{formatNumber(detail.totalNoteCount)} notes</small></button>)}</div>
         </DetailDrawer>
       )}
-      {selectedChart && <DetailDrawer title={`${selectedChart.title} / ${selectedChart.detail.difficulty}`} onClose={() => setSelectedChart(null)}><RealChartPreview region={region} musicId={selectedChart.musicId} difficulty={selectedChart.detail.difficulty} fallbackTitle={selectedChart.title} fallbackLevel={selectedChart.detail.playLevel} fallbackNotes={selectedChart.detail.totalNoteCount} formatNumber={(value) => formatNumber(value)} /></DetailDrawer>}
+      {selectedChart && <DetailDrawer title={`${selectedChart.title} / ${selectedChart.detail.difficulty}`} onClose={() => setSelectedChart(null)} elevated={Boolean(selectedSong || selectedEvent || selectedCollection)} topmost={Boolean(selectedSong || selectedEvent || selectedCollection)}><RealChartPreview region={region} musicId={selectedChart.musicId} difficulty={selectedChart.detail.difficulty} fallbackTitle={selectedChart.title} fallbackLevel={selectedChart.detail.playLevel} fallbackNotes={selectedChart.detail.totalNoteCount} formatNumber={(value) => formatNumber(value)} /></DetailDrawer>}
       {selectedCard && (
         <DetailDrawer title={selectedCard.card.title} onClose={() => setSelectedCard(null)} elevated={Boolean(selectedCollection || selectedEvent)}>
           <FavoriteButton type="card" region={region} targetId={selectedCard.card.id} label={selectedCard.card.title} />
-          <div className="detail-hero card-detail"><div><strong>{selectedCard.card.character}</strong><span>ID {selectedCard.card.id}</span><p>{selectedCard.card.title}</p><small>星级 {selectedCard.card.rarity} / {selectedCard.card.attribute}</small></div></div>
+          <div className="detail-hero card-detail"><div><strong>{selectedCard.card.title}</strong><span>{selectedCard.card.character}</span><p>属性 {cardAttributeLabel(selectedCard.card.attribute)} · {selectedCard.card.rarity}★</p><small>ID {selectedCard.card.id}</small></div></div>
           <section className="card-art-grid">
             <article>
               <h3>特训前</h3>
@@ -3291,14 +3296,14 @@ export function App() {
         <DetailDrawer title={selectedEvent.event.name} onClose={() => setSelectedEvent(null)}>
           <FavoriteButton type="event" region={region} targetId={selectedEvent.event.id} label={selectedEvent.event.name} />
           <div className="detail-hero"><ArtImage src={stringAsset(selectedEvent.assets, "bannerUrl")} label={selectedEvent.event.name} variant="event" /><div><strong>{selectedEvent.event.name}</strong><span>{formatDate(selectedEvent.event.startAt)} - {formatDate(selectedEvent.event.endAt)}</span><p>{selectedEvent.event.storyOutline ?? "真实剧情简介暂不可用。"}</p></div></div>
-          <section className="compact-list"><h3>相关歌曲</h3>{selectedEvent.relations.relatedSongs.map((song) => <div key={song.id}><span>{song.title}</span><button type="button" onClick={() => openSong(song.id)}>歌曲详情</button></div>)}</section>
+          <section className="compact-list"><h3>相关歌曲</h3>{selectedEvent.relations.relatedSongs.map((song) => <div key={song.id}><span>{song.title}</span><button type="button" onClick={() => openSong(song.id, song.title, true)}>歌曲详情</button></div>)}</section>
           <section className="related-card-grid">{selectedEvent.relations.relatedCards.map((card) => renderRelatedCardTile(card, `${region}:event-card:${card.id}`))}</section>
         </DetailDrawer>
       )}
       {selectedCollection && (
         <DetailDrawer title={selectedCollection.item.name} onClose={() => setSelectedCollection(null)}>
           <FavoriteButton type={favoriteTypeForCatalog(selectedCollection.item.type)} region={region} targetId={selectedCollection.item.id} label={selectedCollection.item.name} />
-          <div className={`detail-hero ${selectedCollection.item.type === "honors" ? "honor-detail" : selectedCollection.item.type === "gachas" ? "gacha-detail" : ""}`}><ArtImage src={collectionImageCandidates(selectedCollection.item.type, selectedCollection.assets, true)[0]} srcCandidates={collectionImageCandidates(selectedCollection.item.type, selectedCollection.assets, true)} label={selectedCollection.item.name} variant={collectionImageVariant(selectedCollection.item.type)} /><div><strong>{selectedCollection.item.name}</strong><span>ID {selectedCollection.item.id}</span><p>{selectedCollection.item.description ?? selectedCollection.item.category ?? "暂无更多说明"}</p><small>{formatDate(selectedCollection.item.startAt)} - {formatDate(selectedCollection.item.endAt)}</small></div></div>
+          <div className={`detail-hero ${selectedCollection.item.type === "honors" ? "honor-detail" : selectedCollection.item.type === "gachas" ? "gacha-detail" : ""}`}><ArtImage src={collectionImageCandidates(selectedCollection.item.type, selectedCollection.assets, true)[0]} srcCandidates={collectionImageCandidates(selectedCollection.item.type, selectedCollection.assets, true)} label={selectedCollection.item.name} variant={collectionImageVariant(selectedCollection.item.type)} /><div><strong>{selectedCollection.item.name}</strong><span>ID {selectedCollection.item.id}</span><p>{selectedCollection.item.description ?? collectionCategoryLabel(selectedCollection.item.type, selectedCollection.item.category) ?? "暂无更多说明"}</p><small>{formatDate(selectedCollection.item.startAt)} - {formatDate(selectedCollection.item.endAt)}</small>{selectedCollection.item.type === "gachas" && selectedCollection.item.category && <details className="collection-category-diagnostics"><summary>查看资料分类</summary><small>{selectedCollection.item.category}</small></details>}</div></div>
           {selectedCollection.item.type === "costumes" && <section className="costume-detail-grid"><div><h3>服装信息</h3><p>部件：{selectedCollection.item.partTypes?.join(" / ") || "缺失"}</p><p>来源：{selectedCollection.item.source ?? "未知"} / 稀有度：{selectedCollection.item.rarity ?? "未知"}</p><p>性别：{selectedCollection.item.gender ?? "未知"}{selectedCollection.item.designer ? ` / 设计：${selectedCollection.item.designer}` : ""}</p><p>适用角色：{selectedCollection.item.characterIds?.join("、") || "未提供"}</p></div><div><h3>颜色与部件</h3>{Object.entries(selectedCollection.item.parts ?? {}).map(([partType, variants]) => <div key={partType} className="costume-part"><strong>{partType}</strong><span>{variants.map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}{(selectedCollection.item.extraParts ?? []).map((part, index) => <div key={`${part.characterId}-${part.partType}-${index}`} className="costume-part"><strong>{part.partType ?? "extra"} / 角色 {part.characterId ?? "-"}</strong><span>{(part.variants ?? []).map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}</div></section>}
           <section className="related-card-grid">{(selectedCollection.relations?.relatedCards ?? []).slice(0, 30).map((card) => renderRelatedCardTile(card, `${region}:collection-card:${card.id}`))}</section>
         </DetailDrawer>

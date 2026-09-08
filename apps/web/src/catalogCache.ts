@@ -5,7 +5,15 @@ type CacheEntry<T> = { key: string; data: T; etag?: string; cachedAt: number };
 const databaseName = "pjsktools-cache";
 const storeName = "catalogs";
 const memoryCache = new Map<string, CacheEntry<unknown>>();
-const pendingRequests = new Map<string, Promise<unknown>>();
+type PendingRequest<T> = { promise: Promise<T>; signal?: AbortSignal };
+const pendingRequests = new Map<string, PendingRequest<unknown>>();
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (!signal?.aborted) return;
+  const error = new Error("Catalog request was cancelled");
+  error.name = "AbortError";
+  throw error;
+}
 
 function openDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -57,11 +65,14 @@ export async function loadCachedCatalog<T>(
 ): Promise<T> {
   const key = path;
   const cached = await readCache<T>(key);
+  throwIfAborted(options.signal);
   if (cached) options.onCached?.(cached.data);
-  const existing = pendingRequests.get(key) as Promise<T> | undefined;
-  if (existing) return existing;
+  throwIfAborted(options.signal);
+  const existing = pendingRequests.get(key) as PendingRequest<T> | undefined;
+  if (existing && !existing.signal?.aborted && existing.signal === options.signal) return existing.promise;
 
   const request = (async () => {
+    throwIfAborted(options.signal);
     const response = await fetch(`${API_BASE_URL}${path}`, {
       signal: options.signal,
       headers: cached?.etag ? { "If-None-Match": cached.etag } : undefined
@@ -71,7 +82,12 @@ export async function loadCachedCatalog<T>(
     const data = await response.json() as T;
     void writeCache({ key, data, etag: response.headers.get("etag") ?? undefined, cachedAt: Date.now() });
     return data;
-  })().finally(() => pendingRequests.delete(key));
-  pendingRequests.set(key, request);
+  })();
+  const pending: PendingRequest<T> = { promise: request, signal: options.signal };
+  pendingRequests.set(key, pending);
+  void request.then(
+    () => { if (pendingRequests.get(key) === pending) pendingRequests.delete(key); },
+    () => { if (pendingRequests.get(key) === pending) pendingRequests.delete(key); }
+  );
   return request;
 }
