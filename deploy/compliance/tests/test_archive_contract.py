@@ -116,10 +116,10 @@ class ArchiveContractTest(unittest.TestCase):
         self.assertIn("SECURITY_EVENT_LOG_PATH: /var/log/pjsktools/security.json", compose)
         self.assertGreaterEqual(compose.count("/var/log/pjsktools:/var/log/pjsktools"), 2)
         for setting in (
-            'HARUKI_FEATURE_ENABLED: "false"',
+            'HARUKI_FEATURE_ENABLED: ${HARUKI_FEATURE_ENABLED:-false}',
             'HARUKI_WEBHOOK_ENABLED: "false"',
             'HARUKI_WEBHOOK_SYNC_ENABLED: "false"',
-            'VITE_HARUKI_FEATURE_ENABLED: "false"',
+            'VITE_HARUKI_FEATURE_ENABLED: ${VITE_HARUKI_FEATURE_ENABLED:-false}',
         ):
             self.assertIn(setting, compose)
         self.assertIn("import compliance_access_log", caddy)
@@ -156,7 +156,7 @@ class ArchiveContractTest(unittest.TestCase):
         self.assertIn('migrations-complete-runtime-logins-only', bootstrap)
         self.assertIn('verify_runtime_login()', bootstrap)
         self.assertIn('runtime URL does not target the migrated database', bootstrap)
-        self.assertIn('HARUKI_RUNTIME_PASSWORD: ""', compose)
+        self.assertIn('HARUKI_RUNTIME_PASSWORD: ${HARUKI_RUNTIME_PASSWORD:-}', compose)
         self.assertIn('pre-migration-fixed-roles-only', pre_bootstrap)
         self.assertIn('DATABASE_MIGRATION_ROLE', pre_bootstrap)
         self.assertIn('DATABASE_MIGRATION_PASSWORD', pre_bootstrap)
