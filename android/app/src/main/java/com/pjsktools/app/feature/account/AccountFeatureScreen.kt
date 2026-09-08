@@ -1,4 +1,8 @@
 package com.pjsktools.app.feature.account
+import com.pjsktools.app.feature.display.P3Button
+import com.pjsktools.app.feature.display.P3OutlinedButton
+import com.pjsktools.app.feature.display.P3OutlinedTextField
+import com.pjsktools.app.feature.display.P3TextButton
 
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -9,11 +13,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -40,6 +48,7 @@ import com.pjsktools.app.feature.compliance.PRIVACY_URL
 import com.pjsktools.app.feature.compliance.SECURITY_URL
 import com.pjsktools.app.feature.compliance.TERMS_URL
 import com.pjsktools.app.BuildConfig
+import com.pjsktools.app.feature.display.displayCount
 import okhttp3.OkHttpClient
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -115,14 +124,28 @@ private fun AccountEntry(
     launch: (suspend () -> Unit) -> Unit,
     openUri: (String) -> Unit
 ) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
-    var privacyAccepted by remember { mutableStateOf(false) }
-    var termsAccepted by remember { mutableStateOf(false) }
-    var ageConfirmed by remember { mutableStateOf(false) }
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var confirmPassword by rememberSaveable { mutableStateOf("") }
+    var code by rememberSaveable { mutableStateOf("") }
+    var privacyAccepted by rememberSaveable { mutableStateOf(false) }
+    var termsAccepted by rememberSaveable { mutableStateOf(false) }
+    var ageConfirmed by rememberSaveable { mutableStateOf(false) }
+    var savedEntryMode by rememberSaveable { mutableStateOf(AccountEntryMode.LOGIN.name) }
+    var restoredEntryMode by remember { mutableStateOf(false) }
     var resendSeconds by remember { mutableStateOf(0L) }
+    LaunchedEffect(state.initialized, state.entryMode) {
+        if (!state.initialized) return@LaunchedEffect
+        if (!restoredEntryMode) {
+            val restored = restoredAccountEntryMode(savedEntryMode)
+            if (state.entryMode != restored) {
+                controller.setEntryMode(restored)
+                return@LaunchedEffect
+            }
+            restoredEntryMode = true
+        }
+        savedEntryMode = state.entryMode.name
+    }
     LaunchedEffect(state.registrationCode) {
         resendSeconds = state.registrationCode?.resendAfterSeconds ?: 0
         while (resendSeconds > 0) {
@@ -135,21 +158,21 @@ private fun AccountEntry(
         item { Text("登录后与网页端共享 UID、公开资料和玩家资产。绑定 UID 不代表所有权证明。") }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (state.entryMode == AccountEntryMode.LOGIN) Button(onClick = {}) { Text("登录") }
-                else OutlinedButton(onClick = { controller.setEntryMode(AccountEntryMode.LOGIN) }) { Text("登录") }
-                if (state.entryMode == AccountEntryMode.REGISTER) Button(onClick = {}) { Text("注册") }
-                else OutlinedButton(onClick = { controller.setEntryMode(AccountEntryMode.REGISTER) }) { Text("注册") }
+                if (state.entryMode == AccountEntryMode.LOGIN) P3Button(onClick = {}) { Text("登录") }
+                else P3OutlinedButton(onClick = { controller.setEntryMode(AccountEntryMode.LOGIN) }) { Text("登录") }
+                if (state.entryMode == AccountEntryMode.REGISTER) P3Button(onClick = {}) { Text("注册") }
+                else P3OutlinedButton(onClick = { controller.setEntryMode(AccountEntryMode.REGISTER) }) { Text("注册") }
             }
         }
-        item { OutlinedTextField(email, { email = it }, modifier = Modifier.fillMaxWidth(), label = { Text("邮箱") }, singleLine = true) }
-        item { OutlinedTextField(password, { password = it }, modifier = Modifier.fillMaxWidth(), label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }
+        item { P3OutlinedTextField(email, { email = it }, modifier = Modifier.fillMaxWidth(), label = { Text("邮箱") }, singleLine = true) }
+        item { P3OutlinedTextField(password, { password = it }, modifier = Modifier.fillMaxWidth(), label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }
         if (state.entryMode == AccountEntryMode.REGISTER) {
-            item { OutlinedTextField(confirmPassword, { confirmPassword = it }, modifier = Modifier.fillMaxWidth(), label = { Text("再次输入密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }
+            item { P3OutlinedTextField(confirmPassword, { confirmPassword = it }, modifier = Modifier.fillMaxWidth(), label = { Text("再次输入密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }
             item { Text("密码至少 10 位，并包含大写字母、小写字母、数字和符号；14 位以上至少包含其中三类，且不能包含邮箱名前缀。", style = MaterialTheme.typography.bodySmall) }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, modifier = Modifier.weight(1f), label = { Text("6 位验证码") }, singleLine = true)
-                    OutlinedButton(enabled = !state.busy && email.isNotBlank() && resendSeconds == 0L, onClick = { launch { controller.requestRegistrationCode(email) } }) { Text(if (resendSeconds > 0) "${resendSeconds}s 后重发" else "获取验证码") }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    P3OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, modifier = Modifier.fillMaxWidth(), label = { Text("6 位验证码") }, singleLine = true)
+                    P3OutlinedButton(enabled = !state.busy && email.isNotBlank() && resendSeconds == 0L, onClick = { launch { controller.requestRegistrationCode(email) } }, modifier = Modifier.fillMaxWidth()) { Text(if (resendSeconds > 0) "${resendSeconds}s 后重发" else "获取验证码") }
                 }
             }
             state.registrationCode?.let { result -> item { Text("验证码已发送，${(result.expiresInSeconds ?: 300) / 60} 分钟内有效。") } }
@@ -167,7 +190,7 @@ private fun AccountEntry(
             Text("当前隐私政策与用户协议版本尚未加载，暂时无法注册或使用 QQ 首次登录。", color = MaterialTheme.colorScheme.error)
         }
         item {
-            Button(
+            P3Button(
                 enabled = !state.busy && (state.entryMode == AccountEntryMode.LOGIN ||
                     state.legalDocuments != null && password == confirmPassword && code.length == 6 && privacyAccepted && termsAccepted && ageConfirmed),
                 onClick = { launch {
@@ -181,7 +204,7 @@ private fun AccountEntry(
             Text("三项确认仅用于首次 QQ 登录；邮箱登录不会提交这些确认。", style = MaterialTheme.typography.bodySmall)
         }
         item {
-            OutlinedButton(
+            P3OutlinedButton(
                 enabled = !state.busy && state.legalDocuments != null && privacyAccepted && termsAccepted && ageConfirmed,
                 onClick = { launch { openUri(controller.startMobileQqLogin(privacyAccepted, termsAccepted, ageConfirmed).authorizeUrl) } },
                 modifier = Modifier.fillMaxWidth()
@@ -217,14 +240,19 @@ private fun AccountWorkspace(
     }
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Card(Modifier.fillMaxWidth()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(state.profile?.user?.nickname ?: state.profile?.user?.email ?: "已登录", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("UID ${state.profile?.bindings?.size ?: 0} · 收藏 ${state.profile?.favorites?.size ?: 0} · 成绩 ${state.profile?.scores?.size ?: 0} · 卡组 ${state.profile?.deckConfigs?.size ?: 0}")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(enabled = !state.busy, onClick = { launch { controller.reloadProfile() } }) { Text("同步") }
-                        OutlinedButton(enabled = !state.busy, onClick = { launch { controller.refreshSession() } }) { Text("刷新登录") }
-                        TextButton(enabled = !state.busy, onClick = { launch { controller.logout() } }) { Text("退出") }
+                    Text("UID ${displayCount(state.profile?.bindings?.size?.toLong())} · 收藏 ${displayCount(state.profile?.favorites?.size?.toLong())} · 成绩 ${displayCount(state.profile?.scores?.size?.toLong())} · 卡组 ${displayCount(state.profile?.deckConfigs?.size?.toLong())}")
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        P3OutlinedButton(enabled = !state.busy, onClick = { launch { controller.reloadProfile() } }) { Text("同步") }
+                        P3OutlinedButton(enabled = !state.busy, onClick = { launch { controller.refreshSession() } }) { Text("刷新登录") }
+                        P3TextButton(enabled = !state.busy, onClick = { launch { controller.logout() } }) { Text("退出") }
                     }
                     InlineActionFeedback(state, AccountFeedbackTarget.PROFILE, "正在同步账号资料…")
                     InlineActionFeedback(state, AccountFeedbackTarget.AUTH, "正在刷新登录状态…")
@@ -242,16 +270,21 @@ private fun AccountWorkspace(
         item { AccountDataPanels(state, controller, launch) }
         item {
             val qq = state.profile?.oauthAccounts?.firstOrNull { it.provider == "qq" }
-            Card(Modifier.fillMaxWidth()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("QQ 账号", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(qq?.nickname?.let { "已关联：$it" } ?: if (qq != null) "已关联" else "尚未关联")
                     if (qq == null) {
-                        OutlinedButton(enabled = !state.busy, onClick = {
+                        P3OutlinedButton(enabled = !state.busy, onClick = {
                             launch { openUri(controller.startMobileQqLink().authorizeUrl) }
                         }) { Text("关联当前账号") }
                     } else {
-                        TextButton(enabled = !state.busy, onClick = { confirmUnlinkQq = true }) {
+                        P3TextButton(enabled = !state.busy, onClick = { confirmUnlinkQq = true }) {
                             Text("解除关联", color = MaterialTheme.colorScheme.error)
                         }
                     }
@@ -259,22 +292,27 @@ private fun AccountWorkspace(
             }
         }
         item {
-            Card(Modifier.fillMaxWidth()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("隐私与账号权利", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text("可导出服务器保存的个人数据、清除本机缓存，或永久注销账号。")
-                    OutlinedButton(enabled = !state.busy, onClick = {
+                    P3OutlinedButton(enabled = !state.busy, onClick = {
                         launch {
                             pendingExportJson = controller.exportPersonalData()
                             exportLauncher.launch("sekai-tools-personal-data.json")
                         }
                     }) { Text("导出个人数据 JSON") }
-                    OutlinedButton(enabled = !state.busy, onClick = {
+                    P3OutlinedButton(enabled = !state.busy, onClick = {
                         launch {
                             controller.clearPrivateCache()
                         }
                     }) { Text("清除本地缓存") }
-                    TextButton(enabled = !state.busy, onClick = { confirmDeleteAccount = true }) {
+                    P3TextButton(enabled = !state.busy, onClick = { confirmDeleteAccount = true }) {
                         Text("注销账号", color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -287,8 +325,8 @@ private fun AccountWorkspace(
             onDismissRequest = { pendingDeleteId = null },
             title = { Text("删除 UID 绑定？") },
             text = { Text("该操作会同时删除此 UID 关联的持有卡、玩家资产和卡组配置，且无法撤销。") },
-            confirmButton = { TextButton(onClick = { pendingDeleteId = null; launch { controller.deleteBinding(id) } }) { Text("确认删除", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { pendingDeleteId = null }) { Text("取消") } }
+            confirmButton = { P3TextButton(onClick = { pendingDeleteId = null; launch { controller.deleteBinding(id) } }) { Text("确认删除", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { P3TextButton(onClick = { pendingDeleteId = null }) { Text("取消") } }
         )
     }
     if (confirmUnlinkQq) {
@@ -296,8 +334,8 @@ private fun AccountWorkspace(
             onDismissRequest = { confirmUnlinkQq = false },
             title = { Text("解除 QQ 关联？") },
             text = { Text("解除后将无法继续使用该 QQ 登录；若它是唯一登录方式，服务器会拒绝操作。") },
-            confirmButton = { TextButton(onClick = { confirmUnlinkQq = false; launch { controller.unlinkQq() } }) { Text("确认解除") } },
-            dismissButton = { TextButton(onClick = { confirmUnlinkQq = false }) { Text("取消") } }
+            confirmButton = { P3TextButton(onClick = { confirmUnlinkQq = false; launch { controller.unlinkQq() } }) { Text("确认解除") } },
+            dismissButton = { P3TextButton(onClick = { confirmUnlinkQq = false }) { Text("取消") } }
         )
     }
     if (confirmDeleteAccount) {
@@ -324,6 +362,9 @@ private fun AccountWorkspace(
     }
 }
 
+internal fun restoredAccountEntryMode(savedName: String): AccountEntryMode =
+    AccountEntryMode.entries.firstOrNull { it.name == savedName } ?: AccountEntryMode.LOGIN
+
 @Composable
 private fun LegalCheckbox(
     checked: Boolean,
@@ -331,10 +372,12 @@ private fun LegalCheckbox(
     label: String,
     openDocument: () -> Unit
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-        Text(label, modifier = Modifier.weight(1f))
-        TextButton(onClick = openDocument) { Text("查看") }
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+            Text(label, modifier = Modifier.weight(1f))
+        }
+        P3TextButton(onClick = openDocument) { Text("查看全文") }
     }
 }
 
@@ -345,14 +388,17 @@ private fun LegalAcceptanceDialog(
     launch: (suspend () -> Unit) -> Unit,
     openUri: (String) -> Unit
 ) {
-    var privacyAccepted by remember { mutableStateOf(false) }
-    var termsAccepted by remember { mutableStateOf(false) }
-    var ageConfirmed by remember { mutableStateOf(false) }
+    var privacyAccepted by rememberSaveable { mutableStateOf(false) }
+    var termsAccepted by rememberSaveable { mutableStateOf(false) }
+    var ageConfirmed by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = {},
         title = { Text("请确认最新协议") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Text("继续使用账号服务前，请逐项阅读并主动确认。选项不会预先勾选。")
                 LegalCheckbox(privacyAccepted, { privacyAccepted = it }, "同意隐私政策") { openUri(PRIVACY_URL) }
                 LegalCheckbox(termsAccepted, { termsAccepted = it }, "同意用户协议") { openUri(TERMS_URL) }
@@ -360,17 +406,17 @@ private fun LegalAcceptanceDialog(
                     Checkbox(ageConfirmed, { ageConfirmed = it })
                     Text("我确认已满 14 周岁")
                 }
-                TextButton(onClick = { openUri(SECURITY_URL) }) { Text("安全与举报渠道") }
+                P3TextButton(onClick = { openUri(SECURITY_URL) }) { Text("安全与举报渠道") }
             }
         },
         confirmButton = {
-            Button(
+            P3Button(
                 enabled = !busy && privacyAccepted && termsAccepted && ageConfirmed,
                 onClick = { launch { controller.acceptCurrentLegal(privacyAccepted, termsAccepted, ageConfirmed) } }
             ) { Text("确认并继续") }
         },
         dismissButton = {
-            TextButton(enabled = !busy, onClick = { launch { controller.logout() } }) { Text("退出登录") }
+            P3TextButton(enabled = !busy, onClick = { launch { controller.logout() } }) { Text("退出登录") }
         }
     )
 }
@@ -392,54 +438,63 @@ private fun AccountDeletionDialog(
         onDismissRequest = onDismiss,
         title = { Text("永久注销账号？") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text("注销将删除账号、会话、绑定、收藏、成绩、卡组和玩家快照，且无法撤销。")
                 if (hasEmail) {
-                    OutlinedButton(enabled = !busy, onClick = requestCode) { Text("发送邮箱注销验证码") }
+                    P3OutlinedButton(enabled = !busy, onClick = requestCode) { Text("发送邮箱注销验证码") }
                     state.deletionCode?.let { Text("验证码已发送，${(it.expiresInSeconds ?: 300) / 60} 分钟内有效。") }
-                    OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("6 位验证码") }, singleLine = true)
-                    OutlinedTextField(confirmation, { confirmation = it }, label = { Text("输入 DELETE 确认") }, singleLine = true)
+                    P3OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("6 位验证码") }, singleLine = true)
+                    P3OutlinedTextField(confirmation, { confirmation = it }, label = { Text("输入 DELETE 确认") }, singleLine = true)
                 } else {
                     if (state.qqDeletionReady) {
                         Text("QQ 身份已重新验证。请输入 DELETE 并再次确认，才会永久注销账号。")
-                        OutlinedTextField(confirmation, { confirmation = it }, label = { Text("输入 DELETE 确认") }, singleLine = true)
+                        P3OutlinedTextField(confirmation, { confirmation = it }, label = { Text("输入 DELETE 确认") }, singleLine = true)
                     } else {
                         Text("纯 QQ 账号必须重新完成 QQ 授权，验证结果仅用于本次注销且 2 分钟内有效。")
-                        OutlinedButton(enabled = !busy, onClick = startQqDeletion) { Text("使用 QQ 重新验证") }
+                        P3OutlinedButton(enabled = !busy, onClick = startQqDeletion) { Text("使用 QQ 重新验证") }
                     }
                 }
             }
         },
         confirmButton = {
             if (hasEmail) {
-                TextButton(
+                P3TextButton(
                     enabled = !busy && code.length == 6 && confirmation == "DELETE",
                     onClick = { confirmEmailDeletion(code, confirmation) }
                 ) { Text("永久注销", color = MaterialTheme.colorScheme.error) }
             } else {
-                TextButton(
+                P3TextButton(
                     enabled = !busy && state.qqDeletionReady && confirmation == "DELETE",
                     onClick = { confirmQqDeletion(confirmation) }
                 ) { Text("永久注销", color = MaterialTheme.colorScheme.error) }
             }
         },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("取消") } }
+        dismissButton = { P3TextButton(enabled = !busy, onClick = onDismiss) { Text("取消") } }
     )
 }
 
 @Composable
 private fun BindingCard(binding: PlayerBinding, summary: BindingSummary?, selected: Boolean, busy: Boolean,
     select: () -> Unit, makeDefault: () -> Unit, delete: () -> Unit) {
-    Card(onClick = select, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Card(
+        onClick = select,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(binding.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text("${binding.region.uppercase()} · ${binding.playerUid}${if (binding.isDefault) " · 默认" else ""}")
-        binding.publicProfile?.let { Text("Rank ${it.rank ?: "-"}${it.comment?.let { comment -> " · $comment" } ?: ""}") }
-        Text("库存 ${summary?.inventoryCount ?: 0} · 已上传 ${summary?.uploadedPlayerDataKinds?.size ?: 0} 类资产")
+        binding.publicProfile?.let { Text("Rank ${displayCount(it.rank?.toLong())}${it.comment?.let { comment -> " · $comment" } ?: ""}") }
+        Text("库存 ${displayCount(summary?.inventoryCount?.toLong())} · 已上传 ${displayCount(summary?.uploadedPlayerDataKinds?.size?.toLong())} 类资产")
         Text("玩家资料刷新：${binding.refreshedAt ?: "尚未刷新"}", style = MaterialTheme.typography.bodySmall)
         if (selected) { HorizontalDivider(); Text("当前使用", color = MaterialTheme.colorScheme.primary) }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(enabled = !busy && !binding.isDefault, onClick = makeDefault) { Text("设为默认") }
-            TextButton(enabled = !busy, onClick = delete) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            P3TextButton(enabled = !busy && !binding.isDefault, onClick = makeDefault) { Text("设为默认") }
+            P3TextButton(enabled = !busy, onClick = delete) { Text("删除", color = MaterialTheme.colorScheme.error) }
         }
     } }
 }

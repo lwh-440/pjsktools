@@ -95,6 +95,29 @@ class AccountComplianceTest {
         assertEquals(null, registrationRequest.error)
     }
 
+    @Test fun deckRecommendationShowsTheUsableResultBeforeItsRawJsonEntry() {
+        val summary = deckRecommendationDisplay(
+            """{"recommendedDecks":[{"totalEventBonus":125,"cards":[{"card":{"id":1445,"name":"测试卡"}}]}],"missingFields":["角色等级"]}"""
+        )
+
+        assertTrue(summary.first().contains("测试卡"))
+        assertTrue(summary.any { it.contains("125") })
+        assertTrue(summary.any { it.contains("角色等级") })
+    }
+
+    @Test fun deckRecommendationSkipsExplicitJsonNullsAndUsesTheAvailableFallbackCards() {
+        val summary = deckRecommendationDisplay(
+            """{"recommendedDecks":null,"recommendedCards":[{"id":1445,"name":"测试卡"},null],"missingFields":null}"""
+        )
+
+        assertTrue(summary.first().contains("测试卡"))
+    }
+
+    @Test fun restoredEntryModeKeepsTheRegistrationFormVisibleWithoutSubmittingIt() {
+        assertEquals(AccountEntryMode.REGISTER, restoredAccountEntryMode(AccountEntryMode.REGISTER.name))
+        assertEquals(AccountEntryMode.LOGIN, restoredAccountEntryMode("unknown"))
+    }
+
     @Test fun expiredSessionMovesARecordActionsFeedbackBackToTheLoginSurface() {
         val expired = AccountUiState(
             session = AccountSession("access", "refresh", user = AccountUser("user")),

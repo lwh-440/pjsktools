@@ -1,6 +1,8 @@
 package com.pjsktools.app.feature.catalog
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CatalogImageLayoutTest {
@@ -78,5 +80,40 @@ class CatalogImageLayoutTest {
             "バーチャル・シンガーver.",
             relatedItemTitle(RelatedKind.DISPLAY_ONLY, "1847", "バーチャル・シンガーver.", "musicVocals")
         )
+    }
+
+    @Test
+    fun restoredDetailOnlyReopensOnTheFirstDataLoadAndNewNavigationIsConsumedOnce() {
+        assertTrue(catalogShouldRestoreDetail(firstDataLoad = true, noActiveDetail = true, savedDetailId = "1445"))
+        assertFalse(catalogShouldRestoreDetail(firstDataLoad = false, noActiveDetail = true, savedDetailId = "1445"))
+        assertTrue(catalogShouldClearPersistedDetail(firstDataLoad = false))
+        assertFalse(catalogShouldClearPersistedDetail(firstDataLoad = true))
+        assertFalse(catalogShouldHandleNavigation("CARD\u001f1445\u001f卡牌", "CARD\u001f1445\u001f卡牌"))
+        assertTrue(catalogShouldHandleNavigation("CARD\u001f1445\u001f卡牌", "GACHA\u001f990\u001f卡池"))
+    }
+
+    @Test
+    fun changedListContextDropsTheOldDetailEvenBeforeTheFirstRequestReturns() {
+        val filters = CostumeFilters()
+        val restoredContext = catalogListContext("jp", CatalogType.CARDS, "初始筛选", 2, 24, filters)
+        val changedContext = catalogListContext("jp", CatalogType.CARDS, "新筛选", 1, 24, filters)
+
+        assertFalse(catalogShouldClearPersistedDetail(true, restoredContext, restoredContext))
+        assertTrue(catalogShouldClearPersistedDetail(true, restoredContext, changedContext))
+    }
+
+    @Test
+    fun failedFirstLoadKeepsTheSavedDetailForAnInContextRetryThenConsumesItOnSuccess() {
+        val afterFailure = catalogRestoreIntentAfterLoad(currentIntent = true, loadSucceeded = false)
+        val afterRetrySuccess = catalogRestoreIntentAfterLoad(currentIntent = afterFailure, loadSucceeded = true)
+
+        assertTrue(afterFailure)
+        assertFalse(afterRetrySuccess)
+    }
+
+    @Test
+    fun listAnchorWaitsForTheLoadedListInsteadOfTheInitialHeader() {
+        assertFalse(catalogCanRestoreListAnchor(totalItems = 5, savedIndex = 12))
+        assertTrue(catalogCanRestoreListAnchor(totalItems = 29, savedIndex = 12))
     }
 }

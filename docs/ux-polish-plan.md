@@ -1,6 +1,6 @@
 # UX 优化执行与验收清单
 
-范围：仅调整已有网页与 Android 功能的呈现、交互、反馈和可访问性；不新增业务功能，不开启 Haruki 集成，不改变计算公式或生产数据。按 Web P1 → Web P2 → Web P3 → Android P1 → Android P2 → Android P3 顺序完成，每批测试、独立审查和三处同步后进入下一批。
+范围：仅调整已有网页与 Android 功能的呈现、交互、反馈和可访问性；不新增业务功能，不开启 Haruki 集成，不改变计算公式或生产数据。按 Web P1 → Web P2 → Web P3 → Android P1 → Android P2 → Android P3 顺序实施。用户于 2026-09-09 改为 Android P2/P3 完成后一起打包：P2 验收及源码提交后进入 P3，最终合并验证、正式签名和三处发布；其他已完成批次的记录保持原样。
 
 ## 来源与去重
 
@@ -39,7 +39,7 @@
 
 ## 六批执行门槛
 
-每批顺序：实现 → 本批自动检查与实际交互验收 → 独立审查 → 修复并复验受影响项 → 提交并同步 GitHub/main → 同步本地交付位置与服务器 → 线上抽查并记录证据。前一批未通过时不进入后一批。不用整仓重复测试替代具体交互验收。
+每批顺序：实现 → 本批自动检查与实际交互验收 → 独立审查 → 修复并复验受影响项 → 提交并同步 GitHub/main → 同步本地交付位置与服务器 → 线上抽查并记录证据。Android P2/P3 按用户最新要求合并交付：P2 本地验收和独立审查通过、源码提交后即可进入 P3，不再以 P2 单独服务器发布为前置；P3 完成后对合并改动统一验证、审查、签名并发布。不用整仓重复测试替代具体交互验收。
 
 | 批次 | 依赖与主要检查 |
 | --- | --- |
@@ -77,7 +77,7 @@ P2 最小分组：① `feature/shell/ShellBasicScreens.kt` 的 `HomeFeatureScree
 
 保留 P1 的安全区/IME、反馈定位、请求取消、详情栈、列表锚点与关闭复位；保留 controller、缓存/区服隔离、默认 UID、权限确认、Haruki 编译开关、数据排序与计算算法。移动布局以单列和可换行操作为主，横屏/宽屏只用已有响应式空间；不得把桌面网格等比缩小。视觉验收对照网页同类首页、图鉴、详情、账户页的色彩与层级，按现有 Android 360dp、字体 1.0/1.3/2.0、键盘与横屏矩阵执行，并覆盖现有深色模式；未运行的检查明确保留待完成。
 
-P2 验收清单（最终自动检查、全部最后定向 QA 与独立审查已通过，详见完成记录；提交、正式签名及服务器发布仍待完成）：
+P2 验收清单（最终自动检查、全部最后定向 QA 与独立审查已通过，源码已提交并同步；正式签名和服务器交付并入 P2/P3 合并发布）：
 
 - A5 首页：区服只保留主壳现有选择入口；歌曲/卡牌数量、当前活动、常用入口可见且原跳转可用，区服切换继续使用对应数据。
 - A6 账户：概要→玩家账号→资料/资产/常用记录→QQ→隐私权利的分组顺序正确；现有选择/default UID、表单输入、就近反馈和危险操作确认保留。验看登录前及已有资料状态，不为验收实施真实删除。
@@ -88,7 +88,7 @@ P2 验收清单（最终自动检查、全部最后定向 QA 与独立审查已�
 
 ### P3 真实可达实施入口补充
 
-当前 P2 最终代码及发布前验收文档已冻结，最终自动检查、全部最后定向设备 QA 与独立审查均已通过；提交、正式签名及服务器发布待完成，尚未发布；P3 下列工作只规划，待 P2 发布后执行。以 P2 最终代码为基线，避免覆盖其页面结构。
+P2 最终自动检查、全部最后定向设备 QA 与独立审查均已通过，提交 `978265f0b4820a43d13303b420dd4d81378309f0` 已同步根 main 与 origin/main，CI `34249431273` success。按用户最新要求取消 P2 单独签名发布，原 Terra 负责主题/主壳、ui_features 负责功能页并行实施 P3；以 P2 最终代码为基线，最后合并验证打包发布。
 
 | P3 项目 | 共享实现与必须接入的实际调用点 |
 | --- | --- |
@@ -125,16 +125,35 @@ P3 范围去重：A10 保留全局颜色与 surfaceContainer、字号/间距/形
 | --- | --- | --- | --- |
 | Web P1 | 独立代码审查通过；提交 `8b7caaebd69e9952beebfc1ad145b865d8afb101`；CI `34211193258` success | build、16 项测试、diffcheck 通过；390px 菜单收拢/跳转，360/700/768/1440px 无横向溢出及断点导航；详情即时加载、慢请求关闭后不重开；Tab 焦点循环、Esc 返回触发卡；卡池→卡牌嵌套仅关闭子层并返回焦点、背景滚动锁保持；零结果、503 保留缓存、重试加载及恢复；工具连续输入稳定、真实推荐图文结果均已实际验收 | 本地 main 已快进且保留既有 29 个 generated 文件改动；GitHub/main、服务器及 `.deployed-revision` 已同步本批提交；HTTPS 健康检查通过，线上 390px 图鉴/菜单/当前模块及 1447 条结果已验看 |
 | Web P2 | 独立最终代码审查通过；提交 `852e84869afadd30cc2a00a0771789cd1cc9b265`；CI `34214638465` 全部通过（success） | web build、19 项测试通过；最后 eventUnit 映射修改的定向测试及 build 通过；390px 筛选白石杏即时得到 55 条结果、已选条件标签和底部查看/收起正常；第 2 页→卡牌 849→Esc 返回原按钮焦点且 URL/分页条件保留；首页去重、1440px 筛选默认收起且首排资料可见；模拟 503 保留已有数据、显示中文提示且不暴露 JSON，重试恢复；活动 190→Polar Star→expert 三层详情 z20/30/40，Esc 逐层返回、焦点与滚动锁正确；冻结后 IAB 独立新状态验证 cards?page=2&characterIds=10→往期活动加载完成、216 条结果且无遗留加载状态 | 发布完成：本地 main、GitHub/main、服务器 `.deployed-revision` 一致；HTTPS API 健康且 Haruki 保持关闭；线上 IAB 确认 1447 张卡牌、默认筛选收起、中文属性与信息层级 |
-| Web P3 | 实现冻结；独立最终代码审查通过；提交 `889af1c23f17b31eeaf7c4375c11b7e198ec274e`；CI `34217838351` 全部通过（success）；verify 用时 10m41s，Android assembleDebug/testDebugUnitTest/lintDebug 均通过 | 22 项测试、build、diffcheck 通过；360/768/1440px 无横向溢出；排名分数与增长右对齐并使用 tabular-nums，Tab 聚焦排名行显示约 3px 焦点轮廓；缺失目标档线就地提示且不按 0 规划；手填每局 25000 时本次每局收益显示 25000，主要结果与风险可见，JSON/采样技术信息默认折叠且置信度中文；720px 高视口中 y1953 离屏图片不请求、接近后请求；503 后同 URL 重挂载恢复；模拟缓存候选 onError 后真实备用图片加载成功；eager 图片 503 后离开 600px 观察区再进入自动恢复，无需重挂载，容器高度保持 67.36px；200% 缩放未测 | 发布完成：本地 main、GitHub/main、服务器 `.deployed-revision` 一致；服务器生产 build 通过，HTTPS health 正常且 Haruki 保持关闭；新 JS/CSS 均返回 200；线上 IAB 1440px 确认 100 条排名、12 档线、分数/增长右对齐与 tabular-nums，新 JS 加载正确 |
+| Web P3 | 实现冻结；独立最终代码审查通过；提交 `889af1c23f17b31eeaf7c4375c11b7e198ec274e`；CI `34217838351` 全部通过（success）；verify 用时 10m41s，Android assembleDebug/testDebugUnitTest/lintDebug 均通过 | 22 项测试、build、diffcheck 通过；360/768/1440px 无横向溢出；排名分数与增长右对齐并使用 tabular-nums，Tab 聚焦排名行显示约 3px 焦点轮廓；缺失目标档线就地提示且不按 0 规划；手填每局 25000 时本次每局收益显示 25000，主要结果与风险可见，JSON/采样技术信息默认折叠且置信度中文；720px 高视口中 y1953 离屏图片不请求、接近后请求；503 后同 URL 重挂载恢复；模拟缓存候选 onError 后真实备用图片加载成功；eager 图片 503 后离开 600px 观察区再进入自动恢复，无需重挂载，容器高度保持 67.36px；2026-09-09 用户在正式站首页 https://sekai-tools.cn/ 手动进行浏览器 200% 缩放检查，针对导航/文字/按钮重叠、截断及横向溢出，反馈“200% 下显示和操作正常”；此为用户首页手验，非代理浏览器测量，其他路由的 200% 全矩阵仍未验证；本条补充留待 P3 提交 | 发布完成：本地 main、GitHub/main、服务器 `.deployed-revision` 一致；服务器生产 build 通过，HTTPS health 正常且 Haruki 保持关闭；新 JS/CSS 均返回 200；线上 IAB 1440px 确认 100 条排名、12 档线、分数/增长右对齐与 tabular-nums，新 JS 加载正确 |
 | Android P1 | 本地验收与最终独立审查完成；提交 `d478c494d7183ae5f803c3183501138342714643` 已同步 GitHub/main，根工作区 main 已快进；最终 fallback modifier/Manifest 调整已增量 assemble，并通过受影响场景手动复验 | 本机 JDK 17 + `.runtime/gradle-android-ux-cache` 完整四任务 `compileDebugKotlin / testDebugUnitTest / assembleDebug / lintDebug` 返回 `BUILD SUCCESSFUL`，用时 20m51s；25 项单元测试、0 失败，3 项 connected 设备测试通过（在最后仅调整 fallback modifier/Manifest 之前）。设备 360×640 已验证筛选展开、末字段输入可达、清空、每页 24→96 与第 2/11 页，以及服装 ID 950 详情关闭后图片和标题 bounds 精确复位。无 IME fallback 初始错误首行 y=105，在状态栏底部 y=63 之下；滚动后状态栏干净，底部内容裁剪于 y=1617、未进入导航栏。最终 `adjustResize` 包的账户/fallback IME、长标题与关联返回、谱面收起均已通过，详见下方记录 | 三处发布完成：本地 main、GitHub/main、服务器源码及下载文件对应 `d478c494d7183ae5f803c3183501138342714643`，服务器 marker 已写入并回读；正式签名 session 92648 返回 0/`ANDROID_VALIDATION_COMPLETE`，CI `34231766546` success，独立审查本地门槛通过；公网 APK 与校验文件验证通过，API status=ok、Haruki=true |
-| Android P2 | 最终代码与发布前验收文档冻结；全部最后定向 QA 及最终独立审查通过，可提交 | 最终 host session 8080 于 6m17s 返回 BUILD SUCCESSFUL，compileDebugKotlin/testDebugUnitTest/assembleDebug/lintDebug 均通过；最终 TEST-*.xml 合计 32 tests、0 failures、0 errors、0 skipped。先前 4 项 connected、0 失败，不记为最后修正后重跑。最终 Debug APK SHA-256 `47E488F0766C8F9974947BC0E77DA7B04A9775D81B61EAB069ABC3A02F723FAD`；设置、技术展开状态、关联返回、服装 950、歌曲 803 最终定向 QA 均通过 | 提交、正式签名及服务器发布待完成；未发布，文档随 P2 提交 |
-| Android P3 | 待完成 | 待完成 | 待完成 |
+| Android P2 | 最终代码与本地验收冻结；全部最后定向 QA 及最终独立审查通过；提交 978265f0b4820a43d13303b420dd4d81378309f0 已同步根 main/origin，CI 34249431273 success | 最终 host session 8080 于 6m17s 返回 BUILD SUCCESSFUL，compileDebugKotlin/testDebugUnitTest/assembleDebug/lintDebug 均通过；最终 TEST-*.xml 合计 32 tests、0 failures、0 errors、0 skipped。先前 4 项 connected、0 失败，不记为最后修正后重跑。最终 Debug APK SHA-256 `47E488F0766C8F9974947BC0E77DA7B04A9775D81B61EAB069ABC3A02F723FAD`；设置、技术展开状态、关联返回、服装 950、歌曲 803 最终定向 QA 均通过 | 源码已同步；按用户要求与 P3 合并交付，P2 未单独发布，后续文档随 P3 提交 |
+| Android P3 | 冻结版本及 MySekai 返回修复已通过审查；最终 41B6 包的抽屉/详情系统返回与图片重试定向实测通过 | 最终 host session 97727 于 5m40s 通过，44 项单测、0 失败，lint 0 Error；先前 connected session 48403 的 4 项测试已通过。最终产物及分版本设备证据见下方记录 | 与 P2 合并正式签名、打包及三处发布；待完成 |
+
+Android P2/P3 合并交付变更：用户明确要求“两批改动完成后一起打包”。P2 独立正式签名 session 84752 因该变更以 Ctrl+C 取消：Unit 10m5s、Debug 2m9s 已通过，Release 刚进入、未完成；不记录为正式签名成功。主代理确认该流程已无 Java 进程，原正式 APK 仍为 2,699,629 bytes、SHA-256 `e6b96623e3e6363def37e0a9a0ded428db360fc4bed13a261fe7a91d4a446b15`，服务器 marker 仍为 P1 的 `d478c494d7183ae5f803c3183501138342714643`。P2 源码已提交同步，但未单独发布 APK。
+
+Android P3 返回修复前的 host 与 Debug 产物：日志为主工作区 `.runtime/ux-p3-host-20260909-012234.log`，session 56815 为第三轮完整通过的结果。首轮两处 lambda label 错误已修；第二轮为 43 项单元测试中 1 项因 `org.json` 本地 stub 失败，改用项目已有 serialization 并保留 null 兼容后通过独立审查，该轮最终 44 项全绿。Debug APK 为 22,657,510 bytes，文件时间 01:25:59，SHA-256 为 `ACB9602EF851EFF1F86B826EB405003A879DB0F64CF1273C02DE2CEFA3E7A6E6`。该包及上述 host/lint 结果均早于后续 MySekai 返回修复，已由下方最终 41B6 包验证替代。主代理已用前后 XML 对比确认：普通列表滚动后切换系统 night，仍为同一卡片，图片 bounds `[64,531][881,1348]`、标题 `[64,1359][405,1422]` 精确保留，第 1/61 页不变。
+
+Android P3 connected 与阶段性设备 QA：主代理 session 48403 的日志为主工作区 `.runtime/ux-p3-connected-20260909-014939.log`，横屏 night 下 4 项测试于 2m12s 通过，0 failures、0 errors、0 skipped。首次实际 2 项失败定位为大 Lazy item 内部目标未精确滚入视口；测试 helper 增加 performScrollTo，并确认保存控件 Displayed/Enabled 与 POST 到达计数，原有状态/记录断言及超时保持不变，独立审查已关闭该问题。普通列表滚动，以及查询卡牌 1445→卡池 990 后 night/横屏重建、Back 逐层返回均通过；本次关联链为查询结果第 1/1 页，不是原计划第 2/61 页链路。MySekai 直接家具加载与 gate 详情 night 重建已通过。系统 Back 曾因缺少 BackHandler 退出 Debug、露出 API 为空的旧 Release；Content.closeDetail + BackHandler 修复已通过审查及下述最终包复验。
+
+Android P3 最终发布前验证：host session 97727（主工作区 `.runtime` 中 024639 host 日志）于 5m40s 通过，44 项单元测试、0 失败，lint 0 Error；最终 Debug APK SHA-256 为 `41B6D54439A3BEF7D19B9083D80BCE5BEDF0FBC463E75F2E2F092B4428F000A6`。沿用先前已通过的 4 项 connected，不记为最终包重跑。主代理在该最终包实测主页抽屉打开后系统 Back 仅关闭抽屉且留在 Debug；MySekai ゲート详情中打开抽屉，首次 Back 保持详情不变，再次 Back 返回同一目录滚动位置，证据为主工作区 `.runtime/ux-p3-final-evidence/content-{detail,drawer-back,system-back}.xml`。临时 GET 夹具 4001 图片返回 503 后，切换 ready 并配置 5 秒响应延迟后点击重试，加载期间占位、随后图片成功显示，标题和翻页位置不动；证据为同目录 `image-failed.xml`、`image-loading.xml`、`image-ready.xml` 与 `image-ready.png`。上一 E5FA 包已实测字体 2.0 + 横屏 + IME 输入可见，Save 可滚动到并点击成功；实际图鉴显示夹具 1 项，确认地址 4001 已保存。主代理已通过 UI 保存恢复 4000/JP，连接状态明确显示已保存地址 4000；设备尺寸、字体、输入法和旋转设置已恢复基线。其他既定场景按已有分版本证据汇总，不将本次定向验证扩写为全部矩阵通过。
+
+Android P2/P3 合并交付剩余门槛（按以下状态继续补齐）：
+
+1. 最终 host 与返回/图片定向复验已通过；汇总既有设备验收与先前 4 项 connected 证据，沿用的 P2/P3 证据注明对应包。
+2. 按既有 A10/A11 清单完成实际可达界面的设备验收：网页风格对应的主题/卡片/控件与 48dp 触控，数字 0/缺失及次要信息折叠，图片失败恢复；360dp、字体 1.0/1.3/2.0、横屏、IME、明暗模式下可读可操作，抽屉开关的系统栏对比和重建后的导航状态。对 P3 触及的 P2 设置、账户、1445→990 关联返回、服装 950 与歌曲 803 做针对性回归；修正后复验受影响场景。
+3. 汇总最终自动检查与手验结果，完成独立最终审查和 diffcheck；将 P3 与完成记录提交到 P2 提交之上，同步根 main/GitHub main 并记录 CI 结果。
+4. 对干净 origin/main 运行现有正式签名脚本，Unit → Debug → Release → 签名校验全部完成并取得 `ANDROID_VALIDATION_COMPLETE`；确认正式 APK 来自合并后的提交，签名与现有正式包一致。
+5. 备份后按显式差异清单同步服务器源码及成对 APK/校验文件；验证公网 APK 原始字节校验和、校验文件、HTTPS 健康与 Haruki 启用状态，回读 marker，确认本地/GitHub/服务器对应同一交付提交。
+6. 恢复测试设置并停止本任务进程，按既有边界整理必要记录与临时产物；已受阻的清理路径保持暂留。完成合并交付记录后再向用户报告发布完成。
+
+取消流程的临时目录 `.runtime/av-26608-1-001108` 清理被自动审批审查以 `blocked by policy` 拒绝；其中含受限临时 signing properties，目录暂留，用户已获告知，不绕过拒绝执行删除。此记录不包含任何签名秘密值。
 
 Android P2 首轮 APK 手验：360dp 首页重复区服已去除、白色卡片与入口→当前分数线跳转正常，JP 显示 714 首歌曲/1447 张卡牌；深色首页 CN 显示 624/1249，区服数据对应且文字可读（`.runtime/ux-p2-dark.png`）。抽屉粉色选中条居中已截图确认。设置五区服按钮完整，CN 换行后可点击、保存生效，地址含错误 path 时可修正并保存。最终已在 Settings 真正保存 JP（仅顶栏切换不会改变默认区服）；night mode 已恢复 `no`，尺寸仍为 360dp，`show_ime_with_hard_keyboard=1` 暂留供后续 IME 验证，收尾仍需恢复测试设置。
 
 Android P2 首轮详情与账户手验：卡牌 1445→卡池 990→Android Back→关闭详情，页码 2/61 不变，图片 bounds `[64,431][881,1053]`、标题 `[64,1064][320,1127]` 精确恢复；服装每页 96/第 2/11 页/ID 950 详情→Back 后，图片 `[64,431][881,1248]`、标题 `[64,1259][405,1322]` 精确恢复。歌曲 803 搜索为唯一结果，EXPERT 谱面展开/收起后演唱信息保留。未登录账户入口已实测显示，已有资料/默认 UID 由 fixture 交互覆盖。
 
-Android P2 首轮发现并已完成最终修正/复验的 A9 项：设置错误容器的连接标题；Catalog 的 fresh/版本等原始状态改为技术信息折叠；`ceil`、服装 part/source/rarity/gender 已知枚举与无名 musicVocals 使用明确中文 fallback。独立审查另要求将技术展开状态提升到不随 Lazy item 回收丢失的位置，实现代理已修；最终冻结 host 验证、全部最后定向设备 QA 与最终独立审查均已通过；提交/正式签名/服务器发布仍待完成。
+Android P2 首轮发现并已完成最终修正/复验的 A9 项：设置错误容器的连接标题；Catalog 的 fresh/版本等原始状态改为技术信息折叠；`ceil`、服装 part/source/rarity/gender 已知枚举与无名 musicVocals 使用明确中文 fallback。独立审查另要求将技术展开状态提升到不随 Lazy item 回收丢失的位置，实现代理已修；最终冻结 host 验证、全部最后定向设备 QA 与最终独立审查均已通过；源码已提交；正式签名及服务器交付并入 P2/P3 合并发布。
 
 Android P2 发布前定向复验记录（已通过、未发布）：主代理已亲自检查设置错误截图，说明完整可见，不再出现旧“连接失败”标题及无效“重试”；实现代理已通过 Save 真正恢复服务器地址 `http://10.0.2.2:4000` 与默认 JP。最终 APK 卡牌 1445→卡池 990→关闭返回后，主代理重新拉取 XML 确认 1445 图片 bounds `[64,431][881,1041]`、标题 `[64,1052][320,1115]` 与打开前精确一致，仍为第 2/61 页；滚回顶部后技术信息仍保持展开，fresh、同步与版本行存在，技术资料未丢失。相关卡池显示“卡池资料 · ID 990”。服装 950 中文字段最终复验通过。歌曲 803 的真实上游条目 title 为空、name 为 `musicVocals 1847`；最终仅对明确 musicVocals 集合内的严格机器标题映射，真实名称保持原样。最终包实测显示“演唱版本 · ID 1847”，实现代理、主代理与独立审查均已核实截图，最后定向 QA 全部通过。
 
@@ -160,6 +179,6 @@ Web P3 发布产物：Caddy 镜像 `sha256:1f67d42666fe06f928f8fd71cbc5089dac3b6
 
 网页 22 项测试与 build 通过；发布资源为 `index-B8QE20ye.js`、`index-Ccxfk65V.css`，网页镜像为 `sha256:b192db578d4d3116ca146ec73fd5deb30a49f98951c9df9bad765fd8b6b227e7`。产物和 HTTPS 验证通过；已向用户重新确认公网资源与服务器 marker `86a3df3` 对应。55 个网页源码文件核对中，37 个精确一致、18 个仅 CRLF 换行差异，0 个内容差异。CUA 两次超时，网页 UI 尚未完成验收。真实用户 OAuth 同意、回调换取令牌、绑定读取与同步仍待完成，不记为完整 OAuth 通过。
 
-Android P1 已完成本地验收、正式签名与三处发布，P2 进行中，详见完成记录。Haruki 临时 tar 清理所在整段命令被自动审批审查拒绝，文件未删除、暂留；随后以独立安全操作写入服务器部署 marker 已成功。
+Android P1 已完成三处发布，P2 源码已提交且本地验收通过，P3 最终 host 与返回/图片定向复验已通过，先前 4 项 connected 通过；P2/P3 合并正式签名、打包发布仍待完成，详见完成记录。Haruki 临时 tar 清理所在整段命令被自动审批审查拒绝，文件未删除、暂留；随后以独立安全操作写入服务器部署 marker 已成功。
 
 收尾：只清理本任务生成且已核对绝对路径位于任务临时目录的日志、截图、打包中间产物；保留最终交付、必要验收记录、现有用户文件与秘密材料。停止本任务创建的预览/构建辅助进程，释放设备测试设置；不按名称批量杀死既有用户进程。

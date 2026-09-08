@@ -1,4 +1,8 @@
 package com.pjsktools.app.feature.content
+import com.pjsktools.app.feature.display.P3Button
+import com.pjsktools.app.feature.display.P3OutlinedButton
+import com.pjsktools.app.feature.display.P3OutlinedTextField
+import com.pjsktools.app.feature.display.P3TextButton
 
 import android.graphics.BitmapFactory
 import android.content.Context
@@ -12,6 +16,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +34,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -70,7 +76,8 @@ internal fun RemoteContentImage(
     modifier: Modifier = Modifier,
     height: Int = 170
 ) {
-    val state by produceState<ImageState>(ImageState.Loading, baseUrl, candidates) {
+    var retryGeneration by remember(baseUrl, candidates) { mutableIntStateOf(0) }
+    val state by produceState<ImageState>(ImageState.Loading, baseUrl, candidates, retryGeneration) {
         var reason = "暂无图片资源"
         value = ImageState.Loading
         for (candidate in candidates.distinct()) {
@@ -91,11 +98,26 @@ internal fun RemoteContentImage(
         }
         value = ImageState.Failed(reason)
     }
-    Box(modifier.fillMaxWidth().height(height.dp).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+    val compactFailure = height <= 96
+    Box(
+        modifier = modifier.fillMaxWidth().height(height.dp)
+            .then(if (compactFailure && state is ImageState.Failed) Modifier.clickable { retryGeneration++ } else Modifier)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
         when (val current = state) {
             ImageState.Loading -> CircularProgressIndicator()
             is ImageState.Ready -> Image(current.bitmap, description, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
-            is ImageState.Failed -> Text(current.reason, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
+            is ImageState.Failed -> if (compactFailure) {
+                Text("图片加载失败，点按重试", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(4.dp))
+            } else Column(
+                modifier = Modifier.padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(current.reason, style = MaterialTheme.typography.bodySmall)
+                P3OutlinedButton(onClick = { retryGeneration++ }) { Text("重试图片") }
+            }
         }
     }
 }
@@ -109,12 +131,12 @@ internal fun RemoteAudioQueue(baseUrl: String, entries: List<PlaybackEntry>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         entries.take(24).forEach { entry ->
             val resolved = resolveUrl(baseUrl, entry.url)
-            if (activeUrl == resolved) Button(onClick = {
+            if (activeUrl == resolved) P3Button(onClick = {
                 player?.release(); player = null; activeUrl = null; status = null
             }) { Text("停止 · ${entry.label}") }
-            else OutlinedButton(onClick = {
+            else P3OutlinedButton(onClick = playAudio@{
                 player?.release(); player = null; activeUrl = resolved
-                if (resolved == null) { status = "媒体地址无效"; return@OutlinedButton }
+                if (resolved == null) { status = "媒体地址无效"; return@playAudio }
                 status = "正在缓冲 ${entry.label}…"
                 runCatching {
                     MediaPlayer().also { next ->
@@ -237,7 +259,7 @@ internal fun WebParityRuntime(
         }
         if (mainFrameFailed) {
             Text("交互运行时已安全关闭，不会显示网络或 HTTP 错误页。", color = MaterialTheme.colorScheme.error)
-            OutlinedButton(onClick = {
+            P3OutlinedButton(onClick = {
                 mainFrameFailed = false
                 status = "正在重新创建网页运行时…"
                 runtimeGeneration++
@@ -291,8 +313,8 @@ internal fun WebParityRuntime(
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { webView?.goBack() }, enabled = canGoBack) { Text("网页内返回") }
-            OutlinedButton(onClick = {
+            P3OutlinedButton(onClick = { webView?.goBack() }, enabled = canGoBack) { Text("网页内返回") }
+            P3OutlinedButton(onClick = {
                 status = "正在重新加载网页运行时…"
                 mainFrameFailed = false
                 webView?.reload()

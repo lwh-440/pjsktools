@@ -1,4 +1,8 @@
 package com.pjsktools.app.feature.content
+import com.pjsktools.app.feature.display.P3Button
+import com.pjsktools.app.feature.display.P3OutlinedButton
+import com.pjsktools.app.feature.display.P3OutlinedTextField
+import com.pjsktools.app.feature.display.P3TextButton
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -28,9 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.pjsktools.app.feature.display.displayCount
+import com.pjsktools.app.feature.display.displayDateTime
 
 @Composable
 internal fun StatusPanel(
@@ -46,7 +50,12 @@ internal fun StatusPanel(
 ) {
     if (capabilityStatus == null && warnings.isEmpty() && unavailableReason == null && error == null &&
         sourceHealth.isEmpty() && syncedAt == null && unavailableCollections.isEmpty() && lookupDiagnostics.isEmpty()) return
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             capabilityStatus?.let { Text("资料状态：${statusLabel(it)}", fontWeight = FontWeight.SemiBold) }
             unavailableReason?.let { Text("暂时无法提供：$it", color = MaterialTheme.colorScheme.error) }
@@ -57,7 +66,7 @@ internal fun StatusPanel(
             if (lookupDiagnostics.isNotEmpty()) {
                 var diagnosticsExpanded by remember(lookupDiagnostics) { mutableStateOf(false) }
                 Text("有额外资料诊断可供核对。", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }) {
+                P3TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }) {
                     Text(if (diagnosticsExpanded) "收起技术信息" else "查看技术信息")
                 }
                 if (diagnosticsExpanded) {
@@ -68,7 +77,7 @@ internal fun StatusPanel(
             }
             error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
-                OutlinedButton(onClick = onRetry) { Text("重试") }
+                P3OutlinedButton(onClick = onRetry) { Text("重试") }
             }
         }
     }
@@ -76,7 +85,12 @@ internal fun StatusPanel(
 
 @Composable
 internal fun ContentListCard(baseUrl: String, item: Any, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             val images = itemImages(item)
             if (images.isNotEmpty()) RemoteContentImage(baseUrl, images, itemTitle(item), height = 148)
@@ -114,7 +128,7 @@ internal fun ContentDetailView(
     LazyColumn(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = onBack) { Text("返回目录") }
+                P3OutlinedButton(onClick = onBack) { Text("返回目录") }
                 Text(itemTitle(target), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(start = 12.dp),
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
@@ -145,7 +159,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.informationDetail(
             Text("${detail.item.type.orEmpty()} ${detail.item.tag.orEmpty()} · ${dateRange(detail.item.startAt, detail.item.endAt)}")
             StatusPanel(detail.embedStatus, detail.warnings, null, null, onRetry = {})
             detail.embeddedDetailUrl?.let { InformationWebContent(baseUrl, it) }
-            detail.detailUrl?.let { url -> OutlinedButton(onClick = { onNavigate(ContentNavigationTarget.ExternalUrl(url)) }) { Text("使用外部应用打开") } }
+            detail.detailUrl?.let { url -> P3OutlinedButton(onClick = { onNavigate(ContentNavigationTarget.ExternalUrl(url)) }) { Text("使用外部应用打开") } }
         }
     }
 }
@@ -169,12 +183,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.missionDetail(baseUrl
     item {
         DetailCard("任务 #${detail.id}") {
             Text(detail.sentence)
-            Text("${missionKind(detail.kind)} · ${detail.type} · 要求 ${detail.requirement ?: "-"}/${detail.maxRequirement ?: "-"}")
+            Text("${missionKind(detail.kind)} · ${detail.type} · 要求 ${displayCount(detail.requirement?.toLong())}/${displayCount(detail.maxRequirement?.toLong())}")
             detail.characterName?.let { Text("角色：$it") }
             detail.category?.let { Text("分类：$it") }
             if (detail.stages.isNotEmpty()) {
                 Text("阶段", fontWeight = FontWeight.SemiBold)
-                detail.stages.forEach { Text("${it.seq}. 要求 ${it.requirement ?: "-"} · EXP ${it.exp ?: "-"} · 数量 ${it.quantity ?: "-"}") }
+                detail.stages.forEach { Text("${displayCount(it.seq.toLong())}. 要求 ${displayCount(it.requirement?.toLong())} · EXP ${displayCount(it.exp?.toLong())} · 数量 ${displayCount(it.quantity?.toLong())}") }
             }
             ResourceGroup(baseUrl, "奖励", detail.rewards)
             detail.missingFields.forEach { Text("缺失字段：$it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
@@ -207,9 +221,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.virtualLiveDetail(
     }
     item {
         DetailCard("播放状态") {
-            if (playback == null && !playbackLoading) Button(onClick = { onLoadPlayback(detail.live.id) }) { Text("解析连续播放队列") }
+            if (playback == null && !playbackLoading) P3Button(onClick = { onLoadPlayback(detail.live.id) }) { Text("解析连续播放队列") }
             if (playbackLoading) CircularProgressIndicator()
-            playbackError?.let { Text(it, color = MaterialTheme.colorScheme.error); OutlinedButton(onClick = { onLoadPlayback(detail.live.id) }) { Text("重试播放解析") } }
+            playbackError?.let { Text(it, color = MaterialTheme.colorScheme.error); P3OutlinedButton(onClick = { onLoadPlayback(detail.live.id) }) { Text("重试播放解析") } }
             playback?.let { PlaybackPanel(baseUrl, it) }
         }
     }
@@ -219,11 +233,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.virtualLiveDetail(
             Text("类型：${step.type}")
             if (step.imageCandidates.isNotEmpty()) RemoteContentImage(baseUrl, step.imageCandidates, step.label, height = 110)
             val loaded = stepDetails[stepKey]
-            if (loaded == null && stepKey !in stepLoading) OutlinedButton(onClick = { onLoadStep(detail.live.id, step.index) }) { Text("展开真实节目段") }
+            if (loaded == null && stepKey !in stepLoading) P3OutlinedButton(onClick = { onLoadStep(detail.live.id, step.index) }) { Text("展开真实节目段") }
             if (stepKey in stepLoading) CircularProgressIndicator()
             stepErrors[stepKey]?.let { message ->
                 Text(message, color = MaterialTheme.colorScheme.error)
-                OutlinedButton(onClick = { onLoadStep(detail.live.id, step.index) }) { Text("重试") }
+                P3OutlinedButton(onClick = { onLoadStep(detail.live.id, step.index) }) { Text("重试") }
             }
             loaded?.let { stepDetail ->
                 Text("播放能力：${statusLabel(stepDetail.playbackStatus)}")
@@ -267,7 +281,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.mysekaiDetail(baseUrl
             detail.item.description?.let { Text(it) }
             Text("蓝图关联 ${detail.blueprintCount} · 相关家具 ${detail.relatedFixtureCount}")
             if (detail.costs.isNotEmpty()) Text("制作素材", fontWeight = FontWeight.SemiBold)
-            detail.costs.forEach { cost -> Text("${cost.material?.name ?: "未解析素材"} × ${cost.quantity ?: "-"}") }
+            detail.costs.forEach { cost -> Text("${cost.material?.name ?: "未解析素材"} × ${displayCount(cost.quantity?.toLong())}") }
         }
     }
 }
@@ -291,12 +305,17 @@ private fun androidx.compose.foundation.lazy.LazyListScope.storyDetail(
         }
     }
     items(detail.chapters, key = { it.id }) { chapter ->
-        Card(Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(chapter.title, fontWeight = FontWeight.SemiBold)
+                Text(chapter.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 chapter.chapterTitle?.let { Text(it) }
                 Text(if (chapter.scenarioStatus == "ready") "场景可读取" else "场景资源待确认", style = MaterialTheme.typography.bodySmall)
-                Button(onClick = { onPlayStory(detail, chapter) }) { Text("加载并播放本章") }
+                P3Button(onClick = { onPlayStory(detail, chapter) }) { Text("加载并播放本章") }
             }
         }
     }
@@ -325,9 +344,9 @@ private fun PlaybackPanel(baseUrl: String, playback: PlaybackState) {
         if (playback.actions.isNotEmpty()) {
             val current = playback.actions[actionIndex.coerceIn(0, playback.actions.lastIndex)]
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { actionIndex-- }, enabled = actionIndex > 0) { Text("上一句") }
-                Button(onClick = { actionIndex++ }, enabled = actionIndex < playback.actions.lastIndex) { Text("下一句") }
-                OutlinedButton(onClick = { textMode = !textMode }) { Text(if (textMode) "显示舞台信息" else "文本模式") }
+                P3OutlinedButton(onClick = { actionIndex-- }, enabled = actionIndex > 0) { Text("上一句") }
+                P3Button(onClick = { actionIndex++ }, enabled = actionIndex < playback.actions.lastIndex) { Text("下一句") }
+                P3OutlinedButton(onClick = { textMode = !textMode }) { Text(if (textMode) "显示舞台信息" else "文本模式") }
             }
             Text("${actionIndex + 1}/${playback.actions.size} · ${current.type}", style = MaterialTheme.typography.bodySmall)
             current.speaker?.let { Text(it, fontWeight = FontWeight.Bold) }
@@ -352,7 +371,7 @@ private fun ResourceGroup(baseUrl: String, title: String, resources: List<Resour
             }
             Column(Modifier.weight(1f)) {
                 Text(resource.name)
-                Text("${resource.type}${resource.id?.let { " #$it" }.orEmpty()} · ×${resource.quantity ?: "-"}", style = MaterialTheme.typography.bodySmall)
+                Text("${resource.type}${resource.id?.let { " #$it" }.orEmpty()} · ×${displayCount(resource.quantity?.toLong())}", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -360,9 +379,14 @@ private fun ResourceGroup(baseUrl: String, title: String, resources: List<Resour
 
 @Composable
 private fun DetailCard(title: String, content: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             HorizontalDivider()
             content()
         }
@@ -398,10 +422,10 @@ private fun itemSubtitle(item: Any): String = when (item) {
 
 private fun itemMeta(item: Any): String = when (item) {
     is InformationItem -> "${dateRange(item.startAt, item.endAt)} · ID ${item.id}"
-    is ExchangeItem -> "获得 ${item.rewards.take(2).joinToString { "${it.name} ×${it.quantity ?: "-"}" }} · ID ${item.id}"
-    is MissionItem -> "要求 ${item.requirement ?: "-"} · 阶段 ${item.stages.size} · ID ${item.id}"
-    is VirtualLiveItem -> "日程 ${item.scheduleCount} · 节目 ${item.setlistCount} · 奖励 ${item.rewardCount} · ID ${item.id}"
-    is Live2dItem -> "动作 ${item.motionCount} · 表情 ${item.expressionCount} · 贴图 ${item.textureCount} · ID ${item.id}"
+    is ExchangeItem -> "获得 ${item.rewards.take(2).joinToString { "${it.name} ×${displayCount(it.quantity?.toLong())}" }} · ID ${item.id}"
+    is MissionItem -> "要求 ${displayCount(item.requirement?.toLong())} · 阶段 ${displayCount(item.stages.size.toLong())} · ID ${item.id}"
+    is VirtualLiveItem -> "日程 ${displayCount(item.scheduleCount.toLong())} · 节目 ${displayCount(item.setlistCount.toLong())} · 奖励 ${displayCount(item.rewardCount.toLong())} · ID ${item.id}"
+    is Live2dItem -> "动作 ${displayCount(item.motionCount.toLong())} · 表情 ${displayCount(item.expressionCount.toLong())} · 贴图 ${displayCount(item.textureCount.toLong())} · ID ${item.id}"
     is MysekaiItem -> "稀有度 ${item.rarity ?: "-"} · ID ${item.id}"
     is StoryItem -> "${item.episodeCount} 章 · ${dateRange(item.startAt, null)} · ID ${item.id}"
     else -> ""
@@ -442,4 +466,4 @@ private fun missionKind(value: String): String = when (value) { "normal" -> "普
 private fun storyTypeLabel(value: String): String = when (value) { "eventStories" -> "活动故事"; "unitStories" -> "组合故事"; "cardEpisodes" -> "卡牌剧情"; "specialStories" -> "特殊故事"; else -> value }
 private fun componentLiveStatus(item: VirtualLiveItem): String { val now = System.currentTimeMillis(); return when { item.startAt != null && now < item.startAt -> "upcoming"; item.endAt != null && now > item.endAt -> "ended"; else -> "active" } }
 private fun dateRange(start: Long?, end: Long?): String = listOfNotNull(start?.let(::formatDate), end?.let(::formatDate)).joinToString(" ～ ").ifBlank { "时间未公开" }
-private fun formatDate(value: Long): String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(value))
+private fun formatDate(value: Long): String = displayDateTime(value)

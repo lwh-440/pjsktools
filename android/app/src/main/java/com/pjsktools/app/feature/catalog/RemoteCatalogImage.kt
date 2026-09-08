@@ -1,11 +1,18 @@
 package com.pjsktools.app.feature.catalog
+import com.pjsktools.app.feature.display.P3Button
+import com.pjsktools.app.feature.display.P3OutlinedButton
+import com.pjsktools.app.feature.display.P3OutlinedTextField
+import com.pjsktools.app.feature.display.P3TextButton
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.aspectRatio
@@ -13,10 +20,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -63,17 +74,22 @@ internal fun RemoteCatalogImage(
     aspectRatio: Float? = null,
     contentScale: ContentScale = ContentScale.Fit
 ) {
+    var retryGeneration by remember(baseUrl, candidates) { mutableIntStateOf(0) }
     val state by produceState<RemoteImageState>(
         initialValue = RemoteImageState.Loading,
         baseUrl,
-        candidates
+        candidates,
+        retryGeneration
     ) {
+        value = RemoteImageState.Loading
         value = loadFirstImage(baseUrl, candidates)
     }
+    val compactFailure = heightDp <= 96 && aspectRatio == null
     Box(
         modifier = modifier
             .fillMaxWidth()
             .then(if (aspectRatio != null) Modifier.aspectRatio(aspectRatio) else Modifier.height(heightDp.dp))
+            .then(if (compactFailure && state is RemoteImageState.Failed) Modifier.clickable { retryGeneration++ } else Modifier)
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
@@ -85,11 +101,16 @@ internal fun RemoteCatalogImage(
                 contentScale = contentScale,
                 modifier = Modifier.fillMaxSize()
             )
-            is RemoteImageState.Failed -> Text(
-                text = current.reason,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(12.dp)
-            )
+            is RemoteImageState.Failed -> if (compactFailure) {
+                Text("图片加载失败，点按重试", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(4.dp))
+            } else Column(
+                modifier = Modifier.padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(current.reason, style = MaterialTheme.typography.bodySmall)
+                P3OutlinedButton(onClick = { retryGeneration++ }) { Text("重试图片") }
+            }
         }
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,11 +33,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pjsktools.core.designsystem.SekaiPink
 import com.pjsktools.core.designsystem.SekaiTeal
@@ -46,6 +50,8 @@ import com.pjsktools.app.feature.compliance.ComplianceLinks
 import kotlinx.coroutines.CancellationException
 import com.pjsktools.app.BuildConfig
 import com.pjsktools.app.core.ApiOrigin
+import com.pjsktools.app.feature.display.displayCount
+import com.pjsktools.app.feature.display.numericTextStyle
 
 @Composable
 fun HomeFeatureScreen(
@@ -90,7 +96,7 @@ fun HomeFeatureScreen(
         item {
             Surface(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 shadowElevation = 2.dp
@@ -121,8 +127,8 @@ fun HomeFeatureScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                MetricCard("歌曲", dashboard?.songCount?.toString() ?: "-", SekaiPink, Modifier.weight(1f))
-                MetricCard("卡牌", dashboard?.cardCount?.toString() ?: "-", SekaiYellow, Modifier.weight(1f))
+                MetricCard("歌曲", displayCount(dashboard?.songCount?.toLong()), SekaiPink, Modifier.weight(1f))
+                MetricCard("卡牌", displayCount(dashboard?.cardCount?.toLong()), SekaiYellow, Modifier.weight(1f))
             }
         }
         item {
@@ -130,7 +136,11 @@ fun HomeFeatureScreen(
                 ShellShortcut.entries.chunked(2).forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { item ->
-                            OutlinedButton(onClick = { onShortcut(item) }, modifier = Modifier.weight(1f)) { Text(item.label) }
+                            OutlinedButton(
+                                onClick = { onShortcut(item) },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.small
+                            ) { Text(item.label) }
                         }
                         if (row.size == 1) Text("", Modifier.weight(1f))
                     }
@@ -142,17 +152,36 @@ fun HomeFeatureScreen(
         dashboard?.let { data ->
             item {
                 ShellCard("当前活动", data.currentEvent?.let { "${it.name}\n${it.startAt ?: "-"} - ${it.endAt ?: "-"}" } ?: "当前活动不可用") {
-                    TextButton(onClick = onOpenCurrentEvent) { Text("查看分数线") }
-                    TextButton(onClick = { refreshKey += 1 }, enabled = !loading) { Text("刷新") }
+                    TextButton(
+                        onClick = onOpenCurrentEvent,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text("查看分数线") }
+                    TextButton(
+                        onClick = { refreshKey += 1 },
+                        enabled = !loading,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text("刷新") }
                 }
             }
             item {
                 ShellCard("Top 3", data.updatedAt?.let { "更新 $it" }) {
                     if (data.topRanks.isEmpty()) Text("等待实时榜单数据。")
                     data.topRanks.forEach { rank ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("#${rank.rank}  ${rank.name}", fontWeight = FontWeight.SemiBold)
-                            Text("${rank.score} pt")
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(
+                                "#${rank.rank}  ${rank.name}",
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "${displayCount(rank.score)} pt",
+                                style = numericTextStyle(),
+                                textAlign = TextAlign.End
+                            )
                         }
                         HorizontalDivider()
                     }
@@ -167,7 +196,13 @@ fun HomeFeatureScreen(
         item {
             ShellCard("账号状态", if (isAuthenticated) "已登录，可使用绑定 UID 与上传资产。" else "登录后可管理 UID 与玩家资料。") {
                 accountLabel?.takeIf(String::isNotBlank)?.let { Text(it, fontWeight = FontWeight.SemiBold) }
-                Button(onClick = onOpenAccount) { Text(if (isAuthenticated) "管理个人信息" else "登录 / 注册") }
+                Button(
+                    onClick = onOpenAccount,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(if (isAuthenticated) "管理个人信息" else "登录 / 注册")
+                }
             }
         }
         item { Text("", Modifier.padding(8.dp)) }
@@ -175,6 +210,7 @@ fun HomeFeatureScreen(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun PublicProfileFeatureScreen(
     baseUrl: String,
     region: String,
@@ -190,7 +226,7 @@ fun PublicProfileFeatureScreen(
     val repository = remember(baseUrl, region, cachePolicy) {
         ShellRepository(baseUrl, cachePolicy, context.cacheDir.resolve("shell/$region"))
     }
-    var uid by remember(initialUid) { mutableStateOf(initialUid) }
+    var uid by rememberSaveable(initialUid) { mutableStateOf(initialUid) }
     var request by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var profile by remember { mutableStateOf<PublicProfile?>(null) }
     var loading by remember { mutableStateOf(false) }
@@ -214,10 +250,27 @@ fun PublicProfileFeatureScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("公开玩家查询", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("查询 ${region.uppercase()} 公开 UID。完整资产分析需要登录并绑定 UID。")
-                OutlinedTextField(value = uid, onValueChange = { uid = it.filterNot(Char::isWhitespace) }, label = { Text("玩家 UID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { request = uid.trim() to false }, enabled = uid.isNotBlank() && !loading) { Text("查询") }
-                    OutlinedButton(onClick = { request = uid.trim() to true }, enabled = uid.isNotBlank() && !loading) { Text("强制刷新") }
+                OutlinedTextField(
+                    value = uid,
+                    onValueChange = { uid = it.filterNot(Char::isWhitespace) },
+                    label = { Text("玩家 UID") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { request = uid.trim() to false },
+                        enabled = uid.isNotBlank() && !loading,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text("查询") }
+                    OutlinedButton(
+                        onClick = { request = uid.trim() to true },
+                        enabled = uid.isNotBlank() && !loading,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text("强制刷新") }
                 }
             }
         }
@@ -226,13 +279,26 @@ fun PublicProfileFeatureScreen(
         profile?.let { player ->
             item {
                 ShellCard(player.nickname, "${player.region.uppercase()} · UID ${player.userId}") {
-                    Text("Rank ${player.rank ?: "-"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Rank ${displayCount(player.rank?.toLong())}",
+                        style = numericTextStyle(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold
+                    )
                     player.comment?.let { Text(it) }
                     player.source?.let { Text("数据源：$it", style = MaterialTheme.typography.bodySmall) }
                     if (player.titles.isNotEmpty()) Text("称号：${player.titles.joinToString(" / ")}")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onFavorite(player) }, enabled = isAuthenticated) { Text("收藏") }
-                        Button(onClick = { if (isAuthenticated) onOpenFullAnalysis(player) else onOpenLogin() }) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { onFavorite(player) },
+                            enabled = isAuthenticated,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            shape = MaterialTheme.shapes.small
+                        ) { Text("收藏") }
+                        Button(
+                            onClick = { if (isAuthenticated) onOpenFullAnalysis(player) else onOpenLogin() },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            shape = MaterialTheme.shapes.small
+                        ) {
                             Text(if (isAuthenticated) "进入完整分析" else "登录后完整分析")
                         }
                     }
@@ -255,11 +321,12 @@ fun SettingsFeatureScreen(
     modifier: Modifier = Modifier
 ) {
     val uriHandler = LocalUriHandler.current
-    var baseUrl by remember(settings.apiBaseUrl) { mutableStateOf(settings.apiBaseUrl) }
-    var region by remember(settings.defaultRegion) { mutableStateOf(settings.defaultRegion) }
-    var cachePolicy by remember(settings.cachePolicy) { mutableStateOf(settings.cachePolicy) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var cacheNotice by remember { mutableStateOf<String?>(null) }
+    var baseUrl by rememberSaveable(settings.apiBaseUrl) { mutableStateOf(settings.apiBaseUrl) }
+    var region by rememberSaveable(settings.defaultRegion) { mutableStateOf(settings.defaultRegion) }
+    var savedCachePolicyName by rememberSaveable(settings.cachePolicy.name) { mutableStateOf(settings.cachePolicy.name) }
+    val cachePolicy = ShellCachePolicy.entries.firstOrNull { it.name == savedCachePolicyName } ?: settings.cachePolicy
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var cacheNotice by rememberSaveable { mutableStateOf<String?>(null) }
     var visibleCacheSize by remember(cacheSizeLabel) { mutableStateOf(cacheSizeLabel) }
     LazyColumn(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         configurationError?.let { message ->
@@ -273,12 +340,27 @@ fun SettingsFeatureScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("设置", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("选择默认区服并设置要连接的工具台服务器。切换服务器后，需要在该服务器重新登录。")
-                OutlinedTextField(value = baseUrl, onValueChange = { baseUrl = it }, label = { Text("服务器地址") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it },
+                    label = { Text("服务器地址") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small
+                )
                 Text("默认区服", fontWeight = FontWeight.SemiBold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf("jp", "en", "tw", "kr", "cn").forEach { id ->
-                        if (id == region) Button(onClick = {}) { Text(id.uppercase()) }
-                        else OutlinedButton(onClick = { region = id }) { Text(id.uppercase()) }
+                        if (id == region) Button(
+                            onClick = {},
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            shape = MaterialTheme.shapes.small
+                        ) { Text(id.uppercase()) }
+                        else OutlinedButton(
+                            onClick = { region = id },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            shape = MaterialTheme.shapes.small
+                        ) { Text(id.uppercase()) }
                     }
                 }
             }
@@ -291,8 +373,16 @@ fun SettingsFeatureScreen(
         item {
             ShellCard("缓存方式", "缓存会按区服分开保存，切换区服时不会混用资料。") {
                 ShellCachePolicy.entries.forEach { policy ->
-                    if (policy == cachePolicy) Button(onClick = {}) { Text(policy.label) }
-                    else OutlinedButton(onClick = { cachePolicy = policy }) { Text(policy.label) }
+                    if (policy == cachePolicy) Button(
+                        onClick = {},
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text(policy.label) }
+                    else OutlinedButton(
+                        onClick = { savedCachePolicyName = policy.name },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text(policy.label) }
                     Text(policy.description, style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -309,24 +399,34 @@ fun SettingsFeatureScreen(
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { uriHandler.openUri(BuildConfig.WEB_RUNTIME_BASE_URL) },
-                    enabled = BuildConfig.WEB_RUNTIME_BASE_URL.isNotBlank()
+                    enabled = BuildConfig.WEB_RUNTIME_BASE_URL.isNotBlank(),
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small
                 ) { Text("打开网页版工具台") }
                 Button(onClick = {
                     runCatching { ApiOrigin.normalize(baseUrl, BuildConfig.DEBUG, BuildConfig.TEMPORARY_HTTP_HOST) }
                         .onSuccess { normalized -> error = null; onSave(ShellSettings(normalized, region, cachePolicy)) }
                         .onFailure { error = settingErrorMessage(it.message) }
-                }) { Text("保存设置") }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = {
-                        val result = onClearCache(region)
-                        cacheNotice = result.message
-                        visibleCacheSize = result.remainingSizeLabel
-                    }) { Text("清除此区服缓存") }
-                    OutlinedButton(onClick = {
-                        val result = onClearCache(null)
-                        cacheNotice = result.message
-                        visibleCacheSize = result.remainingSizeLabel
-                    }) { Text("清除全部缓存") }
+                }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("保存设置") }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val result = onClearCache(region)
+                            cacheNotice = result.message
+                            visibleCacheSize = result.remainingSizeLabel
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text("清除此区服缓存") }
+                    OutlinedButton(
+                        onClick = {
+                            val result = onClearCache(null)
+                            cacheNotice = result.message
+                            visibleCacheSize = result.remainingSizeLabel
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text("清除全部缓存") }
                 }
             }
         }
@@ -362,6 +462,7 @@ fun AboutFeatureScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun ShareFeatureScreen(
     baseUrl: String,
     region: String,
@@ -374,8 +475,8 @@ fun ShareFeatureScreen(
     val repository = remember(baseUrl, region, cachePolicy) {
         ShellRepository(baseUrl, cachePolicy, context.cacheDir.resolve("shell/shared"))
     }
-    var type by remember(initialType) { mutableStateOf(initialType) }
-    var id by remember(initialId) { mutableStateOf(initialId) }
+    var type by rememberSaveable(initialType) { mutableStateOf(initialType) }
+    var id by rememberSaveable(initialId) { mutableStateOf(initialId) }
     var request by remember(region) { mutableStateOf<Pair<String, String>?>(null) }
     var card by remember(region) { mutableStateOf<ShareCard?>(null) }
     var loading by remember(region) { mutableStateOf(false) }
@@ -395,14 +496,34 @@ fun ShareFeatureScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("分享卡", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("当前区服：${region.uppercase()}。玩家、成绩和活动分享均按此区服解析。")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("profile" to "玩家档案", "score" to "成绩", "event" to "活动").forEach { item ->
-                        if (type == item.first) Button(onClick = {}) { Text(item.second) }
-                        else OutlinedButton(onClick = { type = item.first }) { Text(item.second) }
+                    if (type == item.first) Button(
+                        onClick = {},
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text(item.second) }
+                    else OutlinedButton(
+                        onClick = { type = item.first },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text(item.second) }
                     }
                 }
-                OutlinedTextField(value = id, onValueChange = { id = it }, label = { Text("分享对象 ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Button(onClick = { request = type to id.trim() }, enabled = id.isNotBlank() && !loading) { Text("生成并加载") }
+                OutlinedTextField(
+                    value = id,
+                    onValueChange = { id = it },
+                    label = { Text("分享对象 ID") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small
+                )
+                Button(
+                    onClick = { request = type to id.trim() },
+                    enabled = id.isNotBlank() && !loading,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small
+                ) { Text("生成并加载") }
             }
         }
         if (loading) item { LoadingCard("正在请求服务端分享卡") }
@@ -422,6 +543,7 @@ fun ShareFeatureScreen(
 internal fun ShellCard(title: String, subtitle: String? = null, content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -429,7 +551,7 @@ internal fun ShellCard(title: String, subtitle: String? = null, content: @Compos
         Column {
             Box(Modifier.padding(start = 16.dp).width(48.dp).height(3.dp).background(MaterialTheme.colorScheme.primary))
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 subtitle?.let {
                     Text(
                         it,
@@ -447,6 +569,7 @@ internal fun ShellCard(title: String, subtitle: String? = null, content: @Compos
 private fun MetricCard(label: String, value: String, accent: androidx.compose.ui.graphics.Color, modifier: Modifier) {
     Card(
         modifier,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -465,6 +588,7 @@ private fun MetricCard(label: String, value: String, accent: androidx.compose.ui
 internal fun LoadingCard(label: String) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
@@ -479,13 +603,18 @@ internal fun LoadingCard(label: String) {
 internal fun ErrorCard(message: String, retry: () -> Unit) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f))
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("连接暂时不可用", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
             Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-            TextButton(onClick = retry) { Text("重新加载") }
+            TextButton(
+                onClick = retry,
+                modifier = Modifier.heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.small
+            ) { Text("重新加载") }
         }
     }
 }

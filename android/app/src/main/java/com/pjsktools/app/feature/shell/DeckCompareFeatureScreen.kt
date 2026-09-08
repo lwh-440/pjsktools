@@ -3,13 +3,17 @@ package com.pjsktools.app.feature.shell
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -21,17 +25,23 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.pjsktools.app.feature.display.displayCount
+import com.pjsktools.app.feature.display.displayDecimal
+import com.pjsktools.app.feature.display.numericTextStyle
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun DeckCompareFeatureScreen(
     baseUrl: String,
     region: String,
@@ -44,8 +54,8 @@ fun DeckCompareFeatureScreen(
     val repository = remember(baseUrl, region, cachePolicy) {
         ShellRepository(baseUrl, cachePolicy, context.cacheDir.resolve("shell/$region"))
     }
-    var form by remember(region) { mutableStateOf(DeckCompareForm()) }
-    var candidates by remember(region) {
+    var form by rememberSaveable(region, stateSaver = deckCompareFormSaver) { mutableStateOf(DeckCompareForm()) }
+    var candidates by rememberSaveable(region, stateSaver = deckCompareCandidatesSaver) {
         mutableStateOf(listOf(defaultCandidate(1), defaultCandidate(2)))
     }
     var request by remember { mutableStateOf<CompareRequest?>(null) }
@@ -86,13 +96,17 @@ fun DeckCompareFeatureScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("卡组比较", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("比较 2-5 个卡组方案的多人 Live 分数与活动 PT；登录态可引用当前 UID 的保存卡组。")
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MetricCard("区服", region.uppercase(), Modifier.weight(1f))
-                    MetricCard("模式", form.scoreMode, Modifier.weight(1f))
-                    MetricCard("保存卡组", account?.savedDecks?.size?.toString() ?: "0", Modifier.weight(1f))
-                    MetricCard("方案", candidates.size.toString(), Modifier.weight(1f))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MetricCard("区服", region.uppercase(), Modifier)
+                    MetricCard("模式", form.scoreMode, Modifier)
+                    MetricCard("保存卡组", displayCount(account?.savedDecks?.size?.toLong()), Modifier)
+                    MetricCard("方案", displayCount(candidates.size.toLong()), Modifier)
                 }
-                if (account == null) TextButton(onClick = onOpenAccount) { Text("登录后使用保存卡组") }
+                if (account == null) TextButton(
+                    onClick = onOpenAccount,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small
+                ) { Text("登录后使用保存卡组") }
                 else Text("当前绑定：${account.region.uppercase()} / ${account.bindingId}", style = MaterialTheme.typography.bodySmall)
             }
         }
@@ -102,20 +116,16 @@ fun DeckCompareFeatureScreen(
                 ChoiceRow("难度", listOf("easy", "normal", "hard", "expert", "master", "append"), form.difficulty) { form = form.copy(difficulty = it) }
                 ChoiceRow("Live", listOf("multi", "cheerful"), form.liveType) { form = form.copy(liveType = it) }
                 ChoiceRow("计分", listOf("aggregate", "exact"), form.scoreMode) { form = form.copy(scoreMode = it) }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Field(form.boost, { form = form.copy(boost = it) }, "火量 0-10", Modifier.weight(1f))
-                    Field(form.eventBonusPercent, { form = form.copy(eventBonusPercent = it) }, "活动加成 %", Modifier.weight(1f))
-                }
+                Field(form.boost, { form = form.copy(boost = it) }, "火量 0-10")
+                Field(form.eventBonusPercent, { form = form.copy(eventBonusPercent = it) }, "活动加成 %")
                 ChoiceRow("Skill 1-5", listOf("expected", "best", "worst"), form.skill15Strategy) { form = form.copy(skill15Strategy = it) }
                 ChoiceRow("Skill 6", listOf("team-average", "highest-power"), form.skill6Mode) { form = form.copy(skill6Mode = it) }
                 if (form.scoreMode == "exact") {
                     Field(form.exactSkills, { form = form.copy(exactSkills = it) }, "Exact 技能值（1-6 个，以逗号分隔）")
                 }
                 Text("四名队友统一参数", fontWeight = FontWeight.SemiBold)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Field(form.teammatePower, { form = form.copy(teammatePower = it) }, "队友综合力", Modifier.weight(1f))
-                    Field(form.teammateEffectiveness, { form = form.copy(teammateEffectiveness = it) }, "队友技能值", Modifier.weight(1f))
-                }
+                Field(form.teammatePower, { form = form.copy(teammatePower = it) }, "队友综合力")
+                Field(form.teammateEffectiveness, { form = form.copy(teammateEffectiveness = it) }, "队友技能值")
             }
         }
         item {
@@ -130,16 +140,20 @@ fun DeckCompareFeatureScreen(
                     )
                     if (index < candidates.lastIndex) HorizontalDivider()
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { candidates = candidates + defaultCandidate(candidates.size + 1) },
-                        enabled = candidates.size < 5
+                        enabled = candidates.size < 5,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
                     ) { Text("新增方案") }
                     Button(
                         onClick = { request = CompareRequest(region, form, candidates, account) },
-                        enabled = !loading && form.musicId.isNotBlank() && candidates.size in 2..5
+                        enabled = !loading && form.musicId.isNotBlank() && candidates.size in 2..5,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
                     ) { Text(if (loading) "比较中" else "运行比较") }
-                    TextButton(onClick = { result = null; error = null }) { Text("清空结果") }
+                    TextButton(onClick = { result = null; error = null }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("清空结果") }
                 }
             }
         }
@@ -147,7 +161,7 @@ fun DeckCompareFeatureScreen(
         result?.let { compared -> item { DeckResultCard(compared) } }
         item {
             ShellCard("本地比较历史", "仅保存在当前设备，不写入服务器。") {
-                TextButton(onClick = { history = emptyList(); saveHistory(context, history) }, enabled = history.isNotEmpty()) { Text("清空历史") }
+                TextButton(onClick = { history = emptyList(); saveHistory(context, history) }, enabled = history.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("清空历史") }
                 if (history.isEmpty()) Text("暂无本地比较历史。")
                 history.forEach { item ->
                     Text("${item.createdAt} · ${item.region.uppercase()} · ${item.musicId}/${item.difficulty}", style = MaterialTheme.typography.bodySmall)
@@ -156,7 +170,7 @@ fun DeckCompareFeatureScreen(
                     TextButton(onClick = {
                         history = history.filterNot { it.id == item.id }
                         saveHistory(context, history)
-                    }) { Text("删除") }
+                    }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("删除") }
                     HorizontalDivider()
                 }
             }
@@ -165,6 +179,7 @@ fun DeckCompareFeatureScreen(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun CandidateEditor(
     index: Int,
     candidate: DeckCompareCandidateDraft,
@@ -174,23 +189,23 @@ private fun CandidateEditor(
     onChange: (DeckCompareCandidateDraft) -> Unit,
     onRemove: () -> Unit
 ) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    Column(Modifier.fillMaxWidth()) {
         Text(candidate.name.ifBlank { "方案 ${index + 1}" }, fontWeight = FontWeight.Bold)
-        TextButton(onClick = onRemove, enabled = canRemove) { Text("删除") }
+        TextButton(onClick = onRemove, enabled = canRemove, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("删除") }
     }
     Field(candidate.name, { onChange(candidate.copy(name = it)) }, "方案名称")
     val modes = if (allowSaved) DeckCandidateMode.entries else DeckCandidateMode.entries.filterNot { it == DeckCandidateMode.SAVED }
     Text("输入来源", fontWeight = FontWeight.SemiBold)
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         modes.forEach { mode ->
-            if (mode == candidate.mode) Button(onClick = {}) { Text(mode.label) }
-            else OutlinedButton(onClick = { onChange(candidate.copy(mode = mode)) }) { Text(mode.label) }
+            if (mode == candidate.mode) Button(onClick = {}, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(mode.label) }
+            else OutlinedButton(onClick = { onChange(candidate.copy(mode = mode)) }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(mode.label) }
         }
     }
     when (candidate.mode) {
-        DeckCandidateMode.MANUAL -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Field(candidate.power, { onChange(candidate.copy(power = it)) }, "综合力", Modifier.weight(1f))
-            Field(candidate.effectiveness, { onChange(candidate.copy(effectiveness = it)) }, "技能值", Modifier.weight(1f))
+        DeckCandidateMode.MANUAL -> {
+            Field(candidate.power, { onChange(candidate.copy(power = it)) }, "综合力")
+            Field(candidate.effectiveness, { onChange(candidate.copy(effectiveness = it)) }, "技能值")
         }
         DeckCandidateMode.CARDS -> Field(candidate.cardIds, { onChange(candidate.copy(cardIds = it)) }, "Card IDs（1-5 个）")
         DeckCandidateMode.SAVED -> {
@@ -199,8 +214,8 @@ private fun CandidateEditor(
                 Text("选择保存卡组", fontWeight = FontWeight.SemiBold)
                 savedDecks.forEach { deck ->
                     val selected = deck.id == candidate.deckConfigId
-                    if (selected) Button(onClick = {}) { Text("${deck.name} · ${deck.cardIds.size} 张") }
-                    else OutlinedButton(onClick = { onChange(candidate.copy(deckConfigId = deck.id)) }) { Text("${deck.name} · ${deck.cardIds.size} 张") }
+                    if (selected) Button(onClick = {}, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("${deck.name} · ${deck.cardIds.size} 张") }
+                    else OutlinedButton(onClick = { onChange(candidate.copy(deckConfigId = deck.id)) }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("${deck.name} · ${deck.cardIds.size} 张") }
                 }
                 if (savedDecks.isEmpty()) Text("当前绑定没有保存卡组。")
             }
@@ -210,49 +225,64 @@ private fun CandidateEditor(
 
 @Composable
 private fun DeckResultCard(result: DeckCompareResult) {
+    var technicalExpanded by rememberSaveable { mutableStateOf(false) }
     ShellCard("比较结果", "${result.multiLiveVersion ?: "-"} · ${result.liveExactVersion ?: result.scoreMode ?: "-"}") {
-        Text("公式：${result.formulaId ?: "Deck Comparator"}")
         Text("分数胜出：${result.winnerByScore ?: "-"} · PT 胜出：${result.winnerByEventPoint ?: "-"}")
-        Text("分数差：${number(result.scoreDelta)} · PT 差：${number(result.eventPointDelta)}")
+        Text("分数差：${number(result.scoreDelta)} · PT 差：${number(result.eventPointDelta)}", style = numericTextStyle())
         result.comparisons.forEach { item ->
-            Card(Modifier.fillMaxWidth()) {
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(item.name, fontWeight = FontWeight.Bold)
                     Text("来源 ${item.source ?: "-"} · 状态 ${item.status ?: if (item.missingFields.isEmpty()) "ok" else "missing-data"}")
-                    Text("综合力 ${number(item.power)} · 技能值 ${number(item.effectiveness)}")
-                    Text("分数 ${number(item.score)} · 活动 PT ${number(item.eventPoint)}")
+                    Text("综合力 ${number(item.power)} · 技能值 ${number(item.effectiveness)}", style = numericTextStyle())
+                    Text("分数 ${number(item.score)} · 活动 PT ${number(item.eventPoint)}", style = numericTextStyle())
                     if (item.missingFields.isNotEmpty()) Text("缺失：${item.missingFields.joinToString()}", color = MaterialTheme.colorScheme.error)
                 }
             }
         }
-        if (result.traceSummary.isNotEmpty()) {
-            Text("Exact Trace", fontWeight = FontWeight.Bold)
-            result.traceSummary.forEach { (label, value) -> Text("$label: $value") }
-        }
         Text("缺失字段：${result.missingFields.ifEmpty { listOf("无") }.joinToString()}")
         Text("估算字段：${result.estimatedFields.ifEmpty { listOf("无") }.joinToString()}")
+        if (result.formulaId != null || result.traceSummary.isNotEmpty()) {
+            TextButton(onClick = { technicalExpanded = !technicalExpanded }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(if (technicalExpanded) "收起公式与计算轨迹" else "查看公式与计算轨迹") }
+            if (technicalExpanded) {
+                Text("公式：${result.formulaId ?: "Deck Comparator"}")
+                if (result.traceSummary.isNotEmpty()) {
+                    Text("Exact Trace", fontWeight = FontWeight.Bold)
+                    result.traceSummary.forEach { (label, value) -> Text("$label: $value") }
+                }
+            }
+        }
     }
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun ChoiceRow(label: String, options: List<String>, selected: String, onSelect: (String) -> Unit) {
     Text(label, fontWeight = FontWeight.SemiBold)
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         options.forEach { option ->
-            if (option == selected) Button(onClick = {}) { Text(option) }
-            else OutlinedButton(onClick = { onSelect(option) }) { Text(option) }
+            if (option == selected) Button(onClick = {}, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(option) }
+            else OutlinedButton(onClick = { onSelect(option) }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(option) }
         }
     }
 }
 
 @Composable
 private fun Field(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = Modifier.fillMaxWidth()) {
-    OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) }, modifier = modifier, singleLine = true)
+    OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) }, modifier = modifier, singleLine = true, shape = MaterialTheme.shapes.small)
 }
 
 @Composable
 private fun MetricCard(label: String, value: String, modifier: Modifier) {
-    Card(modifier) { Column(Modifier.padding(8.dp)) { Text(label, style = MaterialTheme.typography.labelSmall); Text(value, fontWeight = FontWeight.Bold) } }
+    Card(
+        modifier,
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) { Column(Modifier.padding(8.dp)) { Text(label, style = MaterialTheme.typography.labelSmall); Text(value, fontWeight = FontWeight.Bold, style = numericTextStyle(MaterialTheme.typography.titleMedium)) } }
 }
 
 private data class CompareRequest(
@@ -295,4 +325,17 @@ private fun JSONObject.toHistory() = DeckCompareHistoryItem(
     eventPointDelta = if (has("eventPointDelta") && !isNull("eventPointDelta")) optDouble("eventPointDelta") else null
 )
 
-private fun number(value: Double?): String = value?.let { if (it % 1.0 == 0.0) it.toLong().toString() else "%.2f".format(it) } ?: "-"
+private fun number(value: Double?): String = displayDecimal(value)
+
+private val deckCompareFormSaver = listSaver<DeckCompareForm, String>(
+    save = { listOf(it.musicId, it.difficulty, it.liveType, it.scoreMode, it.boost, it.eventBonusPercent, it.skill15Strategy, it.skill6Mode, it.exactSkills, it.teammatePower, it.teammateEffectiveness) },
+    restore = { DeckCompareForm(it[0], it[1], it[2], it[3], it[4], it[5], it[6], it[7], it[8], it[9], it[10]) }
+)
+
+private val deckCompareCandidatesSaver = listSaver<List<DeckCompareCandidateDraft>, String>(
+    save = { candidates -> candidates.map { listOf(it.id, it.name, it.mode.name, it.power, it.effectiveness, it.cardIds, it.deckConfigId).joinToString("\u001f") } },
+    restore = { entries -> entries.mapNotNull { entry ->
+        val values = entry.split("\u001f")
+        if (values.size != 7) null else DeckCompareCandidateDraft(values[0], values[1], DeckCandidateMode.entries.firstOrNull { it.name == values[2] } ?: DeckCandidateMode.MANUAL, values[3], values[4], values[5], values[6])
+    } }
+)

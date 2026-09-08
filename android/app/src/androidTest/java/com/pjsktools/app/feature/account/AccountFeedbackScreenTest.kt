@@ -3,6 +3,7 @@ package com.pjsktools.app.feature.account
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollTo
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -49,14 +51,16 @@ class AccountFeedbackScreenTest {
     }
 
     @Test fun savingARecordWithAnExpiredSessionReturnsToLoginWithTheReasonVisible() {
-        val controller = controllerFor(AccountScenario.FAVORITE_401, StoredAccountSession("access", "refresh"))
+        val fixture = FixtureInterceptor(AccountScenario.FAVORITE_401)
+        val controller = controllerFor(AccountScenario.FAVORITE_401, StoredAccountSession("access", "refresh"), fixture)
         composeRule.setContent { MaterialTheme { AccountFeatureScreen("http://fixture/", controller = controller) } }
         composeRule.waitUntil { controller.state.value.profile != null }
         composeRule.scrollTo("目标 ID")
         composeRule.textField("目标 ID").performTextInput("123")
         composeRule.textField("名称").performTextInput("验收收藏")
         composeRule.scrollTo("保存收藏")
-        composeRule.onNodeWithText("保存收藏").performClick()
+        composeRule.onNodeWithText("保存收藏").assertIsDisplayed().assertIsEnabled().performClick()
+        composeRule.waitUntil { fixture.favoriteWriteRequests > 0 }
         composeRule.waitUntil {
             !controller.state.value.isAuthenticated && controller.state.value.error == "登录状态已失效，请重新登录"
         }
@@ -101,11 +105,16 @@ class AccountFeedbackScreenTest {
 
     private fun androidx.compose.ui.test.junit4.AndroidComposeTestRule<*, *>.scrollTo(text: String) {
         onNode(hasScrollAction()).performScrollToNode(hasText(text))
+        onNodeWithText(text, useUnmergedTree = true).performScrollTo()
     }
 
-    private fun controllerFor(scenario: AccountScenario, stored: StoredAccountSession? = null): AccountFeatureController {
+    private fun controllerFor(
+        scenario: AccountScenario,
+        stored: StoredAccountSession? = null,
+        fixture: FixtureInterceptor = FixtureInterceptor(scenario)
+    ): AccountFeatureController {
         val store = MemoryStore(stored)
-        val client = OkHttpClient.Builder().addInterceptor(FixtureInterceptor(scenario)).build()
+        val client = OkHttpClient.Builder().addInterceptor(fixture).build()
         return AccountFeatureController(
             repository = AccountRepository("http://fixture/", store, client),
             harukiGateway = GeneratedHarukiGateway("http://fixture/", client),
@@ -126,8 +135,11 @@ private class MemoryStore(private var value: StoredAccountSession?) : AccountSes
 
 private class FixtureInterceptor(private val scenario: AccountScenario) : Interceptor {
     private var codeRequests = 0
+    @Volatile var favoriteWriteRequests = 0
+        private set
     override fun intercept(chain: Interceptor.Chain): Response {
         val path = chain.request().url.encodedPath
+        if (path == "/api/me/favorites" && chain.request().method == "POST") favoriteWriteRequests += 1
         val (code, payload) = when (path) {
             "/api/legal/current" -> 200 to """{"privacyVersion":"2026-08-04","termsVersion":"2026-08-04","minimumAge":14}"""
             "/api/auth/email-code/start" -> if (++codeRequests == 1) {

@@ -1,5 +1,11 @@
 package com.pjsktools.app.feature.content
+import com.pjsktools.app.feature.display.P3FilterChip
+import com.pjsktools.app.feature.display.P3Button
+import com.pjsktools.app.feature.display.P3OutlinedButton
+import com.pjsktools.app.feature.display.P3OutlinedTextField
+import com.pjsktools.app.feature.display.P3TextButton
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -23,14 +30,19 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.pjsktools.app.feature.display.SavedListAnchor
+import com.pjsktools.app.feature.display.recordVisibleListAnchor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 
 @Composable
 fun ContentFeatureScreen(
@@ -45,10 +57,10 @@ fun ContentFeatureScreen(
     var section by rememberSaveable { mutableStateOf(initialSection) }
     var searchInput by rememberSaveable { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
-    var filter by rememberSaveable { mutableStateOf("all") }
+    var filter by rememberSaveable { mutableStateOf(defaultFilter(initialSection)) }
     var filter2 by rememberSaveable { mutableStateOf("") }
     var filter3 by rememberSaveable { mutableStateOf("") }
-    var sort by rememberSaveable { mutableStateOf("default") }
+    var sort by rememberSaveable { mutableStateOf(defaultSort(initialSection)) }
     var pageSize by rememberSaveable { mutableIntStateOf(24) }
     var page by rememberSaveable { mutableIntStateOf(1) }
     var reload by remember { mutableIntStateOf(0) }
@@ -59,6 +71,8 @@ fun ContentFeatureScreen(
     var detail by remember { mutableStateOf<Any?>(null) }
     var detailLoading by remember { mutableStateOf(false) }
     var detailError by remember { mutableStateOf<String?>(null) }
+    var savedDetailId by rememberSaveable { mutableStateOf<String?>(null) }
+    var savedDetailSection by rememberSaveable { mutableStateOf<String?>(null) }
     var detailReload by remember { mutableIntStateOf(0) }
     var playback by remember { mutableStateOf<PlaybackState?>(null) }
     var playbackLoading by remember { mutableStateOf(false) }
@@ -69,9 +83,16 @@ fun ContentFeatureScreen(
     var stepDetails by remember { mutableStateOf<Map<VirtualStepKey, VirtualLiveStepDetail>>(emptyMap()) }
     var stepLoading by remember { mutableStateOf<Set<VirtualStepKey>>(emptySet()) }
     var stepErrors by remember { mutableStateOf<Map<VirtualStepKey, String>>(emptyMap()) }
+    val listState = rememberLazyListState()
+    var listAnchorAbsoluteIndex by rememberSaveable { mutableIntStateOf(0) }
+    var listAnchorOffset by rememberSaveable { mutableIntStateOf(0) }
+    var restoreListAnchor by remember { mutableStateOf(true) }
+    var skipInitialSectionReset by remember { mutableStateOf(true) }
+    var skipInitialRegionReset by remember { mutableStateOf(true) }
 
     fun clearDetailState() {
         detailTarget = null; detail = null; detailLoading = false; detailError = null
+        savedDetailId = null; savedDetailSection = null
         playback = null; playbackLoading = false; playbackError = null; playbackRequest = null; virtualPlaybackRequest = null
         stepRequest = null; stepDetails = emptyMap(); stepLoading = emptySet(); stepErrors = emptyMap()
     }
@@ -81,17 +102,36 @@ fun ContentFeatureScreen(
         stepRequest = null; stepDetails = emptyMap(); stepLoading = emptySet(); stepErrors = emptyMap()
     }
 
-    LaunchedEffect(initialSection) { section = initialSection }
+    fun closeDetail() {
+        clearDetailState()
+        restoreListAnchor = true
+    }
+
+    BackHandler(enabled = detailTarget != null) { closeDetail() }
+
+    LaunchedEffect(initialSection) {
+        if (!skipInitialSectionReset && section != initialSection) section = initialSection
+    }
     LaunchedEffect(searchInput) {
         delay(350)
         if (query != searchInput.trim()) { query = searchInput.trim(); page = 1 }
     }
     LaunchedEffect(section) {
+        if (!contentShouldResetForSection(skipInitialSectionReset)) {
+            skipInitialSectionReset = false
+            return@LaunchedEffect
+        }
         searchInput = ""; query = ""; filter = defaultFilter(section); filter2 = ""; filter3 = ""
         sort = defaultSort(section); page = 1
         clearDetailState()
     }
-    LaunchedEffect(region) { clearDetailState(); page = 1 }
+    LaunchedEffect(region) {
+        if (!contentShouldResetForRegion(skipInitialRegionReset)) {
+            skipInitialRegionReset = false
+            return@LaunchedEffect
+        }
+        clearDetailState(); page = 1
+    }
     LaunchedEffect(region, section, query, filter, filter2, filter3, sort, page, pageSize, reload) {
         loading = true; error = null; data = null
         try {
@@ -105,6 +145,10 @@ fun ContentFeatureScreen(
                 ContentSection.STORIES -> repository.stories(region, filter, query, filter2, filter3.filterDigits(), sort, page, pageSize)
             }
             currentCoroutineContext().ensureActive(); data = loaded; loading = false
+            if (detailTarget == null && savedDetailSection == section.name && savedDetailId != null) {
+                loaded.items.firstOrNull { item -> item != null && contentItemId(item) == savedDetailId }
+                    ?.let { restored -> detailTarget = restored }
+            }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Throwable) {
             currentCoroutineContext().ensureActive(); error = failure.message ?: "内容加载失败"; loading = false
@@ -131,6 +175,27 @@ fun ContentFeatureScreen(
             currentCoroutineContext().ensureActive()
             detailError = failure.message ?: "详情加载失败"; detailLoading = false
         }
+    }
+    LaunchedEffect(data?.items, detailTarget, restoreListAnchor) {
+        if (!restoreListAnchor || detailTarget != null || data == null) return@LaunchedEffect
+        snapshotFlow { listState.layoutInfo.totalItemsCount }
+            .first { total -> contentCanRestoreListAnchor(total, listAnchorAbsoluteIndex) }
+        listState.scrollToItem(listAnchorAbsoluteIndex, listAnchorOffset)
+        restoreListAnchor = false
+    }
+    LaunchedEffect(listState, data?.items, detailTarget, restoreListAnchor) {
+        if (data == null || detailTarget != null || restoreListAnchor) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                val saved = recordVisibleListAnchor(
+                    current = SavedListAnchor(listAnchorAbsoluteIndex, listAnchorOffset),
+                    visibleIndex = index,
+                    visibleOffset = offset,
+                    canRecord = data != null && detailTarget == null && !restoreListAnchor
+                )
+                listAnchorAbsoluteIndex = saved.index
+                listAnchorOffset = saved.offset
+            }
     }
     LaunchedEffect(region, virtualPlaybackRequest) {
         val id = virtualPlaybackRequest ?: return@LaunchedEffect
@@ -171,7 +236,7 @@ fun ContentFeatureScreen(
 
     if (detailTarget != null) {
         ContentDetailView(baseUrl, webRuntimeBaseUrl, detailTarget!!, detail, detailLoading, detailError, playback, playbackLoading,
-            playbackError, region = region, onBack = { clearDetailState() },
+            playbackError, region = region, onBack = ::closeDetail,
             onRetry = { detailReload++ }, onNavigate = onNavigate,
             onPlayStory = { story, chapter -> playbackRequest = StoryPlaybackRequest(story.storyType, story.storyId, chapter.id) },
             onLoadVirtualPlayback = { virtualPlaybackRequest = it },
@@ -187,16 +252,16 @@ fun ContentFeatureScreen(
     val safePage = page.coerceIn(1, totalPages)
     val pageItems = if (serverPaged) visibleItems else visibleItems.drop((safePage - 1) * pageSize).take(pageSize)
 
-    LazyColumn(modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(modifier.fillMaxSize().padding(horizontal = 12.dp), state = listState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 10.dp)) {
                 itemsIndexed(ContentSection.entries) { _, candidate ->
-                    FilterChip(selected = section == candidate, onClick = { section = candidate }, label = { Text(candidate.label) })
+                    P3FilterChip(selected = section == candidate, onClick = { section = candidate }, label = { Text(candidate.label) })
                 }
             }
         }
         item {
-            OutlinedTextField(searchInput, { searchInput = it }, label = { Text(searchLabel(section)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            P3OutlinedTextField(searchInput, { searchInput = it }, label = { Text(searchLabel(section)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }
         item {
             ContentFilters(section, data, filter, { filter = it; page = 1 }, filter2, { filter2 = it; page = 1 },
@@ -212,17 +277,41 @@ fun ContentFeatureScreen(
         }
         if (!loading && error == null && pageItems.isEmpty()) item { Text("没有符合条件的内容。", modifier = Modifier.padding(24.dp)) }
         itemsIndexed(pageItems) { _, item ->
-            ContentListCard(baseUrl, item, onClick = { clearDetailState(); detailTarget = item })
+            ContentListCard(baseUrl, item, onClick = {
+                listAnchorAbsoluteIndex = listState.firstVisibleItemIndex
+                listAnchorOffset = listState.firstVisibleItemScrollOffset
+                clearDetailState()
+                savedDetailId = contentItemId(item)
+                savedDetailSection = section.name
+                detailTarget = item
+            })
         }
         if (totalPages > 1) item {
-            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { page = (safePage - 1).coerceAtLeast(1) }, enabled = safePage > 1) { Text("上一页") }
+            Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("第 $safePage / $totalPages 页 · 共 ${data?.total ?: visibleItems.size} 项", style = MaterialTheme.typography.bodySmall)
-                Button(onClick = { page = (safePage + 1).coerceAtMost(totalPages) }, enabled = safePage < totalPages) { Text("下一页") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                P3OutlinedButton(onClick = { page = (safePage - 1).coerceAtLeast(1) }, enabled = safePage > 1) { Text("上一页") }
+                P3Button(onClick = { page = (safePage + 1).coerceAtMost(totalPages) }, enabled = safePage < totalPages) { Text("下一页") }
+                }
             }
         }
     }
 }
+
+private fun contentItemId(item: Any): String? = when (item) {
+    is InformationItem -> item.id
+    is ExchangeItem -> item.id
+    is MissionItem -> item.id
+    is VirtualLiveItem -> item.id
+    is Live2dItem -> item.id
+    is MysekaiItem -> item.id
+    is StoryItem -> item.id
+    else -> null
+}
+
+internal fun contentShouldResetForSection(firstEffect: Boolean): Boolean = !firstEffect
+internal fun contentShouldResetForRegion(firstEffect: Boolean): Boolean = !firstEffect
+internal fun contentCanRestoreListAnchor(totalItems: Int, savedIndex: Int): Boolean = totalItems > savedIndex
 
 @Composable
 private fun ContentFilters(
@@ -249,7 +338,7 @@ private fun ContentFilters(
         else -> emptyList()
     }
     if (choices.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        itemsIndexed(choices) { _, choice -> FilterChip(filter == choice.first, { onFilter(choice.first) }, { Text(choice.second) }) }
+        itemsIndexed(choices) { _, choice -> P3FilterChip(filter == choice.first, { onFilter(choice.first) }, { Text(choice.second) }) }
     }
     val secondaryLabel = when (section) {
         ContentSection.LIVE2D -> "角色 ID"
@@ -260,7 +349,7 @@ private fun ContentFilters(
         else -> null
     }
     secondaryLabel?.let {
-        OutlinedTextField(filter2, onFilter2, label = { Text(it) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+        P3OutlinedTextField(filter2, onFilter2, label = { Text(it) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
     }
     val thirdLabel = when (section) {
         ContentSection.LIVE2D -> "服装类型（可选）"
@@ -268,7 +357,7 @@ private fun ContentFilters(
         else -> null
     }
     thirdLabel?.let {
-        OutlinedTextField(filter3, onFilter3, label = { Text(it) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+        P3OutlinedTextField(filter3, onFilter3, label = { Text(it) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
     }
     val sorts = when (section) {
         ContentSection.INFORMATION -> listOf("time-desc" to "从新到旧", "time-asc" to "从旧到新", "id-asc" to "ID 从小到大")
@@ -277,23 +366,23 @@ private fun ContentFilters(
         else -> emptyList()
     }
     if (sorts.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-        itemsIndexed(sorts) { _, choice -> FilterChip(sort == choice.first, { onSort(choice.first) }, { Text(choice.second) }) }
+        itemsIndexed(sorts) { _, choice -> P3FilterChip(sort == choice.first, { onSort(choice.first) }, { Text(choice.second) }) }
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-        itemsIndexed(listOf(12, 24, 48)) { _, size -> FilterChip(pageSize == size, { onPageSize(size) }, { Text("每页 $size") }) }
+        itemsIndexed(listOf(12, 24, 48)) { _, size -> P3FilterChip(pageSize == size, { onPageSize(size) }, { Text("每页 $size") }) }
     }
     if (!data?.facets.isNullOrEmpty()) {
         Text("可用筛选：${data?.facets?.values?.flatten()?.distinct()?.take(8)?.joinToString().orEmpty()}", style = MaterialTheme.typography.bodySmall)
     }
 }
 
-private fun defaultFilter(section: ContentSection) = when (section) {
+internal fun defaultFilter(section: ContentSection) = when (section) {
     ContentSection.LIVE2D -> "region-referenced"
     ContentSection.MYSEKAI -> MysekaiKind.FIXTURES.name
     else -> "all"
 }
 
-private fun defaultSort(section: ContentSection) = when (section) {
+internal fun defaultSort(section: ContentSection) = when (section) {
     ContentSection.INFORMATION, ContentSection.STORIES -> "time-desc"
     ContentSection.MISSIONS -> "seq"
     else -> "default"

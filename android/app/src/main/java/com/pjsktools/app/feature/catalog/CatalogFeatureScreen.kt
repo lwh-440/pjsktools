@@ -1,4 +1,9 @@
 package com.pjsktools.app.feature.catalog
+import com.pjsktools.app.feature.display.P3FilterChip
+import com.pjsktools.app.feature.display.P3Button
+import com.pjsktools.app.feature.display.P3OutlinedButton
+import com.pjsktools.app.feature.display.P3OutlinedTextField
+import com.pjsktools.app.feature.display.P3TextButton
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -16,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
@@ -30,17 +36,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.pjsktools.app.feature.display.displayCount
+import com.pjsktools.app.feature.display.displayDecimal
+import com.pjsktools.app.feature.display.SavedListAnchor
+import com.pjsktools.app.feature.display.recordVisibleListAnchor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 
 @Composable
 fun CatalogFeatureScreen(
@@ -59,11 +73,10 @@ fun CatalogFeatureScreen(
     var pageSize by rememberSaveable { mutableIntStateOf(24) }
     var reloadKey by remember { mutableIntStateOf(0) }
     var detailReloadKey by remember { mutableIntStateOf(0) }
-    var costumeFilters by remember { mutableStateOf(CostumeFilters()) }
+    var costumeFilters by rememberSaveable(stateSaver = costumeFiltersSaver) { mutableStateOf(CostumeFilters()) }
     var costumeFiltersExpanded by rememberSaveable { mutableStateOf(false) }
     var pageData by remember { mutableStateOf<CatalogPage?>(null) }
-    var catalogResultGeneration by remember { mutableIntStateOf(0) }
-    var technicalDetailsExpanded by remember(catalogResultGeneration) { mutableStateOf(false) }
+    var technicalDetailsExpanded by rememberSaveable { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selectedItem by remember { mutableStateOf<CatalogItem?>(null) }
@@ -72,10 +85,28 @@ fun CatalogFeatureScreen(
     var detail by remember { mutableStateOf<CatalogDetail?>(null) }
     var detailLoading by remember { mutableStateOf(false) }
     var detailError by remember { mutableStateOf<String?>(null) }
+    var savedDetailId by rememberSaveable { mutableStateOf<String?>(null) }
+    var savedDetailType by rememberSaveable { mutableStateOf<String?>(null) }
+    var savedDetailTitle by rememberSaveable { mutableStateOf("") }
+    var savedDetailPath by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var savedDetailListContext by rememberSaveable { mutableStateOf<String?>(null) }
+    var handledNavigationTarget by rememberSaveable { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     var listAnchorAbsoluteIndex by rememberSaveable { mutableIntStateOf(0) }
     var listAnchorOffset by rememberSaveable { mutableIntStateOf(0) }
     var restoreListAnchor by remember { mutableStateOf(false) }
+    var restoreSavedListAnchor by remember { mutableStateOf(true) }
+    var restoreDetailOnFirstLoad by remember { mutableStateOf(true) }
+
+    fun clearSavedDetailContext() {
+        savedDetailId = null
+        savedDetailType = null
+        savedDetailTitle = ""
+        savedDetailPath = emptyList()
+        savedDetailListContext = null
+    }
+
+    fun currentListContext() = catalogListContext(region, type, query, page, pageSize, costumeFilters)
 
     LaunchedEffect(searchInput) {
         delay(350)
@@ -86,6 +117,8 @@ fun CatalogFeatureScreen(
         }
     }
     LaunchedEffect(region, type, query, page, pageSize, costumeFilters, reloadKey) {
+        val restoringFirstLoad = restoreDetailOnFirstLoad
+        if (catalogShouldClearPersistedDetail(restoringFirstLoad, savedDetailListContext, currentListContext())) clearSavedDetailContext()
         loading = true
         error = null
         pageData = null
@@ -97,14 +130,26 @@ fun CatalogFeatureScreen(
             val result = repository.catalog(region, type, query, page, pageSize, costumeFilters)
             currentCoroutineContext().ensureActive()
             pageData = result
-            catalogResultGeneration++
+            if (catalogShouldRestoreDetail(restoringFirstLoad, selectedItem == null, savedDetailId) ) {
+                val restoredType = savedDetailType?.let { value -> CatalogType.entries.firstOrNull { it.name == value } }
+                val restored = restoredType?.let { type ->
+                    result.items.firstOrNull { it.id == savedDetailId && it.type == type }
+                        ?: CatalogItem(savedDetailId.orEmpty(), type, savedDetailTitle.ifBlank { "图鉴条目" })
+                }
+                if (restored != null) {
+                    selectedItem = restored
+                    detailRequest = restored
+                }
+            }
             loading = false
+            restoreDetailOnFirstLoad = catalogRestoreIntentAfterLoad(restoringFirstLoad, loadSucceeded = true)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Throwable) {
             currentCoroutineContext().ensureActive()
             error = failure.message ?: "图鉴加载失败"
             loading = false
+            restoreDetailOnFirstLoad = catalogRestoreIntentAfterLoad(restoringFirstLoad, loadSucceeded = false)
         }
     }
     LaunchedEffect(region, detailRequest, detailReloadKey) {
@@ -131,16 +176,34 @@ fun CatalogFeatureScreen(
         if (item == null) {
             onNavigateRelated(target)
         } else {
-            detail?.let { detailStack = detailStack + it }
+            val token = encodeDetailPathItem(item)
+            if (!catalogShouldHandleNavigation(handledNavigationTarget, token)) {
+                return@LaunchedEffect
+            }
+            handledNavigationTarget = token
+            detail?.let {
+                detailStack = detailStack + it
+                savedDetailPath = savedDetailPath + encodeDetailPathItem(it.item)
+            }
             selectedItem = item
             detail = null
             detailRequest = item
+            savedDetailId = item.id
+            savedDetailType = item.type.name
+            savedDetailTitle = item.title
+            savedDetailListContext = currentListContext()
         }
     }
 
     fun captureListAnchor() {
-        listAnchorAbsoluteIndex = listState.firstVisibleItemIndex
-        listAnchorOffset = listState.firstVisibleItemScrollOffset
+        val saved = recordVisibleListAnchor(
+            current = SavedListAnchor(listAnchorAbsoluteIndex, listAnchorOffset),
+            visibleIndex = listState.firstVisibleItemIndex,
+            visibleOffset = listState.firstVisibleItemScrollOffset,
+            canRecord = true
+        )
+        listAnchorAbsoluteIndex = saved.index
+        listAnchorOffset = saved.offset
     }
 
     val openRelated: (CatalogNavigationTarget) -> Unit = { target ->
@@ -148,36 +211,65 @@ fun CatalogFeatureScreen(
         if (item == null) {
             onNavigateRelated(target)
         } else {
-            detail?.let { detailStack = detailStack + it }
+            detail?.let {
+                detailStack = detailStack + it
+                savedDetailPath = savedDetailPath + encodeDetailPathItem(it.item)
+            }
             selectedItem = item
             detail = null
             detailRequest = item
+            savedDetailId = item.id
+            savedDetailType = item.type.name
+            savedDetailTitle = item.title
+            savedDetailListContext = currentListContext()
         }
     }
     val closeDetail: () -> Unit = {
         val parent = detailStack.lastOrNull()
-        if (parent == null) {
+        val restoredParent = savedDetailPath.lastOrNull()?.let(::decodeDetailPathItem)
+        if (parent == null && restoredParent == null) {
             restoreListAnchor = true
             selectedItem = null
             detail = null
             detailRequest = null
+            clearSavedDetailContext()
         } else {
             detailStack = detailStack.dropLast(1)
-            selectedItem = parent.item
+            savedDetailPath = savedDetailPath.dropLast(1)
+            val parentItem = parent?.item ?: restoredParent!!
+            selectedItem = parentItem
             detail = parent
-            detailRequest = null
+            detailRequest = if (parent == null) parentItem else null
+            savedDetailId = parentItem.id
+            savedDetailType = parentItem.type.name
+            savedDetailTitle = parentItem.title
         }
     }
     BackHandler(enabled = selectedItem != null) { closeDetail() }
     fun headerItemCount() = 5 + if (type == CatalogType.COSTUMES) {
         1 + if (costumeFiltersExpanded) 1 else 0
     } else 0
-    LaunchedEffect(restoreListAnchor, selectedItem, pageData?.items) {
-        if (!restoreListAnchor || selectedItem != null) return@LaunchedEffect
-        if (listState.layoutInfo.totalItemsCount > listAnchorAbsoluteIndex) {
-            listState.scrollToItem(listAnchorAbsoluteIndex, listAnchorOffset)
-        }
+    LaunchedEffect(restoreListAnchor, restoreSavedListAnchor, selectedItem, pageData?.items) {
+        if ((!restoreListAnchor && !restoreSavedListAnchor) || selectedItem != null || pageData == null) return@LaunchedEffect
+        snapshotFlow { listState.layoutInfo.totalItemsCount }
+            .first { total -> catalogCanRestoreListAnchor(total, listAnchorAbsoluteIndex) }
+        listState.scrollToItem(listAnchorAbsoluteIndex, listAnchorOffset)
         restoreListAnchor = false
+        restoreSavedListAnchor = false
+    }
+    LaunchedEffect(listState, pageData?.items, selectedItem, restoreListAnchor, restoreSavedListAnchor) {
+        if (pageData == null || selectedItem != null || restoreListAnchor || restoreSavedListAnchor) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                val saved = recordVisibleListAnchor(
+                    current = SavedListAnchor(listAnchorAbsoluteIndex, listAnchorOffset),
+                    visibleIndex = index,
+                    visibleOffset = offset,
+                    canRecord = pageData != null && selectedItem == null && !restoreListAnchor && !restoreSavedListAnchor
+                )
+                listAnchorAbsoluteIndex = saved.index
+                listAnchorOffset = saved.offset
+            }
     }
     LaunchedEffect(selectedItem?.type, selectedItem?.id) {
         if (selectedItem != null) listState.scrollToItem(headerItemCount())
@@ -193,29 +285,29 @@ fun CatalogFeatureScreen(
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(CatalogType.entries) { option ->
-                        FilterChip(selected = option == type, onClick = { type = option; page = 1 }, label = { Text(option.displayName) })
+                        P3FilterChip(selected = option == type, onClick = { type = option; page = 1 }, label = { Text(option.displayName) })
                     }
                 }
             }
             item {
-                OutlinedTextField(
+                P3OutlinedTextField(
                     value = searchInput, onValueChange = { searchInput = it }, label = { Text("搜索名称、角色、分类或 ID") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    trailingIcon = { if (searchInput.isNotEmpty()) TextButton(onClick = { searchInput = "" }) { Text("清除") } }
+                    trailingIcon = { if (searchInput.isNotEmpty()) P3TextButton(onClick = { searchInput = "" }) { Text("清除") } }
                 )
             }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(listOf(24, 48, 96)) { size ->
-                        FilterChip(selected = pageSize == size, onClick = { pageSize = size; page = 1 }, label = { Text("每页 $size") })
+                        P3FilterChip(selected = pageSize == size, onClick = { pageSize = size; page = 1 }, label = { Text("每页 $size") })
                     }
                 }
             }
             if (type == CatalogType.COSTUMES) {
                 item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("服装筛选${costumeFilters.activeCount().takeIf { it > 0 }?.let { "（已选 $it）" }.orEmpty()}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        TextButton(onClick = { costumeFiltersExpanded = !costumeFiltersExpanded }) { Text(if (costumeFiltersExpanded) "收起筛选" else "展开筛选") }
+                        Text("服装筛选${costumeFilters.activeCount().takeIf { it > 0 }?.let { "（已选 $it）" }.orEmpty()}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        P3TextButton(onClick = { costumeFiltersExpanded = !costumeFiltersExpanded }) { Text(if (costumeFiltersExpanded) "收起筛选" else "展开筛选") }
                     }
                 }
                 if (costumeFiltersExpanded) item {
@@ -257,9 +349,14 @@ fun CatalogFeatureScreen(
                 CatalogItemCard(baseUrl, item) {
                     captureListAnchor()
                     detailStack = emptyList()
+                    savedDetailPath = emptyList()
                     selectedItem = item
                     detail = null
                     detailRequest = item
+                    savedDetailId = item.id
+                    savedDetailType = item.type.name
+                    savedDetailTitle = item.title
+                    savedDetailListContext = currentListContext()
                 }
             }
         }
@@ -286,7 +383,12 @@ private fun CatalogNavigationTarget.toCatalogItemOrNull(): CatalogItem? {
 
 @Composable
 private fun CatalogItemCard(baseUrl: String, item: CatalogItem, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             RemoteCatalogImage(
                 baseUrl = baseUrl,
@@ -313,7 +415,12 @@ private fun DetailCard(
     onNavigateRelated: (CatalogNavigationTarget) -> Unit,
     onClose: () -> Unit
 ) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
@@ -324,13 +431,13 @@ private fun DetailCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                TextButton(onClick = onClose) { Text("关闭") }
+                P3TextButton(onClick = onClose) { Text("关闭") }
             }
             when {
                 loading -> CircularProgressIndicator()
                 error != null -> Column {
                     Text(error, color = MaterialTheme.colorScheme.error)
-                    Button(onClick = onRetry) { Text("重试详情") }
+                    P3Button(onClick = onRetry) { Text("重试详情") }
                 }
                 detail != null -> DetailContent(baseUrl, detail, onNavigateRelated)
             }
@@ -344,22 +451,27 @@ private fun DetailContent(
     detail: CatalogDetail,
     onNavigateRelated: (CatalogNavigationTarget) -> Unit
 ) {
-    var selectedChart by remember(detail.item.id) { mutableStateOf<ChartAsset?>(null) }
+    var selectedChartName by rememberSaveable(detail.item.id) { mutableStateOf<String?>(null) }
     when (detail) {
         is SongCatalogDetail -> {
             RemoteCatalogImage(baseUrl, detail.assetUrls, detail.item.title, aspectRatio = 1f, contentScale = ContentScale.Crop)
-            Text(listOfNotNull(detail.unit, detail.durationSeconds?.let { "${it}s" }, detail.bpm?.let { "BPM $it" }).joinToString(" · "))
+            Text(listOfNotNull(detail.unit, detail.durationSeconds?.let { "${displayCount(it.toLong())} 秒" }, detail.bpm?.let { "BPM ${displayDecimal(it)}" }).joinToString(" · "))
             if (detail.categories.isNotEmpty()) Text("分类：${detail.categories.joinToString(" / ")}")
             DetailDescription(detail.item)
             SectionTitle("谱面")
             detail.difficulties.forEach { difficulty ->
                 val chart = detail.charts.firstOrNull { it.difficulty.equals(difficulty.difficulty, ignoreCase = true) }
-                OutlinedButton(onClick = { selectedChart = chart }, enabled = chart != null) {
-                    Text("${difficulty.difficulty.uppercase()} · Lv.${difficulty.playLevel ?: "-"} · ${difficulty.totalNoteCount ?: "-"} notes")
+                    P3OutlinedButton(onClick = { selectedChartName = chart?.difficulty }, enabled = chart != null) {
+                    Text("${difficulty.difficulty.uppercase()} · Lv.${displayCount(difficulty.playLevel?.toLong())} · ${displayCount(difficulty.totalNoteCount?.toLong())} 音符")
                 }
             }
-            selectedChart?.let { chart ->
-                Card(Modifier.fillMaxWidth()) {
+            detail.charts.firstOrNull { it.difficulty == selectedChartName }?.let { chart ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(
@@ -369,7 +481,7 @@ private fun DetailContent(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            TextButton(onClick = { selectedChart = null }) { Text("收起") }
+                            P3TextButton(onClick = { selectedChartName = null }) { Text("收起") }
                         }
                         if (chart.imageCandidates.isNotEmpty()) {
                             RemoteCatalogImage(baseUrl, chart.imageCandidates, "${detail.item.title} ${chart.difficulty} 谱面", heightDp = 480)
@@ -446,7 +558,7 @@ private fun RelatedItems(
         if (entry.kind == RelatedKind.DISPLAY_ONLY) {
             Text(label)
         } else {
-            TextButton(onClick = { onNavigateRelated(CatalogNavigationTarget(entry.kind, entry.id, entry.title)) }) {
+            P3TextButton(onClick = { onNavigateRelated(CatalogNavigationTarget(entry.kind, entry.id, entry.title)) }) {
                 Text(label)
             }
         }
@@ -455,22 +567,61 @@ private fun RelatedItems(
 
 @Composable
 private fun CostumeFilterPanel(value: CostumeFilters, onChange: (CostumeFilters) -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("服装筛选", fontWeight = FontWeight.Bold)
-            OutlinedTextField(value.partType, { onChange(value.copy(partType = it)) }, label = { Text("部件：body / hair / head") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value.source, { onChange(value.copy(source = it)) }, label = { Text("来源：card / shop / other") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value.rarity, { onChange(value.copy(rarity = it)) }, label = { Text("稀有度：rare / normal") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value.gender, { onChange(value.copy(gender = it)) }, label = { Text("性别：female / male") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(
+            Text("服装筛选", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            P3OutlinedTextField(value.partType, { onChange(value.copy(partType = it)) }, label = { Text("部件：body / hair / head") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            P3OutlinedTextField(value.source, { onChange(value.copy(source = it)) }, label = { Text("来源：card / shop / other") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            P3OutlinedTextField(value.rarity, { onChange(value.copy(rarity = it)) }, label = { Text("稀有度：rare / normal") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            P3OutlinedTextField(value.gender, { onChange(value.copy(gender = it)) }, label = { Text("性别：female / male") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            P3OutlinedTextField(
                 value.characterId,
                 { next -> onChange(value.copy(characterId = next.filter(Char::isDigit))) },
                 label = { Text("角色 ID") }, singleLine = true, modifier = Modifier.fillMaxWidth()
             )
-            TextButton(onClick = { onChange(CostumeFilters()) }) { Text("清除服装筛选") }
+            P3TextButton(onClick = { onChange(CostumeFilters()) }) { Text("清除服装筛选") }
         }
     }
 }
+
+private val costumeFiltersSaver = listSaver<CostumeFilters, String>(
+    save = { listOf(it.partType, it.source, it.rarity, it.gender, it.characterId) },
+    restore = { CostumeFilters(it[0], it[1], it[2], it[3], it[4]) }
+)
+
+private fun encodeDetailPathItem(item: CatalogItem): String = listOf(item.type.name, item.id, item.title).joinToString("\u001f")
+private fun decodeDetailPathItem(value: String): CatalogItem? {
+    val parts = value.split("\u001f")
+    val type = parts.firstOrNull()?.let { typeName -> CatalogType.entries.firstOrNull { it.name == typeName } } ?: return null
+    val id = parts.getOrNull(1).orEmpty().takeIf(String::isNotBlank) ?: return null
+    return CatalogItem(id, type, parts.getOrNull(2).orEmpty().ifBlank { "图鉴条目" })
+}
+
+internal fun catalogShouldClearPersistedDetail(
+    firstDataLoad: Boolean,
+    savedListContext: String? = null,
+    activeListContext: String? = null
+): Boolean = !firstDataLoad || (savedListContext != null && savedListContext != activeListContext)
+internal fun catalogShouldRestoreDetail(firstDataLoad: Boolean, noActiveDetail: Boolean, savedDetailId: String?): Boolean =
+    firstDataLoad && noActiveDetail && !savedDetailId.isNullOrBlank()
+internal fun catalogShouldHandleNavigation(handledToken: String?, nextToken: String): Boolean = handledToken != nextToken
+internal fun catalogCanRestoreListAnchor(totalItems: Int, savedIndex: Int): Boolean = totalItems > savedIndex
+internal fun catalogRestoreIntentAfterLoad(currentIntent: Boolean, loadSucceeded: Boolean): Boolean =
+    currentIntent && !loadSucceeded
+internal fun catalogListContext(
+    region: String,
+    type: CatalogType,
+    query: String,
+    page: Int,
+    pageSize: Int,
+    filters: CostumeFilters
+): String = listOf(region, type.name, query, page, pageSize, filters.partType, filters.source, filters.rarity, filters.gender, filters.characterId)
+    .joinToString("\u001f")
 
 @Composable
 private fun CatalogItemMetadata(
@@ -521,7 +672,7 @@ private fun CatalogDataStatus(
         data.unavailableReason?.let { "说明：$it" }
     )
     if (technicalDetails.isNotEmpty()) {
-        TextButton(onClick = onToggleTechnicalDetails) {
+        P3TextButton(onClick = onToggleTechnicalDetails) {
             Text(if (technicalDetailsExpanded) "收起技术信息" else "查看技术信息")
         }
         if (technicalDetailsExpanded) {
@@ -596,15 +747,20 @@ internal fun CostumeFilters.activeCount(): Int = listOf(partType, source, rarity
 @Composable
 private fun SectionTitle(text: String) {
     Divider()
-    Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 }
 
 @Composable
 private fun ErrorCard(message: String, onRetry: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-            Button(onClick = onRetry) { Text("重试") }
+            P3Button(onClick = onRetry) { Text("重试") }
         }
     }
 }
@@ -612,8 +768,8 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
 @Composable
 private fun PaginationRow(page: Int, totalPages: Int, onPrevious: () -> Unit, onNext: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        OutlinedButton(onClick = onPrevious, enabled = page > 1) { Text("上一页") }
+        P3OutlinedButton(onClick = onPrevious, enabled = page > 1) { Text("上一页") }
         Text("第 $page / $totalPages 页", modifier = Modifier.padding(top = 12.dp))
-        OutlinedButton(onClick = onNext, enabled = page < totalPages) { Text("下一页") }
+        P3OutlinedButton(onClick = onNext, enabled = page < totalPages) { Text("下一页") }
     }
 }

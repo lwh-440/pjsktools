@@ -1,9 +1,12 @@
 package com.pjsktools.app.feature.compliance
+import com.pjsktools.app.feature.display.P3Button
+import com.pjsktools.app.feature.display.P3OutlinedButton
+import com.pjsktools.app.feature.display.P3OutlinedTextField
+import com.pjsktools.app.feature.display.P3TextButton
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,14 +35,12 @@ fun ComplianceLinks(
 ) {
     val uriHandler = LocalUriHandler.current
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(horizontalArrangement = Arrangement.Center) {
-            TextButton(onClick = { uriHandler.openUri(PRIVACY_URL) }) { Text("隐私政策") }
-            TextButton(onClick = { uriHandler.openUri(TERMS_URL) }) { Text("用户协议") }
-            TextButton(onClick = { uriHandler.openUri(SECURITY_URL) }) { Text("安全与举报") }
-        }
+        P3TextButton(onClick = { uriHandler.openUri(PRIVACY_URL) }) { Text("隐私政策") }
+        P3TextButton(onClick = { uriHandler.openUri(TERMS_URL) }) { Text("用户协议") }
+        P3TextButton(onClick = { uriHandler.openUri(SECURITY_URL) }) { Text("安全与举报") }
         if (includeFilings) {
-            TextButton(onClick = { uriHandler.openUri(POLICE_FILING_URL) }) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            P3TextButton(onClick = { uriHandler.openUri(POLICE_FILING_URL) }) {
+                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Image(
                         painter = painterResource(R.drawable.beian_mps_badge),
                         contentDescription = "公安备案图标",
@@ -48,7 +49,7 @@ fun ComplianceLinks(
                     Text(POLICE_FILING_NUMBER)
                 }
             }
-            TextButton(onClick = { uriHandler.openUri(ICP_URL) }) { Text(ICP_NUMBER) }
+            P3TextButton(onClick = { uriHandler.openUri(ICP_URL) }) { Text(ICP_NUMBER) }
         }
         Text(
             "隐私与安全联系：sekaitools@qq.com",

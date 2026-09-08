@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
@@ -32,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +44,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import com.pjsktools.app.feature.catalog.RemoteCatalogImage
+import com.pjsktools.app.feature.display.displayCount
+import com.pjsktools.app.feature.display.displayDecimal
+import com.pjsktools.app.feature.display.numericTextStyle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -57,8 +63,8 @@ fun EventsToolsFeatureScreen(
     onEventTargetConsumed: (() -> Unit)? = null
 ) {
     val repository = remember(baseUrl) { EventsToolsRepository(baseUrl) }
-    var section by remember { mutableStateOf(initialSection) }
-    var windowHours by remember { mutableStateOf<Int?>(null) }
+    var section by rememberSaveable { mutableStateOf(initialSection) }
+    var windowHours by rememberSaveable { mutableStateOf<Int?>(null) }
     var dashboard by remember { mutableStateOf<EventsDashboard?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -67,10 +73,10 @@ fun EventsToolsFeatureScreen(
     var refreshRequest by remember { mutableStateOf(0) }
     var handledRefreshRequest by remember { mutableStateOf(0) }
     var countdown by remember { mutableStateOf(10) }
-    var selectedEventId by remember { mutableStateOf<String?>(null) }
+    var selectedEventId by rememberSaveable { mutableStateOf<String?>(null) }
     var eventDetail by remember { mutableStateOf<FullEventDetail?>(null) }
     var eventDetailError by remember { mutableStateOf<String?>(null) }
-    var selectedRank by remember { mutableStateOf<Int?>(null) }
+    var selectedRank by rememberSaveable { mutableStateOf<Int?>(null) }
     var rankingDetail by remember { mutableStateOf<RankingPlayerDetail?>(null) }
     val localContext = LocalContext.current
     val lifecycleOwner = remember(localContext) { localContext.findLifecycleOwner() }
@@ -110,7 +116,7 @@ fun EventsToolsFeatureScreen(
     }
 
     LaunchedEffect(region, eventTargetId) {
-        if (!eventTargetId.isNullOrBlank()) {
+        if (!eventTargetId.isNullOrBlank() && selectedEventId != eventTargetId) {
             section = EventsToolsSection.HISTORY
             selectedEventId = eventTargetId
         }
@@ -147,7 +153,12 @@ fun EventsToolsFeatureScreen(
                 Text("区服 ${region.uppercase()} · 与网页共用后端", style = MaterialTheme.typography.bodySmall)
             }
             Column {
-                OutlinedButton(onClick = { refreshRequest += 1 }, enabled = !loading) { Text(if (loading) "加载中" else "立即刷新") }
+                OutlinedButton(
+                    onClick = { refreshRequest += 1 },
+                    enabled = !loading,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small
+                ) { Text(if (loading) "加载中" else "立即刷新") }
                 if (section == EventsToolsSection.CURRENT && !loading) Text("${countdown}s 后刷新", style = MaterialTheme.typography.labelSmall)
                 refreshNotice?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall) }
                 refreshError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
@@ -158,8 +169,16 @@ fun EventsToolsFeatureScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(EventsToolsSection.entries) { item ->
-                if (section == item) Button(onClick = {}) { Text(item.label) }
-                else OutlinedButton(onClick = { section = item }) { Text(item.label) }
+                if (section == item) Button(
+                    onClick = {},
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small
+                ) { Text(item.label) }
+                else OutlinedButton(
+                    onClick = { section = item },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small
+                ) { Text(item.label) }
             }
         }
         error?.let { ErrorCard(it, Modifier.padding(16.dp)) }
@@ -211,15 +230,19 @@ private fun CurrentEventContent(
                         RemoteCatalogImage(baseUrl, detail.row.leaderImageCandidates, "${detail.row.playerName} 当前队长", heightDp = 180)
                     }
                     Text(detail.row.playerName, fontWeight = FontWeight.Bold)
-                    Text("${formatLong(detail.row.score)} pt · 时速 ${detail.row.growth?.let(::formatLong) ?: "-"} pt/h")
+                    Text("${formatLong(detail.row.score)} pt · 时速 ${detail.row.growth?.let(::formatLong) ?: "暂缺"} pt/h", style = numericTextStyle())
                     Text(detail.profileWord ?: "暂无公开签名")
                     Text("队长卡 ${detail.row.leaderCardId ?: "-"} · Lv.${detail.row.leaderCardLevel ?: "-"} · MR ${detail.row.leaderCardMasterRank ?: "-"}")
-                    Text("称号 ${detail.profileHonorCount} · 采样间隔 ${detail.intervalSeconds?.let { "$it 秒" } ?: "-"}")
-                    val churn = detail.churn1h?.let { "近 1H 周回 $it" } ?: "近 1H PT 更新 ${detail.observedPtUpdates ?: 0} 次"
+                    Text("称号 ${displayCount(detail.profileHonorCount.toLong())} · 采样间隔 ${detail.intervalSeconds?.let { "${displayCount(it.toLong())} 秒" } ?: "暂缺"}")
+                    val churn = detail.churn1h?.let { "近 1H 周回 ${displayCount(it.toLong())}" } ?: "近 1H PT 更新 ${displayCount(detail.observedPtUpdates?.toLong())} 次"
                     Text("$churn · 状态 ${detail.churnStatus ?: "source-unavailable"}")
                     TraceSummary("玩家轨迹", detail.playerTrace)
                     TraceSummary("档线轨迹", detail.rankTrace)
-                    TextButton(onClick = onCloseDetail) { Text("关闭详情") }
+                    TextButton(
+                        onClick = onCloseDetail,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text("关闭详情") }
                 }
             }
         }
@@ -230,10 +253,14 @@ private fun CurrentEventContent(
                 dashboard.borders.forEach { Text("T${it.rank}    ${formatLong(it.score)} pt", fontWeight = FontWeight.SemiBold) }
             }
         }
-        item { Text("Top 100（${dashboard.top100.size}）", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+        item { Text("Top 100（${dashboard.top100.size}）", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
         if (dashboard.top100.isEmpty()) item { EmptyCard("暂无实时 Top 100 数据") }
         items(dashboard.top100, key = { it.rank }) { row ->
-            Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onSelectRank(row.rank) }) {
+            Card(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onSelectRank(row.rank) },
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
                 Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (row.leaderImageCandidates.isNotEmpty()) {
                         RemoteCatalogImage(baseUrl, row.leaderImageCandidates, "${row.playerName} 当前队长", modifier = Modifier.widthIn(max = 64.dp), heightDp = 64)
@@ -244,8 +271,8 @@ private fun CurrentEventContent(
                         row.userId?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }
                     Column {
-                        Text(formatLong(row.score), fontWeight = FontWeight.Bold)
-                        row.growth?.let { Text("+${formatLong(it)}", style = MaterialTheme.typography.bodySmall) }
+                        Text(formatLong(row.score), fontWeight = FontWeight.Bold, style = numericTextStyle(MaterialTheme.typography.bodyMedium))
+                        row.growth?.let { Text("+${formatLong(it)}", style = numericTextStyle(MaterialTheme.typography.bodySmall)) }
                     }
                 }
             }
@@ -287,7 +314,11 @@ private fun EventHistoryContent(
         if (selectedEventId != null && detail == null && detailError == null) item { EmptyCard("正在加载活动完整详情…") }
         if (history.isEmpty()) item { EmptyCard(if (loading) "正在加载往期活动…" else "暂无往期活动数据") }
         items(history, key = { it.id }) { event ->
-            Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onSelectEvent(event.id) }) {
+            Card(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onSelectEvent(event.id) },
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(event.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(event.eventType ?: "未知活动类型")
@@ -314,11 +345,11 @@ private fun ForecastContent(
     modifier: Modifier
 ) {
     val scope = rememberCoroutineScope()
-    var targetRank by remember { mutableStateOf("1000") }
-    var currentPt by remember { mutableStateOf("0") }
-    var ptPerRun by remember { mutableStateOf("25000") }
-    var remainingMinutes by remember { mutableStateOf("180") }
-    var availableRuns by remember { mutableStateOf("50") }
+    var targetRank by rememberSaveable { mutableStateOf("1000") }
+    var currentPt by rememberSaveable { mutableStateOf("0") }
+    var ptPerRun by rememberSaveable { mutableStateOf("25000") }
+    var remainingMinutes by rememberSaveable { mutableStateOf("180") }
+    var availableRuns by rememberSaveable { mutableStateOf("50") }
     var planResult by remember { mutableStateOf<ToolResult?>(null) }
     var planError by remember { mutableStateOf<String?>(null) }
     var planning by remember { mutableStateOf(false) }
@@ -328,8 +359,16 @@ private fun ForecastContent(
             LazyRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(listOf(null, 1, 3, 6)) { window ->
                     val label = window?.let { "近 ${it}h" } ?: "全部样本"
-                    if (windowHours == window) Button(onClick = {}) { Text(label) }
-                    else OutlinedButton(onClick = { onWindowChange(window) }) { Text(label) }
+                    if (windowHours == window) Button(
+                        onClick = {},
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text(label) }
+                    else OutlinedButton(
+                        onClick = { onWindowChange(window) },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) { Text(label) }
                 }
             }
         }
@@ -370,12 +409,16 @@ private fun ForecastContent(
                         }.onSuccess { planResult = it }.onFailure { planError = it.message }
                         planning = false
                     }
-                }, enabled = !planning) { Text(if (planning) "规划中…" else "按真实档线规划") }
+                },
+                    enabled = !planning,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small
+                ) { Text(if (planning) "规划中…" else "按真实档线规划") }
                 planError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 planResult?.highlights?.forEach { (label, value) -> Text("$label：$value") }
             }
         }
-        item { Text("预测线", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+        item { Text("预测线", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
         if (insights.lines.isEmpty()) item { EmptyCard("暂无足够样本生成预测") }
         items(insights.lines, key = { "forecast-${it.rank}" }) { line ->
             InfoCard("T${line.rank} · ${formatLong(line.currentScore)} pt") {
@@ -386,7 +429,7 @@ private fun ForecastContent(
                 Text(line.reason ?: line.confidence ?: "实验性预测", style = MaterialTheme.typography.bodySmall)
             }
         }
-        item { Text("历史样本摘要", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+        item { Text("历史样本摘要", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
         if (insights.historyLines.isEmpty()) item { EmptyCard("暂无持久化历史摘要；刷新榜单后会逐步积累") }
         items(insights.historyLines.take(20), key = { "history-${it.sampleType}-${it.rank}" }) { line ->
             InfoCard("T${line.rank} · ${line.latestScore?.let(::formatLong) ?: "-"} pt") {
@@ -433,18 +476,19 @@ private fun ToolsContent(
     var toolError by remember { mutableStateOf<String?>(null) }
     var lastTool by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<ToolResult?>(null) }
-    var showRaw by remember { mutableStateOf(false) }
+    var showRaw by rememberSaveable { mutableStateOf(false) }
+    var showTrace by rememberSaveable { mutableStateOf(false) }
 
-    var currentPt by remember { mutableStateOf("0") }
-    var targetPt by remember { mutableStateOf("1000000") }
-    var remainingMinutes by remember { mutableStateOf("180") }
-    var ptPerRun by remember { mutableStateOf("25000") }
-    var availableRuns by remember { mutableStateOf("50") }
-    var ownedCardIds by remember { mutableStateOf("") }
-    var deckTarget by remember { mutableStateOf("event") }
-    var musicId by remember { mutableStateOf("") }
-    var difficulty by remember { mutableStateOf("expert") }
-    var boost by remember { mutableStateOf("3") }
+    var currentPt by rememberSaveable { mutableStateOf("0") }
+    var targetPt by rememberSaveable { mutableStateOf("1000000") }
+    var remainingMinutes by rememberSaveable { mutableStateOf("180") }
+    var ptPerRun by rememberSaveable { mutableStateOf("25000") }
+    var availableRuns by rememberSaveable { mutableStateOf("50") }
+    var ownedCardIds by rememberSaveable { mutableStateOf("") }
+    var deckTarget by rememberSaveable { mutableStateOf("event") }
+    var musicId by rememberSaveable { mutableStateOf("") }
+    var difficulty by rememberSaveable { mutableStateOf("expert") }
+    var boost by rememberSaveable { mutableStateOf("3") }
 
     fun runTool(name: String, action: suspend () -> ToolResult) {
         scope.launch {
@@ -452,6 +496,7 @@ private fun ToolsContent(
             lastTool = name
             toolError = null
             showRaw = false
+            showTrace = false
             catchingUi { action() }
                 .onSuccess { result = it }
                 .onFailure { toolError = it.message ?: "$name 请求失败" }
@@ -480,18 +525,18 @@ private fun ToolsContent(
                             eventId = eventId
                         ))
                     }
-                }, enabled = running == null) { Text(if (running == "控分计算") "计算中…" else "开始控分计算") }
+                }, enabled = running == null, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(if (running == "控分计算") "计算中…" else "开始控分计算") }
                 ToolActionFeedback("控分计算", lastTool, running, toolError)
             }
         }
         item {
             InfoCard("组卡推荐") {
                 Text("公开模式需填写真实持有卡牌 ID；没有卡牌时后端会返回缺失状态。", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(ownedCardIds, { ownedCardIds = it }, label = { Text("持有卡牌 ID，逗号或空格分隔") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                OutlinedTextField(ownedCardIds, { ownedCardIds = it }, label = { Text("持有卡牌 ID，逗号或空格分隔") }, modifier = Modifier.fillMaxWidth(), minLines = 2, shape = MaterialTheme.shapes.small)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("event" to "活动", "power" to "综合力", "skill" to "技能").forEach { (value, label) ->
-                        if (deckTarget == value) Button(onClick = {}) { Text(label) }
-                        else OutlinedButton(onClick = { deckTarget = value }) { Text(label) }
+                        if (deckTarget == value) Button(onClick = {}, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(label) }
+                        else OutlinedButton(onClick = { deckTarget = value }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(label) }
                     }
                 }
                 Button(onClick = {
@@ -500,15 +545,15 @@ private fun ToolsContent(
                             ownedCardIds = splitIds(ownedCardIds), eventId = eventId, target = deckTarget
                         ))
                     }
-                }, enabled = running == null) { Text(if (running == "组卡推荐") "搜索中…" else "开始组卡推荐") }
+                }, enabled = running == null, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(if (running == "组卡推荐") "搜索中…" else "开始组卡推荐") }
                 ToolActionFeedback("组卡推荐", lastTool, running, toolError)
             }
         }
         item {
             InfoCard("普通活动规划") {
                 Text("串联组卡、活动 PT、控分、歌曲与区域道具结果。", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(musicId, { musicId = it }, label = { Text("歌曲 ID（可留空）") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(difficulty, { difficulty = it.lowercase() }, label = { Text("难度") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(musicId, { musicId = it }, label = { Text("歌曲 ID（可留空）") }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small)
+                OutlinedTextField(difficulty, { difficulty = it.lowercase() }, label = { Text("难度") }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small)
                 NumberField("当前 PT", currentPt) { currentPt = it }
                 NumberField("目标 PT", targetPt) { targetPt = it }
                 NumberField("剩余分钟", remainingMinutes) { remainingMinutes = it }
@@ -526,7 +571,7 @@ private fun ToolsContent(
                             ownedCardIds = splitIds(ownedCardIds)
                         ))
                     }
-                }, enabled = running == null) { Text(if (running == "普通活动规划") "规划中…" else "生成普通活动规划") }
+                }, enabled = running == null, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(if (running == "普通活动规划") "规划中…" else "生成普通活动规划") }
                 ToolActionFeedback("普通活动规划", lastTool, running, toolError)
             }
         }
@@ -537,7 +582,7 @@ private fun ToolsContent(
                     runTool("歌曲推荐") {
                         repository.musicRecommend(region, eventId, currentPt.requiredLong("当前 PT"), targetPt.requiredLong("目标 PT"))
                     }
-                }, enabled = running == null) { Text(if (running == "歌曲推荐") "推荐中…" else "公开歌曲推荐") }
+                }, enabled = running == null, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(if (running == "歌曲推荐") "推荐中…" else "公开歌曲推荐") }
                 ToolActionFeedback("歌曲推荐", lastTool, running, toolError)
             }
         }
@@ -550,7 +595,7 @@ private fun ToolsContent(
                         require(ids.isNotEmpty()) { "请先填写至少一个卡牌 ID" }
                         repository.areaItemRecommend(region, ids)
                     }
-                }, enabled = running == null) { Text(if (running == "区域道具推荐") "计算中…" else "公开区域道具推荐") }
+                }, enabled = running == null, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(if (running == "区域道具推荐") "计算中…" else "公开区域道具推荐") }
                 ToolActionFeedback("区域道具推荐", lastTool, running, toolError)
             }
         }
@@ -568,18 +613,18 @@ private fun ToolsContent(
                             repository.eventPoint(region, eventId, musicId.takeIf(String::isNotBlank), difficulty,
                                 currentPt.requiredLong("当前 PT"), targetPt.requiredLong("目标 PT"), account)
                         }
-                    }, enabled = running == null) { Text("绑定数据活动 PT") }
+                    }, enabled = running == null, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("绑定数据活动 PT") }
                     Button(onClick = {
                         runTool("绑定歌曲推荐") {
                             repository.musicRecommend(region, eventId, currentPt.requiredLong("当前 PT"), targetPt.requiredLong("目标 PT"), account)
                         }
-                    }, enabled = running == null) { Text("绑定数据歌曲推荐") }
+                    }, enabled = running == null, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("绑定数据歌曲推荐") }
                     Button(onClick = {
                         runTool("绑定区域道具") { repository.areaItemRecommend(region, emptyList(), account) }
-                    }, enabled = running == null) { Text("绑定数据区域道具") }
+                    }, enabled = running == null, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("绑定数据区域道具") }
                     Button(onClick = {
                         runTool("绑定 MySekai") { repository.mysekaiRecommend(region, eventId, account) }
-                    }, enabled = running == null) { Text("绑定数据 MySekai") }
+                    }, enabled = running == null, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("绑定数据 MySekai") }
                     Button(onClick = {
                         runTool("绑定普通活动规划") {
                             repository.boundNormalEventPlan(account, NormalEventPlanInput(
@@ -588,7 +633,7 @@ private fun ToolsContent(
                                 remainingMinutes.requiredDouble("剩余分钟"), boost.requiredDouble("体力消耗"), emptyList()
                             ))
                         }
-                    }, enabled = running == null) { Text("绑定数据普通活动规划") }
+                    }, enabled = running == null, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("绑定数据普通活动规划") }
                     ToolActionFeedback("绑定活动 PT", lastTool, running, toolError)
                     ToolActionFeedback("绑定歌曲推荐", lastTool, running, toolError)
                     ToolActionFeedback("绑定区域道具", lastTool, running, toolError)
@@ -603,7 +648,7 @@ private fun ToolsContent(
                     output.highlights.forEach { (label, value) ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(label)
-                            Text(value, fontWeight = FontWeight.Bold)
+                            Text(value, fontWeight = FontWeight.Bold, style = numericTextStyle())
                         }
                     }
                     if (output.missingFields.isNotEmpty()) {
@@ -627,11 +672,14 @@ private fun ToolsContent(
                         output.readiness.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }
                     if (output.trace.isNotEmpty()) {
-                        HorizontalDivider()
-                        Text("公式与计算轨迹", fontWeight = FontWeight.Bold)
-                        output.trace.take(20).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                        TextButton(onClick = { showTrace = !showTrace }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(if (showTrace) "收起公式与计算轨迹" else "查看公式与计算轨迹") }
+                        if (showTrace) {
+                            HorizontalDivider()
+                            Text("公式与计算轨迹", fontWeight = FontWeight.Bold)
+                            output.trace.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                        }
                     }
-                    TextButton(onClick = { showRaw = !showRaw }) { Text(if (showRaw) "收起服务端原始结果" else "查看服务端原始结果") }
+                    TextButton(onClick = { showRaw = !showRaw }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text(if (showRaw) "收起服务端原始结果" else "查看服务端原始结果") }
                     if (showRaw) Text(output.rawJson, style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -681,14 +729,25 @@ private fun RelatedEventItems(
 
 @Composable
 private fun NumberField(label: String, value: String, onValueChange: (String) -> Unit) {
-    OutlinedTextField(value, onValueChange, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+    OutlinedTextField(
+        value,
+        onValueChange,
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        shape = MaterialTheme.shapes.small
+    )
 }
 
 @Composable
 private fun InfoCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             content()
         }
     }
@@ -701,7 +760,11 @@ private fun WarningCard(title: String, warnings: List<String>) {
 
 @Composable
 private fun ErrorCard(message: String, modifier: Modifier = Modifier) {
-    Card(modifier.fillMaxWidth()) { Text(message, Modifier.padding(14.dp), color = MaterialTheme.colorScheme.error) }
+    Card(
+        modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+    ) { Text(message, Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onErrorContainer) }
 }
 
 @Composable
@@ -723,8 +786,8 @@ private fun String.requiredDouble(label: String): Double = toDoubleOrNull()?.tak
 private fun String.optionalInt(label: String): Int? = if (isBlank()) null else toIntOrNull()?.takeIf { it >= 0 }
     ?: throw IllegalArgumentException("$label 必须是非负整数")
 
-private fun formatLong(value: Long): String = "%,d".format(value)
-private fun formatDouble(value: Double): String = "%,.1f".format(value)
+private fun formatLong(value: Long): String = displayCount(value)
+private fun formatDouble(value: Double): String = displayDecimal(value)
 private fun shortDate(value: String): String = value.replace('T', ' ').removeSuffix("Z")
 private fun shortTimestamp(value: Long): String = shortDate(java.time.Instant.ofEpochMilli(if (value > 1_000_000_000_000L) value else value * 1_000).toString())
 

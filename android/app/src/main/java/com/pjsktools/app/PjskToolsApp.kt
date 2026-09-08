@@ -2,6 +2,10 @@ package com.pjsktools.app
 
 import android.net.Uri
 import android.content.Context
+import android.content.ContextWrapper
+import android.app.Activity
+import android.content.res.Configuration
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.draw.clipToBounds
@@ -14,7 +18,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
@@ -36,6 +42,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -43,13 +50,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import com.pjsktools.core.designsystem.SekaiInk
 import com.pjsktools.core.designsystem.SekaiPink
 import com.pjsktools.core.designsystem.SekaiTeal
@@ -95,6 +108,10 @@ fun PjskToolsApp(
     onDeepLinkConsumed: () -> Unit = {}
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    ApplySystemBarContrast(
+        darkTheme = isSystemInDarkTheme(),
+        drawerOpen = drawerState.currentValue == DrawerValue.Open || drawerState.targetValue == DrawerValue.Open
+    )
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
@@ -124,12 +141,26 @@ fun PjskToolsApp(
     val apiOrigins = remember(apiResolution.origin) {
         ShellApiOrigins.from(requireNotNull(apiResolution.origin))
     }
-    var section by remember { mutableStateOf(AppSection.HOME) }
+    val hideHeaderForIme = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+        WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    var savedSectionName by rememberSaveable { mutableStateOf(AppSection.HOME.name) }
+    val section = AppSection.entries.firstOrNull { it.name == savedSectionName } ?: AppSection.HOME
+    fun selectSection(next: AppSection) { savedSectionName = next.name }
     var regions by remember { mutableStateOf<List<Region>>(emptyList()) }
-    var region by remember { mutableStateOf(settings.defaultRegion) }
+    var region by rememberSaveable { mutableStateOf(settings.defaultRegion) }
     var regionError by remember { mutableStateOf<String?>(null) }
-    var catalogTarget by remember { mutableStateOf<CatalogNavigationTarget?>(null) }
-    var eventTargetId by remember { mutableStateOf<String?>(null) }
+    var savedCatalogTargetKind by rememberSaveable { mutableStateOf<String?>(null) }
+    var savedCatalogTargetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var savedCatalogTargetTitle by rememberSaveable { mutableStateOf<String?>(null) }
+    val catalogTarget = savedCatalogTargetKind
+        ?.let { kind -> runCatching { RelatedKind.valueOf(kind) }.getOrNull() }
+        ?.let { kind -> savedCatalogTargetId?.let { id -> CatalogNavigationTarget(kind, id, savedCatalogTargetTitle ?: id) } }
+    fun selectCatalogTarget(target: CatalogNavigationTarget?) {
+        savedCatalogTargetKind = target?.kind?.name
+        savedCatalogTargetId = target?.id
+        savedCatalogTargetTitle = target?.title
+    }
+    var eventTargetId by rememberSaveable { mutableStateOf<String?>(null) }
     val api = remember(apiOrigins.core) { ApiClient(apiOrigins.core) }
     val accountController = rememberAccountFeatureController(apiOrigins.account)
     val accountState by accountController.state.collectAsState()
@@ -137,7 +168,7 @@ fun PjskToolsApp(
     LaunchedEffect(accountController) { accountController.initialize() }
     LaunchedEffect(deepLink, accountState.initialized) {
         if (deepLink != null && accountState.initialized) {
-            section = AppSection.ACCOUNT
+            selectSection(AppSection.ACCOUNT)
             when (deepLink.path) {
                 "/qq" -> accountController.handleQqCallback(deepLink)
                 "/qq-delete" -> accountController.handleQqAccountDeletionCallback(deepLink)
@@ -157,8 +188,8 @@ fun PjskToolsApp(
     }
 
     fun open(next: AppSection) {
-        section = next
-        catalogTarget = null
+        selectSection(next)
+        selectCatalogTarget(null)
         if (next !in eventSections) eventTargetId = null
         scope.launch { drawerState.close() }
     }
@@ -206,6 +237,7 @@ fun PjskToolsApp(
                                         selected = section == item,
                                         onClick = { open(item) },
                                         modifier = Modifier.weight(1f),
+                                        shape = MaterialTheme.shapes.small,
                                         colors = NavigationDrawerItemDefaults.colors(
                                             selectedContainerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f),
                                             selectedTextColor = androidx.compose.ui.graphics.Color.White,
@@ -227,13 +259,14 @@ fun PjskToolsApp(
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .imePadding()
         ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp,
-                shadowElevation = 3.dp
-            ) {
-                Column {
+            if (!hideHeaderForIme) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 2.dp,
+                    shadowElevation = 3.dp
+                ) {
+                    Column {
                     Row(Modifier.fillMaxWidth().height(4.dp)) {
                         Box(Modifier.weight(5f).fillMaxSize().background(SekaiTeal))
                         Box(Modifier.weight(2f).fillMaxSize().background(SekaiPink))
@@ -246,6 +279,8 @@ fun PjskToolsApp(
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             FilledTonalButton(
                                 onClick = { scope.launch { drawerState.open() } },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.small,
                                 contentPadding = ButtonDefaults.TextButtonContentPadding
                             ) { Text("功能") }
                             Column(Modifier.padding(start = 12.dp).weight(1f)) {
@@ -271,6 +306,8 @@ fun PjskToolsApp(
                                 TextButton(
                                     onClick = { region = item.id },
                                     enabled = !selected,
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                    shape = MaterialTheme.shapes.small,
                                     colors = ButtonDefaults.textButtonColors(
                                         containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
                                         contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -290,12 +327,13 @@ fun PjskToolsApp(
                             }
                         }
                     }
+                    }
                 }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (section) {
                     AppSection.SONGS, AppSection.CARDS, AppSection.GACHAS, AppSection.HONORS,
-                    AppSection.MATERIALS, AppSection.COSTUMES, AppSection.STAMPS -> key(section, region, catalogTarget) {
+                    AppSection.MATERIALS, AppSection.COSTUMES, AppSection.STAMPS -> key(section, region) {
                         CatalogFeatureScreen(
                             baseUrl = apiOrigins.catalog,
                             region = region,
@@ -306,11 +344,11 @@ fun PjskToolsApp(
                                 when (target.kind) {
                                     RelatedKind.EVENT -> {
                                         eventTargetId = target.id
-                                        section = AppSection.HISTORY_EVENTS
+                                        selectSection(AppSection.HISTORY_EVENTS)
                                     }
                                     RelatedKind.CARD, RelatedKind.GACHA, RelatedKind.SONG -> {
-                                        catalogTarget = target
-                                        section = target.kind.section()
+                                        selectCatalogTarget(target)
+                                        selectSection(target.kind.section())
                                     }
                                     RelatedKind.DISPLAY_ONLY -> Unit
                                 }
@@ -318,7 +356,7 @@ fun PjskToolsApp(
                         )
                     }
                     AppSection.CURRENT_EVENT, AppSection.FORECAST, AppSection.HISTORY_EVENTS, AppSection.TOOLS ->
-                        key(section, region, eventTargetId) {
+                        key(section, region) {
                             EventsToolsFeatureScreen(
                                 baseUrl = apiOrigins.events,
                                 region = region,
@@ -337,8 +375,8 @@ fun PjskToolsApp(
                                         EventRelatedKind.CARD -> RelatedKind.CARD
                                         EventRelatedKind.GACHA -> RelatedKind.GACHA
                                     }
-                                    catalogTarget = CatalogNavigationTarget(kind, target.id, target.title)
-                                    section = kind.section()
+                                    selectCatalogTarget(CatalogNavigationTarget(kind, target.id, target.title))
+                                    selectSection(kind.section())
                                 }
                             )
                         }
@@ -361,11 +399,11 @@ fun PjskToolsApp(
                                     when (target) {
                                         is ContentNavigationTarget.Event -> {
                                             eventTargetId = target.id
-                                            section = AppSection.HISTORY_EVENTS
+                                            selectSection(AppSection.HISTORY_EVENTS)
                                         }
                                         is ContentNavigationTarget.Card -> {
-                                            catalogTarget = CatalogNavigationTarget(RelatedKind.CARD, target.id, target.id)
-                                            section = AppSection.CARDS
+                                            selectCatalogTarget(CatalogNavigationTarget(RelatedKind.CARD, target.id, target.id))
+                                            selectSection(AppSection.CARDS)
                                         }
                                         is ContentNavigationTarget.ExternalUrl -> uriHandler.openUri(target.url)
                                     }
@@ -380,9 +418,9 @@ fun PjskToolsApp(
                         accountLabel = accountState.selectedBinding?.let { "${it.region.uppercase()} · ${it.title}" }
                             ?: accountState.session?.user?.email,
                         onRegionChange = { region = it },
-                        onOpenAccount = { section = AppSection.ACCOUNT },
-                        onOpenCurrentEvent = { section = AppSection.CURRENT_EVENT },
-                        onShortcut = { shortcut -> section = shortcut.section() },
+                        onOpenAccount = { selectSection(AppSection.ACCOUNT) },
+                        onOpenCurrentEvent = { selectSection(AppSection.CURRENT_EVENT) },
+                        onShortcut = { shortcut -> selectSection(shortcut.section()) },
                         modifier = Modifier.fillMaxSize()
                     )
                     AppSection.PROFILE -> PublicProfileFeatureScreen(
@@ -397,9 +435,9 @@ fun PjskToolsApp(
                         onOpenFullAnalysis = { profile ->
                             accountState.profile?.bindings?.firstOrNull { it.region == profile.region && it.playerUid == profile.userId }
                                 ?.let { binding -> scope.launch { accountController.selectBinding(binding.id) } }
-                            section = AppSection.ACCOUNT
+                            selectSection(AppSection.ACCOUNT)
                         },
-                        onOpenLogin = { section = AppSection.ACCOUNT },
+                        onOpenLogin = { selectSection(AppSection.ACCOUNT) },
                         modifier = Modifier.fillMaxSize()
                     )
                     AppSection.DECK_COMPARE -> DeckCompareFeatureScreen(
@@ -414,7 +452,7 @@ fun PjskToolsApp(
                                     .map { SavedDeckOption(it.id, it.name, it.cardIds) }
                             )
                         } },
-                        onOpenAccount = { section = AppSection.ACCOUNT },
+                        onOpenAccount = { selectSection(AppSection.ACCOUNT) },
                         modifier = Modifier.fillMaxSize()
                     )
                     AppSection.SHARE -> ShareFeatureScreen(
@@ -443,6 +481,9 @@ fun PjskToolsApp(
                 }
             }
         }
+    }
+    if (drawerState.currentValue == DrawerValue.Open || drawerState.targetValue == DrawerValue.Open) {
+        BackHandler { scope.launch { drawerState.close() } }
     }
 }
 
@@ -491,6 +532,26 @@ private fun ShellShortcut.section() = when (this) {
     ShellShortcut.TOOLS -> AppSection.TOOLS
     ShellShortcut.DECK_COMPARE -> AppSection.DECK_COMPARE
     ShellShortcut.MYSEKAI -> AppSection.MYSEKAI
+}
+
+@Composable
+private fun ApplySystemBarContrast(darkTheme: Boolean, drawerOpen: Boolean) {
+    val view = LocalView.current
+    val activity = LocalContext.current.findActivity()
+    SideEffect {
+        activity?.let { host ->
+            val controller = WindowCompat.getInsetsController(host.window, view)
+            val useLightIcons = darkTheme || drawerOpen
+            controller.isAppearanceLightStatusBars = !useLightIcons
+            controller.isAppearanceLightNavigationBars = !useLightIcons
+        }
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 private fun loadShellSettings(preferences: android.content.SharedPreferences): ShellSettings {

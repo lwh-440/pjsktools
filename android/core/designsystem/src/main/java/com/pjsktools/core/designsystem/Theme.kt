@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pjsktools.core.model.ThemeMode
 
 val SekaiTeal = Color(0xFF00A7A5)
@@ -37,6 +38,13 @@ private val LightColors = lightColorScheme(
     onBackground = SekaiInk,
     surface = Color.White,
     onSurface = SekaiInk,
+    surfaceDim = Color(0xFFE8F0F3),
+    surfaceBright = Color.White,
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFF8FBFC),
+    surfaceContainer = Color(0xFFF0F5F7),
+    surfaceContainerHigh = Color(0xFFEAF1F4),
+    surfaceContainerHighest = Color(0xFFE3ECEF),
     surfaceVariant = Color(0xFFEAF0F3),
     onSurfaceVariant = Color(0xFF53616C),
     outline = Color(0xFF9EADB6),
@@ -59,6 +67,13 @@ private val DarkColors = darkColorScheme(
     onBackground = Color(0xFFE2EAF0),
     surface = Color(0xFF17252B),
     onSurface = Color(0xFFE2EAF0),
+    surfaceDim = Color(0xFF10181D),
+    surfaceBright = Color(0xFF2E3D44),
+    surfaceContainerLowest = Color(0xFF0D1418),
+    surfaceContainerLow = Color(0xFF151F24),
+    surfaceContainer = Color(0xFF1B292F),
+    surfaceContainerHigh = Color(0xFF223238),
+    surfaceContainerHighest = Color(0xFF2A3B42),
     surfaceVariant = Color(0xFF26363D),
     onSurfaceVariant = Color(0xFFBBC8CE),
     outline = Color(0xFF89969D),
@@ -67,8 +82,8 @@ private val DarkColors = darkColorScheme(
 
 private val SekaiShapes = Shapes(
     extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
-    small = androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
-    medium = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+    small = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
     large = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
     extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
 )
@@ -78,18 +93,18 @@ private val SekaiTypography = Typography(
     displayLarge = BaseTypography.displayLarge.copy(fontWeight = FontWeight.Bold),
     displayMedium = BaseTypography.displayMedium.copy(fontWeight = FontWeight.Bold),
     displaySmall = BaseTypography.displaySmall.copy(fontWeight = FontWeight.Bold),
-    headlineLarge = BaseTypography.headlineLarge.copy(fontWeight = FontWeight.Bold),
-    headlineMedium = BaseTypography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-    headlineSmall = BaseTypography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-    titleLarge = BaseTypography.titleLarge.copy(fontWeight = FontWeight.Bold),
-    titleMedium = BaseTypography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-    titleSmall = BaseTypography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-    labelLarge = BaseTypography.labelLarge.copy(fontWeight = FontWeight.Bold),
-    labelMedium = BaseTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-    labelSmall = BaseTypography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-    bodyLarge = BaseTypography.bodyLarge,
-    bodyMedium = BaseTypography.bodyMedium,
-    bodySmall = BaseTypography.bodySmall
+    headlineLarge = BaseTypography.headlineLarge.copy(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold),
+    headlineMedium = BaseTypography.headlineMedium.copy(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
+    headlineSmall = BaseTypography.headlineSmall.copy(fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold),
+    titleLarge = BaseTypography.titleLarge.copy(fontSize = 18.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
+    titleMedium = BaseTypography.titleMedium.copy(fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    titleSmall = BaseTypography.titleSmall.copy(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    labelLarge = BaseTypography.labelLarge.copy(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold),
+    labelMedium = BaseTypography.labelMedium.copy(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold),
+    labelSmall = BaseTypography.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = BaseTypography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 24.sp),
+    bodyMedium = BaseTypography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+    bodySmall = BaseTypography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp)
 )
 
 @Composable
