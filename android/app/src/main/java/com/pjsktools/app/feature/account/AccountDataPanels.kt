@@ -56,6 +56,21 @@ fun AccountDataPanels(
     }
 }
 
+@Composable
+internal fun InlineActionFeedback(
+    state: AccountUiState,
+    target: AccountFeedbackTarget,
+    busyLabel: String,
+    showUnassigned: Boolean = false
+) {
+    if (state.feedbackTarget != target && !(showUnassigned && state.feedbackTarget == null)) return
+    when {
+        state.busy -> Text(busyLabel, style = MaterialTheme.typography.bodySmall)
+        state.error != null -> Text(state.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        state.message != null -> Text(state.message, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
 @Composable private fun DeckRecommendPanel(state: AccountUiState, controller: AccountFeatureController, launch: (suspend () -> Unit) -> Unit) {
     var eventId by remember { mutableStateOf("") }
     Panel("绑定资产组卡") {
@@ -76,8 +91,14 @@ fun AccountDataPanels(
         OutlinedTextField(target, { target = it }, Modifier.fillMaxWidth(), label = { Text("目标 ID") })
         OutlinedTextField(label, { label = it }, Modifier.fillMaxWidth(), label = { Text("名称") })
         Button(enabled = !state.busy && target.isNotBlank() && label.isNotBlank(), onClick = {
-            launch { controller.addFavorite(FavoriteInput(type, region, target, label)); target = ""; label = "" }
+            launch {
+                controller.addFavorite(FavoriteInput(type, region, target, label))
+                if (controller.state.value.feedbackTarget == AccountFeedbackTarget.FAVORITES && controller.state.value.error == null) {
+                    target = ""; label = ""
+                }
+            }
         }) { Text("保存收藏") }
+        InlineActionFeedback(state, AccountFeedbackTarget.FAVORITES, "正在保存收藏…")
         state.profile?.favorites.orEmpty().forEach { item ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("${item.label} · ${item.region}/${item.type}", Modifier.weight(1f))
@@ -100,7 +121,13 @@ fun AccountDataPanels(
             OutlinedTextField(status, { status = it }, Modifier.weight(1f), label = { Text("状态") })
             OutlinedTextField(value, { value = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("分数") })
         }
-        Button(enabled = !state.busy && song.isNotBlank(), onClick = { launch { controller.saveScore(ScoreInput(region = region, songId = song, difficulty = difficulty, clearStatus = status, score = value.toIntOrNull() ?: 0)); song = "" } }) { Text("保存成绩") }
+        Button(enabled = !state.busy && song.isNotBlank(), onClick = {
+            launch {
+                controller.saveScore(ScoreInput(region = region, songId = song, difficulty = difficulty, clearStatus = status, score = value.toIntOrNull() ?: 0))
+                if (controller.state.value.feedbackTarget == AccountFeedbackTarget.SCORES && controller.state.value.error == null) song = ""
+            }
+        }) { Text("保存成绩") }
+        InlineActionFeedback(state, AccountFeedbackTarget.SCORES, "正在保存成绩…")
         state.profile?.scores.orEmpty().forEach { item ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("${item.songId} ${item.difficulty.uppercase()} · ${item.clearStatus} · ${item.score}", Modifier.weight(1f))
@@ -118,8 +145,14 @@ fun AccountDataPanels(
         Button(enabled = !state.busy && name.isNotBlank(), onClick = {
             val binding = state.selectedBinding ?: return@Button
             val ids = cards.split(',').map(String::trim).filter(String::isNotBlank).take(5)
-            if (ids.isNotEmpty()) launch { controller.saveDeckConfig(DeckConfigInput(bindingId = binding.id, region = binding.region, name = name, cardIds = ids)); name = ""; cards = "" }
+            if (ids.isNotEmpty()) launch {
+                controller.saveDeckConfig(DeckConfigInput(bindingId = binding.id, region = binding.region, name = name, cardIds = ids))
+                if (controller.state.value.feedbackTarget == AccountFeedbackTarget.DECKS && controller.state.value.error == null) {
+                    name = ""; cards = ""
+                }
+            }
         }) { Text("保存配置") }
+        InlineActionFeedback(state, AccountFeedbackTarget.DECKS, "正在保存配置…")
         state.profile?.deckConfigs.orEmpty().forEach { item ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("${item.name} · ${item.cardIds.size} 张", Modifier.weight(1f))

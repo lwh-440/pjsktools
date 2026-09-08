@@ -56,12 +56,28 @@ data class AccountDeletionCodeResult(
     val resendAfterSeconds: Long? = null
 )
 enum class AccountEntryMode { LOGIN, REGISTER }
+enum class AccountFeedbackTarget { AUTH, PROFILE, FAVORITES, SCORES, DECKS }
+
+internal fun AccountUiState.forActionFeedback(target: AccountFeedbackTarget): AccountUiState =
+    copy(feedbackTarget = target, message = null, error = null)
+
+internal fun AccountUiState.expiredSessionFeedback(): AccountUiState = copy(
+    session = null,
+    profile = null,
+    selectedBindingId = null,
+    profileAnalysis = null,
+    toolContext = null,
+    feedbackTarget = AccountFeedbackTarget.AUTH,
+    message = null,
+    error = "登录状态已失效，请重新登录"
+)
 
 data class AccountUiState(
     val initialized: Boolean = false, val busy: Boolean = false, val operationBindingId: String? = null,
     val session: AccountSession? = null, val profile: MeProfile? = null, val selectedBindingId: String? = null,
     val entryMode: AccountEntryMode = AccountEntryMode.LOGIN, val message: String? = null,
     val error: String? = null, val registrationCode: RegistrationCodeResult? = null,
+    val feedbackTarget: AccountFeedbackTarget? = null,
     val profileAnalysis: ProfileAnalysis? = null, val toolContext: ToolContext? = null,
     val deckRecommendation: DeckRecommendation? = null,
     val haruki: HarukiUiState = HarukiUiState(),

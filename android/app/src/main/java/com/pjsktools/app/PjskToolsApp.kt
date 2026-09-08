@@ -4,16 +4,21 @@ import android.net.Uri
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.ButtonDefaults
@@ -107,7 +112,11 @@ fun PjskToolsApp(
             onSave = { next -> settings = next; saveShellSettings(shellPreferences, next) },
             onClearCache = { targetRegion -> clearShellHttpCaches(context.cacheDir, targetRegion).also { if (targetRegion == null) clearCatalogImageCache() } },
             configurationError = apiResolution.error,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .imePadding()
+                .clipToBounds()
         )
         return
     }
@@ -160,7 +169,11 @@ fun PjskToolsApp(
                 drawerContainerColor = SekaiInk,
                 drawerContentColor = androidx.compose.ui.graphics.Color.White
             ) {
-                LazyColumn(Modifier.padding(horizontal = 14.dp, vertical = 20.dp)) {
+                LazyColumn(
+                    Modifier
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(horizontal = 14.dp, vertical = 20.dp)
+                ) {
                     item {
                         Text("PROJECT SEKAI", style = MaterialTheme.typography.labelMedium, color = SekaiTeal)
                         Text("游戏工具台", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -198,7 +211,13 @@ fun PjskToolsApp(
             }
         }
     ) {
-        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .imePadding()
+        ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surface,

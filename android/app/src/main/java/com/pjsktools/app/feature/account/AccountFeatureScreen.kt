@@ -187,8 +187,7 @@ private fun AccountEntry(
                 modifier = Modifier.fillMaxWidth()
             ) { Text("使用 QQ 登录") }
         }
-        state.message?.let { item { Text(it, color = MaterialTheme.colorScheme.primary) } }
-        state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
+        item { InlineActionFeedback(state, AccountFeedbackTarget.AUTH, "正在提交登录信息…", showUnassigned = true) }
         item { ComplianceLinks(Modifier.fillMaxWidth()) }
     }
 }
@@ -227,6 +226,8 @@ private fun AccountWorkspace(
                         OutlinedButton(enabled = !state.busy, onClick = { launch { controller.refreshSession() } }) { Text("刷新登录") }
                         TextButton(enabled = !state.busy, onClick = { launch { controller.logout() } }) { Text("退出") }
                     }
+                    InlineActionFeedback(state, AccountFeedbackTarget.PROFILE, "正在同步账号资料…")
+                    InlineActionFeedback(state, AccountFeedbackTarget.AUTH, "正在刷新登录状态…")
                 }
             }
         }
@@ -279,8 +280,6 @@ private fun AccountWorkspace(
                 { pendingDeleteId = binding.id })
         }
         item { AccountDataPanels(state, controller, launch) }
-        state.message?.let { item { Text(it, color = MaterialTheme.colorScheme.primary) } }
-        state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         item { ComplianceLinks(Modifier.fillMaxWidth()) }
     }
     pendingDeleteId?.let { id ->

@@ -1,5 +1,6 @@
 package com.pjsktools.app.feature.catalog
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,6 +60,7 @@ fun CatalogFeatureScreen(
     var reloadKey by remember { mutableIntStateOf(0) }
     var detailReloadKey by remember { mutableIntStateOf(0) }
     var costumeFilters by remember { mutableStateOf(CostumeFilters()) }
+    var costumeFiltersExpanded by rememberSaveable { mutableStateOf(false) }
     var pageData by remember { mutableStateOf<CatalogPage?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -67,6 +70,10 @@ fun CatalogFeatureScreen(
     var detail by remember { mutableStateOf<CatalogDetail?>(null) }
     var detailLoading by remember { mutableStateOf(false) }
     var detailError by remember { mutableStateOf<String?>(null) }
+    val listState = rememberLazyListState()
+    var listAnchorAbsoluteIndex by rememberSaveable { mutableIntStateOf(0) }
+    var listAnchorOffset by rememberSaveable { mutableIntStateOf(0) }
+    var restoreListAnchor by remember { mutableStateOf(false) }
 
     LaunchedEffect(searchInput) {
         delay(350)
@@ -128,6 +135,11 @@ fun CatalogFeatureScreen(
         }
     }
 
+    fun captureListAnchor() {
+        listAnchorAbsoluteIndex = listState.firstVisibleItemIndex
+        listAnchorOffset = listState.firstVisibleItemScrollOffset
+    }
+
     val openRelated: (CatalogNavigationTarget) -> Unit = { target ->
         val item = target.toCatalogItemOrNull()
         if (item == null) {
@@ -142,6 +154,7 @@ fun CatalogFeatureScreen(
     val closeDetail: () -> Unit = {
         val parent = detailStack.lastOrNull()
         if (parent == null) {
+            restoreListAnchor = true
             selectedItem = null
             detail = null
             detailRequest = null
@@ -152,60 +165,69 @@ fun CatalogFeatureScreen(
             detailRequest = null
         }
     }
+    BackHandler(enabled = selectedItem != null) { closeDetail() }
+    fun headerItemCount() = 5 + if (type == CatalogType.COSTUMES) {
+        1 + if (costumeFiltersExpanded) 1 else 0
+    } else 0
+    LaunchedEffect(restoreListAnchor, selectedItem, pageData?.items) {
+        if (!restoreListAnchor || selectedItem != null) return@LaunchedEffect
+        if (listState.layoutInfo.totalItemsCount > listAnchorAbsoluteIndex) {
+            listState.scrollToItem(listAnchorAbsoluteIndex, listAnchorOffset)
+        }
+        restoreListAnchor = false
+    }
+    LaunchedEffect(selectedItem?.type, selectedItem?.id) {
+        if (selectedItem != null) listState.scrollToItem(headerItemCount())
+    }
 
     Column(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("图鉴资料", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(CatalogType.entries) { option ->
-                FilterChip(
-                    selected = option == type,
-                    onClick = { type = option; page = 1 },
-                    label = { Text(option.displayName) }
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item { Text("图鉴资料", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(CatalogType.entries) { option ->
+                        FilterChip(selected = option == type, onClick = { type = option; page = 1 }, label = { Text(option.displayName) })
+                    }
+                }
+            }
+            item {
+                OutlinedTextField(
+                    value = searchInput, onValueChange = { searchInput = it }, label = { Text("搜索名称、角色、分类或 ID") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = { if (searchInput.isNotEmpty()) TextButton(onClick = { searchInput = "" }) { Text("清除") } }
                 )
             }
-        }
-        OutlinedTextField(
-            value = searchInput,
-            onValueChange = { searchInput = it },
-            label = { Text("搜索名称、角色、分类或 ID") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            trailingIcon = { if (searchInput.isNotEmpty()) TextButton(onClick = { searchInput = "" }) { Text("清除") } }
-        )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(listOf(24, 48, 96)) { size ->
-                FilterChip(
-                    selected = pageSize == size,
-                    onClick = { pageSize = size; page = 1 },
-                    label = { Text("每页 $size") }
-                )
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(listOf(24, 48, 96)) { size ->
+                        FilterChip(selected = pageSize == size, onClick = { pageSize = size; page = 1 }, label = { Text("每页 $size") })
+                    }
+                }
             }
-        }
-        if (type == CatalogType.COSTUMES) {
-            CostumeFilterPanel(
-                value = costumeFilters,
-                onChange = { costumeFilters = it; page = 1 }
-            )
-        }
-        when {
-            loading -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator() }
-            error != null -> ErrorCard(error.orEmpty()) { reloadKey++ }
-            else -> pageData?.let { data ->
-                Text(
-                    listOfNotNull(
-                        "共 ${data.total} 项",
-                        data.sourceStatus?.let { "数据状态：$it" },
-                        data.syncedAt?.let { "同步：$it" },
-                        data.masterVersion?.let { "版本：$it" },
-                        data.source?.let { "来源：$it" },
-                        data.unavailableReason
-                    ).joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall
-                )
+            if (type == CatalogType.COSTUMES) {
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("服装筛选${costumeFilters.activeCount().takeIf { it > 0 }?.let { "（已选 $it）" }.orEmpty()}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { costumeFiltersExpanded = !costumeFiltersExpanded }) { Text(if (costumeFiltersExpanded) "收起筛选" else "展开筛选") }
+                    }
+                }
+                if (costumeFiltersExpanded) item {
+                    CostumeFilterPanel(value = costumeFilters, onChange = { costumeFilters = it; page = 1 })
+                }
             }
-        }
-
-        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                when {
+                    loading -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator() }
+                    error != null -> ErrorCard(error.orEmpty()) { reloadKey++ }
+                    else -> pageData?.let { data ->
+                        Text(listOfNotNull("共 ${data.total} 项", data.sourceStatus?.let { "数据状态：$it" }, data.syncedAt?.let { "同步：$it" }, data.masterVersion?.let { "版本：$it" }, data.source?.let { "来源：$it" }, data.unavailableReason).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             selectedItem?.let { selected ->
                 item {
                     DetailCard(
@@ -224,25 +246,23 @@ fun CatalogFeatureScreen(
             if (!loading && error == null && rows.isEmpty()) {
                 item { Text(pageData?.unavailableReason ?: "没有符合条件的真实图鉴数据。") }
             }
-            items(rows, key = { "${it.type.apiName}:${it.id}" }) { item ->
+            items(rows, key = { "catalog:${it.type.apiName}:${it.id}" }) { item ->
                 CatalogItemCard(baseUrl, item) {
+                    captureListAnchor()
                     detailStack = emptyList()
                     selectedItem = item
                     detail = null
                     detailRequest = item
                 }
             }
-            item {
-                pageData?.let { data ->
-                    PaginationRow(
-                        page = data.page,
-                        totalPages = data.totalPages,
-                        onPrevious = { page = (data.page - 1).coerceAtLeast(1) },
-                        onNext = { page = (data.page + 1).coerceAtMost(data.totalPages) }
-                    )
-                }
-                Spacer(Modifier.height(6.dp))
-            }
+        }
+        pageData?.let { data ->
+            PaginationRow(
+                page = data.page,
+                totalPages = data.totalPages,
+                onPrevious = { page = (data.page - 1).coerceAtLeast(1) },
+                onNext = { page = (data.page + 1).coerceAtMost(data.totalPages) }
+            )
         }
     }
 }
@@ -289,7 +309,14 @@ private fun DetailCard(
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${selected.title} · 详情", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "${selected.title} · 详情",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
                 TextButton(onClick = onClose) { Text("关闭") }
             }
             when {
@@ -331,7 +358,13 @@ private fun DetailContent(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${chart.difficulty.uppercase()} 真实谱面", fontWeight = FontWeight.Bold)
+                            Text(
+                                "${chart.difficulty.uppercase()} 真实谱面",
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             TextButton(onClick = { selectedChart = null }) { Text("收起") }
                         }
                         if (chart.imageCandidates.isNotEmpty()) {
@@ -432,6 +465,9 @@ private fun CostumeFilterPanel(value: CostumeFilters, onChange: (CostumeFilters)
         }
     }
 }
+
+internal fun CostumeFilters.activeCount(): Int = listOf(partType, source, rarity, gender, characterId)
+    .count(String::isNotBlank)
 
 @Composable
 private fun SectionTitle(text: String) {

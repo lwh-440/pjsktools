@@ -81,4 +81,29 @@ class AccountComplianceTest {
         assertTrue(qqLoginConsentRequired(QqMobileFlow.LOGIN))
         assertFalse(qqLoginConsentRequired(QqMobileFlow.LINK))
     }
+
+    @Test fun aNewActionClearsThePreviousActionsFeedbackBeforeItRuns() {
+        val favoriteSuccess = AccountUiState(
+            feedbackTarget = AccountFeedbackTarget.FAVORITES,
+            message = "收藏已保存"
+        )
+
+        val registrationRequest = favoriteSuccess.forActionFeedback(AccountFeedbackTarget.AUTH)
+
+        assertEquals(AccountFeedbackTarget.AUTH, registrationRequest.feedbackTarget)
+        assertEquals(null, registrationRequest.message)
+        assertEquals(null, registrationRequest.error)
+    }
+
+    @Test fun expiredSessionMovesARecordActionsFeedbackBackToTheLoginSurface() {
+        val expired = AccountUiState(
+            session = AccountSession("access", "refresh", user = AccountUser("user")),
+            feedbackTarget = AccountFeedbackTarget.FAVORITES,
+            message = "收藏已保存"
+        ).expiredSessionFeedback()
+
+        assertEquals(AccountFeedbackTarget.AUTH, expired.feedbackTarget)
+        assertEquals("登录状态已失效，请重新登录", expired.error)
+        assertEquals(null, expired.session)
+    }
 }

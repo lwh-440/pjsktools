@@ -33,10 +33,12 @@ class AccountFeatureController(
             update { it.copy(
                 initialized = true,
                 legalDocuments = legalDocuments,
-                error = if (legalDocuments == null) "无法加载当前隐私政策与用户协议版本，请检查网络后重试" else null
+                error = if (legalDocuments == null) "无法加载当前隐私政策与用户协议版本，请检查网络后重试" else null,
+                feedbackTarget = if (legalDocuments == null) AccountFeedbackTarget.AUTH else null
             ) }
             return
         }
+        beginFeedback(AccountFeedbackTarget.AUTH)
         loading {
             val restored = restore(stored)
             val legalRequired = restored.legalAcceptanceRequired || repository.legalAcceptanceRequired(restored.accessToken)
@@ -56,6 +58,7 @@ class AccountFeatureController(
 
     fun setEntryMode(mode: AccountEntryMode) = update { it.copy(entryMode = mode, error = null, message = null) }
     suspend fun selectBinding(id: String) = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.PROFILE)
         update { it.copy(selectedBindingId = id, busy = true, error = null) }
         val token = requireSession().accessToken
         try {
@@ -64,9 +67,12 @@ class AccountFeatureController(
             update { it.copy(profileAnalysis = analysis, toolContext = context, session = currentSession(it.session), busy = false) }
         } catch (error: Throwable) { if (error is CancellationException) throw error; fail(error); update { it.copy(busy = false) } }
     }
-    fun clearNotice() = update { it.copy(message = null, error = null) }
+    fun clearNotice() = update { it.copy(message = null, error = null, feedbackTarget = null) }
+
+    private fun beginFeedback(target: AccountFeedbackTarget) = update { it.forActionFeedback(target) }
 
     suspend fun requestRegistrationCode(email: String) = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.AUTH)
         if (!requireInput(email.isNotBlank(), "请输入邮箱")) return@withLock
         loading {
             val result = repository.requestRegistrationCode(email)
@@ -74,6 +80,7 @@ class AccountFeatureController(
         }
     }
     suspend fun login(email: String, password: String) = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.AUTH)
         if (!requireInput(email.isNotBlank() && password.length >= 8, "请输入有效邮箱和至少 8 位密码")) return@withLock
         authenticate { repository.login(email, password) }
     }
@@ -86,6 +93,7 @@ class AccountFeatureController(
         termsAccepted: Boolean,
         ageConfirmed: Boolean
     ) = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.AUTH)
         if (!requireInput(password == confirmPassword, "两次输入的密码不一致")) return@withLock
         if (!requireInput(privacyAccepted && termsAccepted && ageConfirmed, "请阅读并同意隐私政策、用户协议，并确认已满 14 周岁")) return@withLock
         val legalDocuments = state.value.legalDocuments
@@ -94,11 +102,13 @@ class AccountFeatureController(
         authenticate { repository.register(email, password, code, privacyAccepted, termsAccepted, ageConfirmed, legalDocuments!!) }
     }
     suspend fun refreshSession() = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.AUTH)
         val refresh = state.value.session?.refreshToken ?: repository.sessionStore.load()?.refreshToken
         if (!requireInput(!refresh.isNullOrBlank(), "没有可刷新的登录状态")) return@withLock
         authenticate("登录状态已刷新") { repository.refresh(refresh!!) }
     }
     suspend fun reloadProfile() = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.PROFILE)
         val session = requireSession()
         loading {
             val profile = repository.getProfile(session.accessToken)
@@ -116,11 +126,13 @@ class AccountFeatureController(
             mutableState.value = AccountUiState(
                 initialized = true,
                 legalDocuments = state.value.legalDocuments,
+                feedbackTarget = AccountFeedbackTarget.AUTH,
                 message = "已退出登录"
             )
         }
     }
     suspend fun startQqAuth(redirectTo: String? = null): QqAuthStart = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.AUTH)
         val start = repository.startQqAuth(redirectTo)
         update { it.copy(qqAuthStart = start, message = "请在 QQ 完成授权") }
         start
@@ -130,6 +142,7 @@ class AccountFeatureController(
         termsAccepted: Boolean,
         ageConfirmed: Boolean
     ): QqAuthStart = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.AUTH)
         check(qqLoginConsentRequired(QqMobileFlow.LOGIN))
         requireQqLoginConsent(privacyAccepted, termsAccepted, ageConfirmed)
         val legalDocuments = state.value.legalDocuments
@@ -139,6 +152,7 @@ class AccountFeatureController(
         start
     }
     suspend fun startMobileQqLink(): QqAuthStart = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.PROFILE)
         val start = repository.startMobileQqLink(requireSession().accessToken)
         update { it.copy(qqAuthStart = start, message = "请在 QQ 完成授权") }
         start
@@ -149,6 +163,7 @@ class AccountFeatureController(
     suspend fun linkQq(code: String, state: String) = accountWrite("QQ 账号已关联") { repository.linkQq(it, code, state) }
     suspend fun unlinkQq() = accountWrite("QQ 账号已解除关联") { repository.unlinkQq(it) }
     suspend fun acceptCurrentLegal(privacyAccepted: Boolean, termsAccepted: Boolean, ageConfirmed: Boolean) = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.PROFILE)
         if (!requireInput(privacyAccepted && termsAccepted && ageConfirmed, "请阅读并同意隐私政策、用户协议，并确认已满 14 周岁")) return@withLock
         val session = requireSession()
         val legalDocuments = state.value.legalDocuments
@@ -167,11 +182,13 @@ class AccountFeatureController(
         }
     }
     suspend fun exportPersonalData(): String = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.PROFILE)
         val result = repository.exportPersonalData(requireSession().accessToken)
         update { it.copy(message = "个人数据导出已生成，请选择保存位置", error = null) }
         result
     }
     suspend fun requestAccountDeletionCode() = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.PROFILE)
         loading {
             val result = repository.requestAccountDeletionCode(requireSession().accessToken)
             it.copy(deletionCode = result, message = "注销验证码已发送，${(result.expiresInSeconds ?: 300) / 60} 分钟内有效")
@@ -188,6 +205,7 @@ class AccountFeatureController(
             AccountUiState(
                 initialized = true,
                 legalDocuments = state.value.legalDocuments,
+                feedbackTarget = AccountFeedbackTarget.AUTH,
                 message = deletionCacheMessage(cacheError)
             )
         }
@@ -236,11 +254,13 @@ class AccountFeatureController(
             AccountUiState(
                 initialized = true,
                 legalDocuments = state.value.legalDocuments,
+                feedbackTarget = AccountFeedbackTarget.AUTH,
                 message = deletionCacheMessage(cacheError)
             )
         }
     }
     suspend fun clearPrivateCache() = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.PROFILE)
         val userId = currentAccountId()
         if (!requireInput(!userId.isNullOrBlank(), "无法确认当前账号，未清除任何本机私有数据；请刷新账号资料后重试")) return@withLock
         try {
@@ -274,13 +294,14 @@ class AccountFeatureController(
         repository.deleteBinding(token, bindingId)
         replaceProfile(token, null, "UID 绑定已删除")
     }
-    suspend fun addFavorite(input: FavoriteInput) = accountWrite("收藏已保存") { repository.addFavorite(it, input) }
-    suspend fun deleteFavorite(id: String) = accountWrite("收藏已删除") { repository.deleteFavorite(it, id) }
-    suspend fun saveScore(input: ScoreInput) = accountWrite("成绩已保存") { repository.saveScore(it, input) }
-    suspend fun deleteScore(id: String) = accountWrite("成绩已删除") { repository.deleteScore(it, id) }
-    suspend fun saveDeckConfig(input: DeckConfigInput) = accountWrite("卡组配置已保存") { repository.saveDeckConfig(it, input) }
-    suspend fun deleteDeckConfig(id: String) = accountWrite("卡组配置已删除") { repository.deleteDeckConfig(it, id) }
+    suspend fun addFavorite(input: FavoriteInput) = accountWrite("收藏已保存", AccountFeedbackTarget.FAVORITES) { repository.addFavorite(it, input) }
+    suspend fun deleteFavorite(id: String) = accountWrite("收藏已删除", AccountFeedbackTarget.FAVORITES) { repository.deleteFavorite(it, id) }
+    suspend fun saveScore(input: ScoreInput) = accountWrite("成绩已保存", AccountFeedbackTarget.SCORES) { repository.saveScore(it, input) }
+    suspend fun deleteScore(id: String) = accountWrite("成绩已删除", AccountFeedbackTarget.SCORES) { repository.deleteScore(it, id) }
+    suspend fun saveDeckConfig(input: DeckConfigInput) = accountWrite("卡组配置已保存", AccountFeedbackTarget.DECKS) { repository.saveDeckConfig(it, input) }
+    suspend fun deleteDeckConfig(id: String) = accountWrite("卡组配置已删除", AccountFeedbackTarget.DECKS) { repository.deleteDeckConfig(it, id) }
     suspend fun recommendDeck(eventId: String?) = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.PROFILE)
         val session = requireSession(); val binding = state.value.selectedBinding ?: return@withLock
         loading { it.copy(deckRecommendation = repository.recommendDeck(session.accessToken, binding, eventId), session = currentSession(it.session), message = "组卡推荐已生成") }
     }
@@ -425,7 +446,12 @@ class AccountFeatureController(
         val profile = repository.getProfile(token)
         update { it.copy(profile = profile, selectedBindingId = selected ?: preferredBinding(profile)?.id, session = currentSession(it.session), message = message) }
     }
-    private suspend fun accountWrite(message: String, operation: suspend (String) -> Unit) = mutex.withLock {
+    private suspend fun accountWrite(
+        message: String,
+        target: AccountFeedbackTarget = AccountFeedbackTarget.PROFILE,
+        operation: suspend (String) -> Unit
+    ) = mutex.withLock {
+        beginFeedback(target)
         val token = requireSession().accessToken
         loading {
             operation(token)
@@ -447,6 +473,7 @@ class AccountFeatureController(
         }
     }
     private suspend fun bindingOperation(id: String?, block: suspend (String) -> Unit) = mutex.withLock {
+        beginFeedback(AccountFeedbackTarget.PROFILE)
         val token = requireSession().accessToken
         update { it.copy(busy = true, operationBindingId = id, error = null, message = null) }
         try { block(token) } catch (error: Throwable) { if (error is CancellationException) throw error; fail(error) }
@@ -469,7 +496,7 @@ class AccountFeatureController(
     private fun fail(error: Throwable) = update {
         if (error is AccountApiException && error.statusCode == 401) {
             repository.sessionStore.clear()
-            it.copy(session = null, profile = null, selectedBindingId = null, profileAnalysis = null, toolContext = null, error = "登录状态已失效，请重新登录")
+            it.expiredSessionFeedback()
         } else it.copy(error = error.message ?: "操作失败")
     }
     private inline fun update(transform: (AccountUiState) -> AccountUiState) { mutableState.value = transform(mutableState.value) }

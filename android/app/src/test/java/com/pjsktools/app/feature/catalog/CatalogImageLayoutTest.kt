@@ -15,4 +15,10 @@ class CatalogImageLayoutTest {
         assertEquals(1f, catalogListImageAspectRatio(CatalogType.COSTUMES))
         assertEquals(1f, catalogListImageAspectRatio(CatalogType.STAMPS))
     }
+
+    @Test
+    fun costumeFilterSummaryCountsOnlyActiveFields() {
+        assertEquals(0, CostumeFilters().activeCount())
+        assertEquals(3, CostumeFilters(partType = "body", source = "shop", characterId = "10").activeCount())
+    }
 }

@@ -62,6 +62,8 @@ fun EventsToolsFeatureScreen(
     var dashboard by remember { mutableStateOf<EventsDashboard?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var refreshNotice by remember { mutableStateOf<String?>(null) }
+    var refreshError by remember { mutableStateOf<String?>(null) }
     var refreshRequest by remember { mutableStateOf(0) }
     var handledRefreshRequest by remember { mutableStateOf(0) }
     var countdown by remember { mutableStateOf(10) }
@@ -86,8 +88,12 @@ fun EventsToolsFeatureScreen(
         if (!lifecycleStarted) return@LaunchedEffect
         if (refreshRequest > handledRefreshRequest && section == EventsToolsSection.CURRENT) {
             handledRefreshRequest = refreshRequest
+            refreshNotice = null
+            refreshError = null
             dashboard?.currentEvent?.id?.takeUnless { it == "none" || it == "unknown" }?.let {
                 catchingUi { repository.refreshRanking(region, it) }
+                    .onSuccess { refreshNotice = "已请求刷新当前活动排名" }
+                    .onFailure { refreshError = it.message ?: "排名刷新失败" }
             }
         }
         do {
@@ -143,6 +149,8 @@ fun EventsToolsFeatureScreen(
             Column {
                 OutlinedButton(onClick = { refreshRequest += 1 }, enabled = !loading) { Text(if (loading) "加载中" else "立即刷新") }
                 if (section == EventsToolsSection.CURRENT && !loading) Text("${countdown}s 后刷新", style = MaterialTheme.typography.labelSmall)
+                refreshNotice?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall) }
+                refreshError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
             }
         }
         LazyRow(
@@ -423,6 +431,7 @@ private fun ToolsContent(
     val eventId = currentEventId?.takeUnless { it == "none" || it == "unknown" }
     var running by remember { mutableStateOf<String?>(null) }
     var toolError by remember { mutableStateOf<String?>(null) }
+    var lastTool by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<ToolResult?>(null) }
     var showRaw by remember { mutableStateOf(false) }
 
@@ -440,6 +449,7 @@ private fun ToolsContent(
     fun runTool(name: String, action: suspend () -> ToolResult) {
         scope.launch {
             running = name
+            lastTool = name
             toolError = null
             showRaw = false
             catchingUi { action() }
@@ -471,6 +481,7 @@ private fun ToolsContent(
                         ))
                     }
                 }, enabled = running == null) { Text(if (running == "控分计算") "计算中…" else "开始控分计算") }
+                ToolActionFeedback("控分计算", lastTool, running, toolError)
             }
         }
         item {
@@ -490,6 +501,7 @@ private fun ToolsContent(
                         ))
                     }
                 }, enabled = running == null) { Text(if (running == "组卡推荐") "搜索中…" else "开始组卡推荐") }
+                ToolActionFeedback("组卡推荐", lastTool, running, toolError)
             }
         }
         item {
@@ -515,6 +527,7 @@ private fun ToolsContent(
                         ))
                     }
                 }, enabled = running == null) { Text(if (running == "普通活动规划") "规划中…" else "生成普通活动规划") }
+                ToolActionFeedback("普通活动规划", lastTool, running, toolError)
             }
         }
         item {
@@ -525,6 +538,7 @@ private fun ToolsContent(
                         repository.musicRecommend(region, eventId, currentPt.requiredLong("当前 PT"), targetPt.requiredLong("目标 PT"))
                     }
                 }, enabled = running == null) { Text(if (running == "歌曲推荐") "推荐中…" else "公开歌曲推荐") }
+                ToolActionFeedback("歌曲推荐", lastTool, running, toolError)
             }
         }
         item {
@@ -537,6 +551,7 @@ private fun ToolsContent(
                         repository.areaItemRecommend(region, ids)
                     }
                 }, enabled = running == null) { Text(if (running == "区域道具推荐") "计算中…" else "公开区域道具推荐") }
+                ToolActionFeedback("区域道具推荐", lastTool, running, toolError)
             }
         }
         item {
@@ -574,10 +589,14 @@ private fun ToolsContent(
                             ))
                         }
                     }, enabled = running == null) { Text("绑定数据普通活动规划") }
+                    ToolActionFeedback("绑定活动 PT", lastTool, running, toolError)
+                    ToolActionFeedback("绑定歌曲推荐", lastTool, running, toolError)
+                    ToolActionFeedback("绑定区域道具", lastTool, running, toolError)
+                    ToolActionFeedback("绑定 MySekai", lastTool, running, toolError)
+                    ToolActionFeedback("绑定普通活动规划", lastTool, running, toolError)
                 }
             }
         }
-        toolError?.let { item { ErrorCard(it) } }
         result?.let { output ->
             item {
                 InfoCard(output.title) {
@@ -618,6 +637,15 @@ private fun ToolsContent(
             }
         }
         item { SectionSpacer() }
+    }
+}
+
+@Composable
+private fun ToolActionFeedback(name: String, lastTool: String?, running: String?, error: String?) {
+    if (lastTool != name) return
+    when {
+        running == name -> Text("$name 正在处理…", style = MaterialTheme.typography.bodySmall)
+        error != null -> Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     }
 }
 
