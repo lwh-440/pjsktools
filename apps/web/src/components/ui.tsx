@@ -2,10 +2,10 @@ import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { apiResourceUrl } from "../api";
+import { nextArtImageSource, shouldRetryArtImageOnReentry, shouldStartArtImageLoad } from "../artImageState";
 
 const pageSizeOptions = [12, 24, 48, 96];
 const successfulImageSources = new Map<string, string>();
-const failedImageSources = new Set<string>();
 
 let lockedDialogCount = 0;
 let savedBodyOverflow = "";
@@ -40,26 +40,64 @@ export function ArtImage({
   const sourceKey = sources.join("|");
   const [resolvedSource, setResolvedSource] = useState(() => successfulImageSources.get(sourceKey) ?? "");
   const [failed, setFailed] = useState(false);
+  const [nearViewport, setNearViewport] = useState(eager);
+  const [attempt, setAttempt] = useState(0);
+  const frameRef = useRef<HTMLSpanElement | null>(null);
+  const failedSourcesRef = useRef(new Set<string>());
+  const failedRef = useRef(false);
+
+  useEffect(() => {
+    const cached = successfulImageSources.get(sourceKey);
+    setResolvedSource(cached ?? "");
+    setFailed(false);
+    failedRef.current = false;
+    failedSourcesRef.current.clear();
+    setNearViewport(eager || Boolean(cached));
+    setAttempt(0);
+  }, [eager, sourceKey]);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || sources.length === 0) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setNearViewport(true);
+      return;
+    }
+    let wasNearViewport = eager || Boolean(successfulImageSources.get(sourceKey));
+    const observer = new IntersectionObserver((entries) => {
+      const isNearViewport = entries.some((entry) => entry.isIntersecting);
+      if (shouldRetryArtImageOnReentry({ failed: failedRef.current, wasNearViewport, nearViewport: isNearViewport })) {
+        failedSourcesRef.current.clear();
+        failedRef.current = false;
+        setFailed(false);
+        setAttempt((current) => current + 1);
+      }
+      wasNearViewport = isNearViewport;
+      setNearViewport(isNearViewport);
+    }, { rootMargin: "600px 0px" });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [eager, sourceKey, sources.length]);
 
   useEffect(() => {
     let cancelled = false;
     const cached = successfulImageSources.get(sourceKey);
-    setResolvedSource(cached ?? "");
-    setFailed(false);
-
     if (sources.length === 0) {
+      failedRef.current = true;
       setFailed(true);
       return;
     }
-
+    if (!shouldStartArtImageLoad({ eager, cachedSource: cached, nearViewport })) return;
     if (cached) {
+      setResolvedSource(cached);
       return;
     }
 
     const loadNext = (index: number) => {
       if (cancelled) return;
-      const source = sources.slice(index).find((candidate) => !failedImageSources.has(candidate));
+      const source = nextArtImageSource(sources.slice(index), failedSourcesRef.current);
       if (!source) {
+        failedRef.current = true;
         setFailed(true);
         return;
       }
@@ -74,7 +112,7 @@ export function ArtImage({
         }
       };
       image.onerror = () => {
-        failedImageSources.add(source);
+        failedSourcesRef.current.add(source);
         loadNext(sourceIndex + 1);
       };
       image.src = source;
@@ -84,24 +122,34 @@ export function ArtImage({
     return () => {
       cancelled = true;
     };
-  }, [sourceKey]);
+  }, [attempt, eager, nearViewport, sourceKey, sources]);
 
-  if (failed || sources.length === 0) {
+  const recoverFromDisplayedImageFailure = () => {
+    if (!resolvedSource) return;
+    if (successfulImageSources.get(sourceKey) === resolvedSource) successfulImageSources.delete(sourceKey);
+    failedSourcesRef.current.add(resolvedSource);
+    failedRef.current = false;
+    setResolvedSource("");
+    setFailed(false);
+    setAttempt((current) => current + 1);
+  };
+
+  if (sources.length === 0) {
     return (
-      <div className={`art-fallback ${variant}`}>
+      <span className={`art-fallback ${variant}`} title="重新进入可视区域后会再次尝试加载">
         {fallback ?? <span>图片暂不可用</span>}
-      </div>
+      </span>
     );
   }
 
   return (
-    <span className={`art-frame ${variant}`}>
-      {!resolvedSource && (
+    <span ref={frameRef} className={`art-frame ${variant}`}>
+      {(!resolvedSource || failed) && (
         <span className={`art-fallback ${variant}`}>
-          <span>图片加载中</span>
+          {failed ? (fallback ?? <span title="重新进入可视区域后会再次尝试加载">图片暂不可用</span>) : <span>图片加载中</span>}
         </span>
       )}
-      {resolvedSource && <img className={`art-image ${variant}`} src={resolvedSource} alt={label} loading={eager ? "eager" : "lazy"} fetchPriority={eager ? "high" : "auto"} decoding="async" />}
+      {resolvedSource && !failed && <img className={`art-image ${variant}`} src={resolvedSource} alt={label} loading={eager ? "eager" : "lazy"} fetchPriority={eager ? "high" : "auto"} decoding="async" onError={recoverFromDisplayedImageFailure} />}
     </span>
   );
 }

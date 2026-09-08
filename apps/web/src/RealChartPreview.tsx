@@ -129,8 +129,8 @@ export function RealChartPreview({
       <div className="chart-preview-meta">
         <span>谱面 ID {detail?.difficultyId ?? "-"}</span>
         <span>{imageUrl ? "谱面已加载" : "谱面等待加载"}</span>
-        {detail?.durationSeconds && <span>时长 {detail.durationSeconds}s</span>}
-        {detail?.bpm && <span>BPM {detail.bpm}</span>}
+        {typeof detail?.durationSeconds === "number" && <span>时长 {detail.durationSeconds} 秒</span>}
+        {typeof detail?.bpm === "number" && <span>BPM {detail.bpm}</span>}
       </div>
     </section>
   );

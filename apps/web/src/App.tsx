@@ -37,7 +37,8 @@ import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from
 import { apiGet, apiGetWithSignal, apiPost, apiResourceUrl } from "./api";
 import { loadCachedCatalog } from "./catalogCache";
 import { resolveCatalogUiState } from "./catalogUiState";
-import { cardAttributeLabel, collectionCategoryLabel, eventTypeLabel, eventUnitLabel, playerErrorMessage, playerFieldLabel, playerStatusLabel, playerWarningMessage, technicalDiagnosticMessage } from "./playerLabels";
+import { cardAttributeLabel, collectionCategoryLabel, eventTypeLabel, eventUnitLabel, forecastConfidenceLabel, forecastSamplingReason, playerErrorMessage, playerFieldLabel, playerStatusLabel, playerWarningMessage, technicalDiagnosticMessage } from "./playerLabels";
+import { finiteNumber } from "./numberValue";
 import { useAuth } from "./AuthContext";
 import type { DeckConfig, PlayerBinding } from "./accountTypes";
 import { ArtImage, DetailDrawer, ModalDialog, Pagination, SearchBox } from "./components/ui";
@@ -265,6 +266,10 @@ function favoriteTypeForCatalog(type: string): FavoriteType {
 function formatNumber(value?: number | null) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
   return new Intl.NumberFormat("zh-CN").format(value);
+}
+
+function formatSeconds(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value) ? `${formatNumber(value)} 秒` : "待同步";
 }
 
 function formatDate(value?: string) {
@@ -1889,7 +1894,7 @@ export function App() {
               <button key={`${region}:${rankingBoard}:${worldLinkCharacterId ?? "overall"}:${entry.userId || entry.rank}`} type="button" className="ranking-row" onClick={() => openRankingDetail(entry.rank)}>
                 <strong>#{entry.rank}</strong>
                 <span className="ranking-player-cell"><ArtImage src={entry.leaderCardImageUrl} srcCandidates={[...(entry.leaderCardImageCandidates ?? []), ...(entry.leaderCharacterImageCandidates ?? [])]} label={`${entry.playerName ?? entry.name} 当前队长`} variant="avatar" eager={entry.rank <= 10} /><span>{entry.playerName ?? entry.name}<small>{entry.profileWord || "暂无公开签名"}</small></span></span>
-                <b>{formatNumber(entry.score)}</b><em>{entry.hourlyGrowth ? `+${formatNumber(entry.hourlyGrowth)}/h` : "-"}</em><small>{formatDate(entry.updatedAt)}</small>
+                <b>{formatNumber(entry.score)}</b><em>{typeof entry.hourlyGrowth === "number" ? `+${formatNumber(entry.hourlyGrowth)}/h` : "-"}</em><small>{formatDate(entry.updatedAt)}</small>
               </button>
             ))}
             {!rankingRefreshing && filteredRanking.length === 0 && <p className="empty-state">{rankingBoard === "worldlink" ? "该角色榜当前没有可显示的真实排名数据。" : "当前没有可显示的排名数据。"}</p>}
@@ -1964,7 +1969,11 @@ export function App() {
     if (!event?.id || event.id === "none") return;
     const targetRank = Number(forecastPlanForm.targetRank);
     const targetLine = (forecast?.lines ?? []).find((line) => line.rank === targetRank) ?? (borders as any[]).find((line) => Number(line.rank) === targetRank);
-    const targetPt = Number(targetLine?.forecast3h ?? targetLine?.currentScore ?? targetLine?.score ?? 0);
+    const targetPt = finiteNumber(targetLine?.forecast3h ?? targetLine?.currentScore ?? targetLine?.score);
+    if (targetPt === null) {
+      setForecastPlanResult({ note: "当前目标档线没有可用分数，无法用未知值生成规划。" });
+      return;
+    }
     const result = await apiPost("/api/tools/score-control", {
       region,
       eventId: event.id,
@@ -1984,6 +1993,12 @@ export function App() {
     const activeLines = forecastWindow === "all" ? forecast?.lines ?? [] : forecast?.windows?.[`${forecastWindow}h`] ?? forecast?.lines ?? [];
     const windowSummary = forecast?.windowSummaries?.[forecastWindow === "all" ? "all" : `${forecastWindow}h`];
     const warnings = [...(forecast?.warnings ?? []), ...(rankingHistorySummary?.warnings ?? []), ...(rankingHistory?.warnings ?? [])];
+    const hasForecastControlResult = [forecastPlanResult?.remainingPt, forecastPlanResult?.requiredRuns, forecastPlanResult?.requiredPtPerHour].some((value) => typeof value === "number");
+    const controlPtPerRun = finiteNumber(forecastPlanResult?.adjustedPtPerRun);
+    const hasBindingPointEstimate = !hasForecastControlResult && typeof forecastPlanResult?.note === "string" && forecastPlanResult.note.includes("绑定 UID 数据估算");
+    const bindingPointEstimate = hasBindingPointEstimate ? finiteNumber(forecastPlanResult?.eventPointEstimate?.estimatedPt ?? forecastPlanResult?.eventPointEstimate?.eventPointBreakdown?.estimatedPt ?? forecastPlanResult?.eventPointEstimate?.ptPerRun) : null;
+    const retentionRecommendation = forecast?.retentionRecommendation ?? rankingHistorySummary?.retentionRecommendation;
+    const forecastDiagnostics = unique([retentionRecommendation, rankingHistorySummary?.unavailableReason, rankingHistory?.unavailableReason, ...(rankingHistorySummary?.lines ?? []).map((line) => line.confidenceReason), ...activeLines.map((line) => line.unavailableReason ?? line.confidenceReason)]);
     return (
       <section className="rank-page forecast-page">
         <div className="rank-hero forecast-hero"><div><span className="home-kicker">实验性预测</span><h2>{event?.name ? `${event.name} 预测线` : "预测线"}</h2><div className="rank-meta"><span>基于真实采样</span><span>样本 {formatNumber(forecast?.sampleCount ?? rankingHistory?.sampleCount)}</span><span>与当前分数线分开显示</span></div></div><button type="button" className="secondary" onClick={() => goSection("currentEvent")}>返回分数线</button></div>
@@ -1993,12 +2008,12 @@ export function App() {
         {warnings.length > 0 && <p className="warning-text">{warnings.slice(0, 3).join(" / ")}</p>}
         <section className="forecast-layout">
           <article className="panel">
-            <div className="panel-heading"><div><h2>窗口健康</h2><p>{forecast?.retentionRecommendation ?? rankingHistorySummary?.retentionRecommendation ?? "真实样本保留用于预测，不自动造点。"}</p></div></div>
+            <div className="panel-heading"><div><h2>窗口健康</h2><p>采样仅用于趋势估算；维护策略和原始依据可在技术信息中查看。</p></div></div>
             <div className="summary-grid compact-summary">
               <div><span>窗口</span><strong>{forecastWindow === "all" ? "全部" : `${forecastWindow}h`}</strong></div>
               <div><span>档线</span><strong>{formatNumber(windowSummary?.lineCount ?? activeLines.length)}</strong></div>
-              <div><span>最大样本</span><strong>{formatNumber(windowSummary?.maxSampleCount ?? 0)}</strong></div>
-              <div><span>可信度</span><strong>{windowSummary?.confidence ?? "unavailable"}</strong></div>
+              <div><span>最大样本</span><strong>{formatNumber(windowSummary?.maxSampleCount)}</strong></div>
+              <div><span>可信度</span><strong>{forecastConfidenceLabel(windowSummary?.confidence)}</strong></div>
             </div>
           </article>
           <article className="panel">
@@ -2018,19 +2033,20 @@ export function App() {
               <button type="button" className="secondary" disabled={!forecastBinding || !forecastBindingRegionMatches || !normalPlanForm.musicId} onClick={estimateForecastPlanPtPerRun}>用绑定 UID 估算收益</button>
             </div>
             {forecastBinding && !forecastBindingRegionMatches && <p className="warning-text">当前页面区服 {region.toUpperCase()} 与绑定区服 {forecastBinding.region.toUpperCase()} 不一致，请先切换区服。</p>}
-            {forecastPlanResult && <pre className="json-preview">{JSON.stringify(forecastPlanResult, null, 2)}</pre>}
+            {forecastPlanResult && <div className="forecast-plan-result">{forecastPlanResult.note && <p className="status-message">{forecastPlanResult.note}</p>}{bindingPointEstimate !== null && <div className="tool-result-metrics"><div><span>绑定估算单局 PT</span><strong>{formatNumber(bindingPointEstimate)} pt</strong></div></div>}{hasForecastControlResult && <div className="tool-result-metrics">{controlPtPerRun !== null && <div><span>本次每局收益</span><strong>{formatNumber(controlPtPerRun)} pt</strong></div>}<div><span>还差 PT</span><strong>{formatNumber(forecastPlanResult.remainingPt)} pt</strong></div><div><span>所需局数</span><strong>{formatNumber(forecastPlanResult.requiredRuns)} 局</strong></div><div><span>每小时需打</span><strong>{formatNumber(forecastPlanResult.requiredPtPerHour)} pt/h</strong></div><div><span>计划状态</span><strong>{forecastPlanResult.feasible === true ? "可行" : forecastPlanResult.feasible === false ? "需调整" : "待确认"}</strong></div></div>}<ToolResultWarnings result={forecastPlanResult} /><ToolJsonDetails value={forecastPlanResult} /></div>}
           </article>
         </section>
+        {forecastDiagnostics.length > 0 && <details className="calculation-details forecast-diagnostics"><summary>查看采样技术信息</summary>{forecastDiagnostics.map((item) => <p key={item}>{item}</p>)}</details>}
         <article className="panel wide">
-          <div className="panel-heading"><div><h2>档线趋势图</h2><p>{rankingHistory?.unavailableReason ?? "折线只使用真实持久化样本，不插值、不补假点。"}</p></div></div>
+          <div className="panel-heading"><div><h2>档线趋势图</h2><p>{rankingHistory?.unavailableReason ? forecastSamplingReason(rankingHistory.unavailableReason) : "折线只使用真实持久化样本，不插值、不补假点。"}</p></div></div>
           <HistoryTrendChart samples={rankingHistory?.items ?? []} lines={activeLines} />
         </article>
         <article className="panel wide">
-          <div className="panel-heading"><div><h2>历史样本摘要</h2><p>{rankingHistorySummary?.unavailableReason ?? "持久化历史用于计算近期速度和预测可信度。"}</p></div></div>
-          <div className="forecast-grid">{(rankingHistorySummary?.lines ?? []).slice(0, 12).map((line) => <div key={`${line.sampleType}-${line.rank}`} className="forecast-card"><span>T{line.rank}</span><strong>{formatNumber(line.latestScore)} pt</strong><small>样本 {formatNumber(line.sampleCount)} / {line.confidence ?? line.predictability ?? "unavailable"}</small><small>跨度: {formatNumber(line.sampleSpanHours)}h</small><small>速度: {formatNumber(line.speedPerHour)} pt/h</small><em>{line.confidenceReason ?? formatDate(line.latestSampledAt ?? undefined)}</em></div>)}</div>
+          <div className="panel-heading"><div><h2>历史样本摘要</h2><p>{rankingHistorySummary?.unavailableReason ? forecastSamplingReason(rankingHistorySummary.unavailableReason) : "持久化历史用于计算近期速度和预测可信度。"}</p></div></div>
+          <div className="forecast-grid">{(rankingHistorySummary?.lines ?? []).slice(0, 12).map((line) => <div key={`${line.sampleType}-${line.rank}`} className="forecast-card"><span>T{line.rank}</span><strong>{formatNumber(line.latestScore)} pt</strong><small>样本 {formatNumber(line.sampleCount)} / {forecastConfidenceLabel(line.confidence ?? line.predictability)}</small><small>跨度: {formatNumber(line.sampleSpanHours)}h</small><small>速度: {formatNumber(line.speedPerHour)} pt/h</small><em>{line.confidenceReason ? forecastSamplingReason(line.confidenceReason) : formatDate(line.latestSampledAt ?? undefined)}</em></div>)}</div>
           {(!rankingHistorySummary || rankingHistorySummary.lines.length === 0) && <p className="empty-state">暂无持久化历史样本。刷新分数线后会逐步积累。</p>}
         </article>
-        <div className="forecast-grid">{activeLines.map((line) => <div key={line.rank} className="forecast-card"><span>T{line.rank}</span><strong>{formatNumber(line.currentScore)} pt</strong><small>速度: {formatNumber(line.speedPerHour ?? line.hourlyGrowth)} pt/h</small><small>1h: {formatNumber(line.forecast1h)} pt / 3h: {formatNumber(line.forecast3h)} pt</small><small>样本 {formatNumber(line.sampleCount)} / 跨度 {formatNumber(line.sampleSpanHours ?? line.sampleHours)}h</small><em>{line.unavailableReason ?? line.confidenceReason ?? "实验性预测"}</em></div>)}</div>
+        <div className="forecast-grid">{activeLines.map((line) => <div key={line.rank} className="forecast-card"><span>T{line.rank}</span><strong>{formatNumber(line.currentScore)} pt</strong><small>速度: {formatNumber(line.speedPerHour ?? line.hourlyGrowth)} pt/h</small><small>1h: {formatNumber(line.forecast1h)} pt / 3h: {formatNumber(line.forecast3h)} pt</small><small>样本 {formatNumber(line.sampleCount)} / 跨度 {formatNumber(line.sampleSpanHours ?? line.sampleHours)}h</small><em>{line.unavailableReason || line.confidenceReason ? forecastSamplingReason(line.unavailableReason ?? line.confidenceReason) : "实验性预测"}</em></div>)}</div>
         {(!forecast || activeLines.length === 0) && <p className="empty-state">暂无可预测数据。</p>}
       </section>
     );
@@ -2075,7 +2091,7 @@ export function App() {
       return <section className="panel wide"><div className="panel-heading"><div><h1>活动图鉴</h1><p>浏览历次活动、加成角色与相关资料。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索活动名称或 ID" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid event-grid">{pageData?.items.map((eventItem: EventInfo) => { const candidates = imageCandidates(eventItem.assets); const eventUnit = eventUnitLabel(eventItem.eventUnit); return <article key={`${region}:event:${eventItem.id}`} className="catalog-card event-card"><button type="button" className="catalog-card-main" onClick={() => void openEvent(eventItem.id, eventItem.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={eventItem.name} variant="event" /><strong>{eventItem.name}</strong><span>{eventTypeLabel(eventItem.eventType)}{eventUnit ? ` · ${eventUnit}` : ""}</span><small>{formatDate(eventItem.startAt)} · ID {eventItem.id}</small></button><FavoriteButton compact type="event" region={region} targetId={eventItem.id} label={eventItem.name} /></article>; })}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     if (type === "songs") {
-      return <section className="panel wide"><div className="panel-heading"><div><h1>歌曲图鉴</h1><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索歌曲、ID、分类" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid songs">{pageData?.items.map((song: Song, index: number) => <article key={`${region}:song:${song.id}`} className="catalog-card song-card"><button type="button" className="catalog-card-main" onClick={() => void openSong(song.id, song.title)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span className="song-card-copy"><strong>{song.title}</strong><span>{song.unit} · ID {song.id}</span><small>{song.durationSeconds ? `时长 ${song.durationSeconds}s` : "时长待同步"}</small></span></button><FavoriteButton compact type="song" region={region} targetId={song.id} label={song.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h1>歌曲图鉴</h1><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索歌曲、ID、分类" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid songs">{pageData?.items.map((song: Song, index: number) => <article key={`${region}:song:${song.id}`} className="catalog-card song-card"><button type="button" className="catalog-card-main" onClick={() => void openSong(song.id, song.title)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span className="song-card-copy"><strong>{song.title}</strong><span>{song.unit} · ID {song.id}</span><small>时长 {formatSeconds(song.durationSeconds)}</small></span></button><FavoriteButton compact type="song" region={region} targetId={song.id} label={song.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     if (type === "cards") {
       return <section className="panel wide"><div className="panel-heading"><div><h1>卡牌图鉴</h1><p>浏览卡面、角色信息与各等级技能效果。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索角色、卡名、属性" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid cards">{pageData?.items.map((card: Card, index: number) => <article key={`${region}:card:${card.id}`} className="catalog-card card-card"><button type="button" className="catalog-card-main" onClick={() => void openCard(card.id, false, card.title)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates} label={card.title} variant="square" eager={index < 8} /><strong>{card.title}</strong><span>{card.character}</span><small>属性 {cardAttributeLabel(card.attribute)} · {card.rarity}★</small><small>ID {card.id}</small></button><FavoriteButton compact type="card" region={region} targetId={card.id} label={card.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
@@ -2119,8 +2135,8 @@ export function App() {
     const selectedSongForCompare = songs.find((song) => song.id === deckCompareForm.musicId) ?? songs[0];
     const difficulties = selectedSongForCompare?.difficultyDetails?.length ? selectedSongForCompare.difficultyDetails.map((item) => item.difficulty) : ["easy", "normal", "hard", "expert", "master", "append"];
     const comparisons = asArray(deckCompareResult?.comparisons);
-    const bestScore = Math.max(1, ...comparisons.map((item: any) => Number(item.score ?? item.totalScore ?? item.multiLiveTrace?.score ?? 0)).filter(Number.isFinite));
-    const bestPoint = Math.max(1, ...comparisons.map((item: any) => Number(item.eventPoint ?? item.estimatedPt ?? item.eventCalculatorTrace?.estimatedPt ?? 0)).filter(Number.isFinite));
+    const bestScore = Math.max(1, ...comparisons.map((item: any) => finiteNumber(item.score ?? item.totalScore ?? item.multiLiveTrace?.score)).filter((value): value is number => value !== null));
+    const bestPoint = Math.max(1, ...comparisons.map((item: any) => finiteNumber(item.eventPoint ?? item.estimatedPt ?? item.eventCalculatorTrace?.estimatedPt)).filter((value): value is number => value !== null));
     const missingFields = [...asArray(deckCompareResult?.missingFields), ...comparisons.flatMap((item: any) => asArray(item.missingFields))].slice(0, 16);
     const estimatedFields = [...asArray(deckCompareResult?.estimatedFieldsUsed), ...comparisons.flatMap((item: any) => asArray(item.estimatedFieldsUsed))].slice(0, 16);
     const exactTrace = deckCompareResult?.liveExactTrace ?? deckCompareResult?.noteScoreSummary;
@@ -2236,25 +2252,23 @@ export function App() {
               <div className="deck-compare-table">
                 <div className="deck-compare-table-head"><span>方案</span><span>来源</span><span>综合力</span><span>技能值</span><span>分数</span><span>活动 PT</span><span>状态</span></div>
                 {comparisons.map((item: any, index: number) => {
-                  const score = Number(item.score ?? item.totalScore ?? item.multiLiveTrace?.score ?? 0);
-                  const point = Number(item.eventPoint ?? item.estimatedPt ?? item.eventCalculatorTrace?.estimatedPt ?? 0);
+                  const score = finiteNumber(item.score ?? item.totalScore ?? item.multiLiveTrace?.score);
+                  const point = finiteNumber(item.eventPoint ?? item.estimatedPt ?? item.eventCalculatorTrace?.estimatedPt);
                   return (
                     <div className="deck-compare-table-row" key={item.id ?? index}>
                       <strong>{item.name ?? item.id ?? `方案 ${index + 1}`}</strong>
                       <span>{item.source ?? item.inputMode ?? "-"}</span>
                       <span>{formatNumber(item.power ?? item.deckDetail?.power?.total ?? item.multiLiveTrace?.self?.power)}</span>
                       <span>{formatNumber(item.effectiveness ?? item.multiLiveTrace?.self?.effectiveness)}</span>
-                      <span><b>{formatNumber(score)}</b><i style={{ width: `${Math.min(100, (score / bestScore) * 100)}%` }} /></span>
-                      <span><b>{formatNumber(point)}</b><i style={{ width: `${Math.min(100, (point / bestPoint) * 100)}%` }} /></span>
+                      <span><b>{formatNumber(score)}</b><i style={{ width: `${score === null ? 0 : Math.min(100, (score / bestScore) * 100)}%` }} /></span>
+                      <span><b>{formatNumber(point)}</b><i style={{ width: `${point === null ? 0 : Math.min(100, (point / bestPoint) * 100)}%` }} /></span>
                       <span>{item.referenceParity?.status ?? item.status ?? "ok"}</span>
                     </div>
                   );
                 })}
               </div>
             </div>
-            {exactTrace && <div className="deck-compare-exact-trace"><strong>Exact Trace</strong><span>notes {formatNumber(exactTrace.noteCount ?? exactTrace.notes?.length)}</span><span>active {formatNumber(exactTrace.activeBonus)}</span><span>fever {exactTrace.feverWindow?.status ?? exactTrace.feverWindow ? "available" : "-"}</span><span>{deckCompareResult.musicScoreTrace?.status ?? deckCompareResult.musicScoreTrace?.source ?? ""}</span></div>}
-            <div className="result-tags"><span>缺失字段</span>{missingFields.map((item: string) => <code key={item}>{item}</code>)}</div>
-            <div className="result-tags"><span>估算字段</span>{estimatedFields.map((item: string) => <code key={item}>{item}</code>)}</div>
+            {(exactTrace || missingFields.length > 0 || estimatedFields.length > 0) && <details className="calculation-details"><summary>查看计算依据与技术字段</summary>{exactTrace && <div className="deck-compare-exact-trace"><strong>Exact Trace</strong><span>notes {formatNumber(exactTrace.noteCount ?? exactTrace.notes?.length)}</span><span>active {formatNumber(exactTrace.activeBonus)}</span><span>fever {exactTrace.feverWindow?.status ?? exactTrace.feverWindow ? "available" : "-"}</span><span>{deckCompareResult.musicScoreTrace?.status ?? deckCompareResult.musicScoreTrace?.source ?? ""}</span></div>}{missingFields.length > 0 && <div className="result-tags"><span>缺失字段</span>{missingFields.map((item: string) => <code key={item}>{item}</code>)}</div>}{estimatedFields.length > 0 && <div className="result-tags"><span>估算字段</span>{estimatedFields.map((item: string) => <code key={item}>{item}</code>)}</div>}</details>}
           </article>
         )}
 
@@ -2326,15 +2340,9 @@ export function App() {
               <span>优先级 {formatNumber(result.area?.recommendations?.[0]?.priorityScore)}</span>
             </section>
           </div>
-          <div className="result-tags">
-            <span>缺失字段</span>
-            {(result.missingFields ?? []).slice(0, 12).map((item: string) => <code key={item}>{item}</code>)}
-          </div>
-           <div className="result-tags">
-             <span>风险提示</span>
-             {(result.warnings ?? []).slice(0, 12).map((item: string) => <code key={item}>{item}</code>)}
-           </div>
-           <ToolJsonDetails value={result} />
+          <ToolResultWarnings result={result} />
+          {((result.missingFields ?? []).length > 0 || (result.warnings ?? []).length > 0) && <details className="calculation-details"><summary>查看计算字段</summary>{(result.missingFields ?? []).length > 0 && <div className="result-tags"><span>缺失字段</span>{(result.missingFields ?? []).slice(0, 12).map((item: string) => <code key={item}>{item}</code>)}</div>}{(result.warnings ?? []).length > 0 && <div className="result-tags"><span>原始提示</span>{(result.warnings ?? []).slice(0, 12).map((item: string) => <code key={item}>{item}</code>)}</div>}</details>}
+          <ToolJsonDetails value={result} />
          </article>
        );
      }
@@ -2850,7 +2858,7 @@ export function App() {
                   </div>
                   {asArray(item.rewards).length > 0 && <div className="mission-rewards">{asArray(item.rewards).map((reward: any, rewardIndex: number) => <div key={`${reward.resourceType}:${reward.resourceId}:${rewardIndex}`}><span className={`mission-reward-art resource-${String(reward.resourceType ?? "unknown").replace(/[^a-z0-9_-]/gi, "-")}`}><ExchangeResourceIcon resource={reward} /></span><span>{reward.name}<small>× {formatNumber(reward.quantity)}</small></span></div>)}</div>}
                   {stages.length > 0 && <button type="button" className="mission-stage-toggle" onClick={() => setExpandedMissionId(expanded ? null : String(item.id))}>{expanded ? "收起阶段" : "查看阶段"}</button>}
-                  {expanded && <div className="mission-stage-list">{stages.map((stage: any) => <div key={stage.seq}><span>阶段 {stage.seq}</span><strong>{formatNumber(stage.requirement)}</strong><small>Rank EXP +{formatNumber(stage.exp)}{stage.quantity ? ` · 数量 ${formatNumber(stage.quantity)}` : ""}</small></div>)}</div>}
+                  {expanded && <div className="mission-stage-list">{stages.map((stage: any) => <div key={stage.seq}><span>阶段 {stage.seq}</span><strong>{formatNumber(stage.requirement)}</strong><small>Rank EXP +{formatNumber(stage.exp)}{typeof stage.quantity === "number" ? ` · 数量 ${formatNumber(stage.quantity)}` : ""}</small></div>)}</div>}
                   {item.lookupStatus === "missing-data" && <small className="warning-text">部分关联资料缺失</small>}
                 </article>
               );
@@ -3268,7 +3276,7 @@ export function App() {
       {selectedSong && (
         <DetailDrawer title={selectedSong.music.title} onClose={() => setSelectedSong(null)} elevated={Boolean(selectedEvent || selectedCollection)}>
           <FavoriteButton type="song" region={region} targetId={selectedSong.music.id} label={selectedSong.music.title} />
-          <div className="detail-hero"><ArtImage src={stringAsset(selectedSong.assets, "jacketUrl")} label={selectedSong.music.title} /><div><strong>{selectedSong.music.title}</strong><span>ID {selectedSong.music.id}</span><p>{selectedSong.music.categories?.join(" / ") || selectedSong.music.unit}</p><small>时长 {selectedSong.music.durationSeconds ?? "-"}s / BPM {selectedSong.music.bpm ?? "-"}</small></div></div>
+          <div className="detail-hero"><ArtImage src={stringAsset(selectedSong.assets, "jacketUrl")} label={selectedSong.music.title} /><div><strong>{selectedSong.music.title}</strong><span>ID {selectedSong.music.id}</span><p>{selectedSong.music.categories?.join(" / ") || selectedSong.music.unit}</p><small>时长 {formatSeconds(selectedSong.music.durationSeconds)} / BPM {formatNumber(selectedSong.music.bpm)}</small></div></div>
           <h3>谱面</h3><div className="difficulty-grid">{(selectedSong.music.difficultyDetails ?? []).map((detail) => <button key={detail.difficulty} type="button" className="difficulty-card" onClick={() => setSelectedChart({ musicId: selectedSong.music.id, title: selectedSong.music.title, detail })}><span>{detail.difficulty}</span><strong>Lv.{detail.playLevel}</strong><small>{formatNumber(detail.totalNoteCount)} notes</small></button>)}</div>
         </DetailDrawer>
       )}

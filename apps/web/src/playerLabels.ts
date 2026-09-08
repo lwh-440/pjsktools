@@ -84,6 +84,13 @@ const eventUnitLabels: Record<string, string> = {
   vs: "Virtual Singer"
 };
 
+const forecastConfidenceLabels: Record<string, string> = {
+  high: "较高",
+  medium: "中等",
+  low: "较低",
+  unavailable: "样本不足"
+};
+
 function readNestedMessage(value: string) {
   let current = value.trim();
   for (let depth = 0; depth < 2; depth += 1) {
@@ -158,4 +165,17 @@ export function collectionCategoryLabel(type: string, category: unknown) {
   const value = String(category ?? "");
   if (type === "gachas") return value === "normal" ? "普通卡池" : "卡池资料";
   return value || "详细资料";
+}
+
+export function forecastConfidenceLabel(value: unknown) {
+  const key = String(value ?? "").toLowerCase();
+  return forecastConfidenceLabels[key] ?? (key ? "待确认" : "样本不足");
+}
+
+export function forecastSamplingReason(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "采样说明待同步";
+  if (/[㐀-鿿]/.test(raw)) return raw;
+  if (/enough samples across at least one hour for a basic trend estimate/i.test(raw)) return "样本覆盖至少 1 小时，可用于基础趋势估算。";
+  return "采样说明已记录";
 }

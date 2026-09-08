@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardAttributeLabel, catalogFilterOptionLabel, collectionCategoryLabel, eventTypeLabel, eventUnitLabel, playerErrorMessage, playerFieldLabel, playerStatusLabel, playerWarningMessage, technicalDiagnosticMessage } from "./playerLabels";
+import { cardAttributeLabel, catalogFilterOptionLabel, collectionCategoryLabel, eventTypeLabel, eventUnitLabel, forecastConfidenceLabel, forecastSamplingReason, playerErrorMessage, playerFieldLabel, playerStatusLabel, playerWarningMessage, technicalDiagnosticMessage } from "./playerLabels";
 
 describe("player labels", () => {
   it("turns nested API JSON errors into a player-facing message", () => {
@@ -19,5 +19,7 @@ describe("player labels", () => {
     expect(eventUnitLabel("idol")).toBe("MORE MORE JUMP!");
     expect(eventUnitLabel("future_unit")).toBe("future_unit");
     expect(collectionCategoryLabel("gachas", "ceil")).toBe("卡池资料");
+    expect(forecastConfidenceLabel("medium")).toBe("中等");
+    expect(forecastSamplingReason("Enough samples across at least one hour for a basic trend estimate")).toBe("样本覆盖至少 1 小时，可用于基础趋势估算。");
   });
 });
