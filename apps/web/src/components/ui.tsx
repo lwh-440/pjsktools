@@ -1,11 +1,22 @@
 import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { apiResourceUrl } from "../api";
 
 const pageSizeOptions = [12, 24, 48, 96];
 const successfulImageSources = new Map<string, string>();
 const failedImageSources = new Set<string>();
+
+let lockedDialogCount = 0;
+let savedBodyOverflow = "";
+let savedBodyPaddingRight = "";
+const dialogStack: symbol[] = [];
+
+function focusableElements(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter((element) => !element.hasAttribute("hidden") && element.offsetParent !== null);
+}
 
 export function ArtImage({
   src,
@@ -132,12 +143,82 @@ export function Pagination({
   );
 }
 
+function useDialogAccessibility(onClose: () => void) {
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const dialogId = useMemo(() => Symbol("detail-drawer"), []);
+  const titleId = useId();
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogStack.push(dialogId);
+    lockedDialogCount += 1;
+    if (lockedDialogCount === 1) {
+      savedBodyOverflow = document.body.style.overflow;
+      savedBodyPaddingRight = document.body.style.paddingRight;
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      document.body.style.overflow = "hidden";
+      if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+    const timer = window.setTimeout(() => {
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      (focusableElements(dialog)[0] ?? dialog).focus();
+    }, 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (dialogStack.at(-1) !== dialogId) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = focusableElements(dialog);
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
+      if (event.shiftKey && currentIndex <= 0) {
+        event.preventDefault();
+        focusable.at(-1)?.focus();
+      } else if (!event.shiftKey && currentIndex === focusable.length - 1) {
+        event.preventDefault();
+        focusable[0].focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("keydown", onKeyDown, true);
+      const stackIndex = dialogStack.lastIndexOf(dialogId);
+      if (stackIndex >= 0) dialogStack.splice(stackIndex, 1);
+      lockedDialogCount = Math.max(0, lockedDialogCount - 1);
+      if (lockedDialogCount === 0) {
+        document.body.style.overflow = savedBodyOverflow;
+        document.body.style.paddingRight = savedBodyPaddingRight;
+      }
+      openerRef.current?.focus();
+    };
+  }, []);
+
+  return { dialogRef, titleId, close: () => onCloseRef.current() };
+}
+
 export function DetailDrawer({ title, onClose, children, elevated = false }: { title: string; onClose: () => void; children: ReactNode; elevated?: boolean }) {
+  const { dialogRef, titleId, close } = useDialogAccessibility(onClose);
+
   return (
-    <div className={`drawer-backdrop ${elevated ? "drawer-backdrop-elevated" : ""}`} onClick={onClose}>
-      <aside className="detail-drawer" onClick={(event) => event.stopPropagation()}>
+    <div className={`drawer-backdrop ${elevated ? "drawer-backdrop-elevated" : ""}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+      <aside ref={dialogRef} className="detail-drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <div className="drawer-head">
-          <h2>{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <button type="button" className="icon-button" onClick={onClose} aria-label="关闭详情">
             <X size={18} />
           </button>
@@ -146,6 +227,25 @@ export function DetailDrawer({ title, onClose, children, elevated = false }: { t
       </aside>
     </div>
   );
+}
+
+export function ModalDialog({
+  label,
+  onClose,
+  children,
+  backdropClassName = "modal-backdrop",
+  className = "content-detail-modal"
+}: {
+  label: string;
+  onClose: () => void;
+  children: ReactNode;
+  backdropClassName?: string;
+  className?: string;
+}) {
+  const { dialogRef, close } = useDialogAccessibility(onClose);
+  return <div className={backdropClassName} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+    <article ref={dialogRef} className={className} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>{children}</article>
+  </div>;
 }
 
 export function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {

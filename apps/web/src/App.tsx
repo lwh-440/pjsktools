@@ -32,13 +32,14 @@
   Wand2,
   Zap
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router";
 import { apiGet, apiGetWithSignal, apiPost, apiResourceUrl } from "./api";
 import { loadCachedCatalog } from "./catalogCache";
+import { resolveCatalogUiState } from "./catalogUiState";
 import { useAuth } from "./AuthContext";
 import type { DeckConfig, PlayerBinding } from "./accountTypes";
-import { ArtImage, DetailDrawer, Pagination, SearchBox } from "./components/ui";
+import { ArtImage, DetailDrawer, ModalDialog, Pagination, SearchBox } from "./components/ui";
 import { CatalogFilterPanel, type CatalogFilterMeta } from "./components/CatalogFilterPanel";
 import { FavoriteButton } from "./components/FavoriteButton";
 import { SiteFooter } from "./components/SiteFooter";
@@ -74,6 +75,8 @@ type FullCard = { card: Card & { skill?: SkillInfo; specialTrainingSkill?: Skill
 type FullEvent = { event: EventInfo; assets: AssetInfo; relations: { relatedSongs: Song[]; relatedCards: Card[]; relatedGachas: CollectionItem[] } };
 type CollectionResponse = { source?: string; unavailableReason?: string; sourceMetadata?: unknown; items: CollectionItem[] };
 type CatalogResponse<T> = { items: T[]; page: number; pageSize: number; total: number; totalPages: number; hasNextPage?: boolean; hasPreviousPage?: boolean; masterVersion?: string; sourceHealth?: Record<string, unknown>; source?: string; filterMeta?: CatalogFilterMeta; appliedFilters?: Record<string, string[] | boolean> };
+type CatalogLoadState = { status: "idle" | "loading" | "ready" | "error"; error?: string; hasVisibleData?: boolean };
+type PendingDetail = { kind: "song" | "card" | "event" | "collection"; id: string; title: string; collectionType?: string; preserveParent?: boolean; error?: string };
 type ContentPreviewItem = { id: string; name: string; category?: string; description?: string; storyType?: string; raw?: any };
 type ContentDisplayGroup = { key: string; label?: string; count?: number; previewItems?: ContentPreviewItem[] };
 type SourceMetadata = { sourceType?: string; primaryUrl?: string; fallbackUrl?: string; sourceProject?: string; fetchedAt?: string; unavailableReason?: string };
@@ -418,6 +421,73 @@ function StatefulRenderBoundary({ render }: { render: () => any }) {
   return render();
 }
 
+function RankingCountdown({ nextRefreshAt }: { nextRefreshAt: number | null }) {
+  const getSeconds = () => nextRefreshAt ? Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000)) : 10;
+  const [seconds, setSeconds] = useState(getSeconds);
+  useEffect(() => {
+    setSeconds(getSeconds());
+    const timer = window.setInterval(() => setSeconds(getSeconds()), 1000);
+    return () => window.clearInterval(timer);
+  }, [nextRefreshAt]);
+  return <>{seconds}</>;
+}
+
+type CatalogBodyProps = {
+  viewState: "loading" | "error" | "empty" | "ready";
+  hasVisibleData: boolean;
+  error?: string;
+  hasActiveFilters: boolean;
+  onRetry: () => void;
+  onClear: () => void;
+  children: ReactNode;
+};
+
+function CatalogBody({ viewState, hasVisibleData, error, hasActiveFilters, onRetry, onClear, children }: CatalogBodyProps) {
+  if (viewState === "loading" && !hasVisibleData) return <div className="catalog-feedback loading" role="status"><strong>正在加载图鉴</strong><span>已保留当前搜索、筛选和分页条件。</span></div>;
+  if (viewState === "error" && !hasVisibleData) return <div className="catalog-feedback error" role="alert"><strong>图鉴加载失败</strong><span>{error ?? "请检查网络后重试。"}</span><button type="button" className="secondary" onClick={onRetry}>重试</button></div>;
+  if (viewState === "empty") return <div className="catalog-feedback empty"><strong>没有符合条件的资料</strong><span>{hasActiveFilters ? "可以清空筛选或修改搜索词。" : "当前区服暂未返回这类资料。"}</span>{hasActiveFilters && <button type="button" className="secondary" onClick={onClear}>清空筛选</button>}</div>;
+  return <>
+    {viewState === "loading" && <p className="catalog-refresh-state" role="status">正在更新图鉴结果，当前内容会保留到新结果返回。</p>}
+    {viewState === "error" && <div className="catalog-refresh-state error" role="alert"><span>更新失败，正在显示上次结果：{error ?? "请检查网络后重试。"}</span><button type="button" className="secondary" onClick={onRetry}>重试</button></div>}
+    {children}
+  </>;
+}
+
+function ToolField({ label, unit, help, children }: { label: string; unit?: string; help: string; children: ReactNode }) {
+  return <label className="tool-field"><span className="tool-field-label">{label}{unit && <small>{unit}</small>}</span>{children}<small className="tool-field-help">{help}</small></label>;
+}
+
+function ToolJsonDetails({ value }: { value: any }) {
+  return value ? <details className="tool-json-details"><summary>查看完整计算详情（JSON）</summary><pre className="json-preview">{JSON.stringify(value, null, 2)}</pre></details> : null;
+}
+
+function ToolResultWarnings({ result }: { result: any }) {
+  const missing = result?.missingFields ?? [];
+  const warnings = result?.warnings ?? [];
+  if (!missing.length && !warnings.length) return null;
+  return <div className="tool-notice"><strong>数据完整性提示</strong><span>缺失数据会使用估算或使部分结果不可用，详细字段保留在完整结果中。</span>{missing.length > 0 && <p>缺失：{missing.slice(0, 8).join(" / ")}</p>}{warnings.length > 0 && <p>警告：{warnings.slice(0, 8).join(" / ")}</p>}</div>;
+}
+
+function DeckRecommendationPreview({ result }: { result: any }) {
+  const entries = result?.recommendedDecks?.[0]?.cards ?? result?.recommendedCards ?? [];
+  return <section className="deck-recommendation-preview" aria-label="推荐卡组">
+    <h3>推荐卡组</h3>
+    {entries.length > 0 ? <div className="deck-recommendation-cards">{entries.slice(0, 5).map((entry: any, index: number) => {
+      const card = entry.card ?? {};
+      const breakdown = entry.cardContributionBreakdown ?? {};
+      const assets = card.assets ?? {};
+      const imageCandidates = assets.normalThumbnailCandidates ?? assets.imageCandidates ?? [];
+      const power = entry.estimatedPower ?? breakdown.powerBreakdown?.totalPower;
+      const contribution = entry.contributionScore ?? breakdown.contributionScore;
+      const bonus = entry.eventBonus ?? breakdown.eventBonusPercent;
+      return <article key={card.id ?? entry.cardId ?? index} className="deck-recommendation-card">
+        <ArtImage src={assets.normalThumbnailUrl ?? assets.normalUrl} srcCandidates={imageCandidates} label={card.title ?? `卡牌 ${card.id ?? entry.cardId ?? index + 1}`} variant="square" />
+        <div><strong>{card.title ?? card.id ?? entry.cardId ?? "未返回卡牌名称"}</strong><small>{card.character ?? (card.id ?? entry.cardId ? `ID ${card.id ?? entry.cardId}` : "卡牌资料未返回")}</small><dl>{bonus != null && <div><dt>活动加成</dt><dd>{formatNumber(bonus)}%</dd></div>}{power != null && <div><dt>综合力</dt><dd>{formatNumber(power)}</dd></div>}{contribution != null && <div><dt>贡献分</dt><dd>{formatNumber(contribution)}</dd></div>}</dl></div>
+      </article>;
+    })}</div> : <p className="empty-state">没有可展示的推荐卡；请检查持有卡牌 ID 或结果中的缺失字段。</p>}
+  </section>;
+}
+
 function rawRecord(value: any): Record<string, any> {
   return value && typeof value === "object" ? value : {};
 }
@@ -483,6 +553,7 @@ export function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<SectionId>("home");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [regions, setRegions] = useState<Region[]>([]);
   const [region, setRegion] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get("region");
@@ -515,7 +586,6 @@ export function App() {
   const [worldLinkCharacters, setWorldLinkCharacters] = useState<WorldLinkCharacter[]>([]);
   const [worldLinkAvailable, setWorldLinkAvailable] = useState(false);
   const [rankingNextRefreshAt, setRankingNextRefreshAt] = useState<number | null>(null);
-  const [rankingCountdown, setRankingCountdown] = useState(10);
   const regionRef = useRef(region);
   const baseRequest = useRef<{ id: number; region: string; controller: AbortController } | null>(null);
   const baseRequestId = useRef(0);
@@ -536,6 +606,9 @@ export function App() {
   const [catalogToggles, setCatalogToggles] = useState<Record<string, boolean>>({});
   const [collections, setCollections] = useState<Record<string, CollectionResponse>>({});
   const [catalogs, setCatalogs] = useState<Record<string, CatalogResponse<any>>>({});
+  const [catalogLoadStates, setCatalogLoadStates] = useState<Record<string, CatalogLoadState>>({});
+  const [catalogRefreshToken, setCatalogRefreshToken] = useState(0);
+  const [baseRefreshing, setBaseRefreshing] = useState(false);
   const catalogAborts = useRef(new Map<string, AbortController>());
   const [contentData, setContentData] = useState<Record<string, any>>({});
   const [selectedInformation, setSelectedInformation] = useState<any>(null);
@@ -564,6 +637,8 @@ export function App() {
   const [skillLevel, setSkillLevel] = useState<1 | 2 | 3 | 4>(4);
   const [selectedEvent, setSelectedEvent] = useState<FullEvent | null>(null);
   const [selectedCollection, setSelectedCollection] = useState<{ item: CollectionItem; assets: AssetInfo; relations?: { relatedCards?: Card[] } } | null>(null);
+  const [pendingDetail, setPendingDetail] = useState<PendingDetail | null>(null);
+  const detailRequestId = useRef(0);
   const [selectedChart, setSelectedChart] = useState<{ musicId: string; title: string; detail: DifficultyDetail } | null>(null);
   const [rankingDetail, setRankingDetail] = useState<RankingPlayerDetail | null>(null);
   const [rankingDetailMode, setRankingDetailMode] = useState<"player" | "line">("player");
@@ -576,6 +651,9 @@ export function App() {
   const [controlResult, setControlResult] = useState<any>(null);
   const [deckOwnedIds, setDeckOwnedIds] = useState("");
   const [deckResult, setDeckResult] = useState<any>(null);
+  const [deckLoading, setDeckLoading] = useState(false);
+  const [deckError, setDeckError] = useState("");
+  const deckRequestId = useRef(0);
   const [musicRecommendResult, setMusicRecommendResult] = useState<any>(null);
   const [musicRecommendForm, setMusicRecommendForm] = useState({ targetPt: "1000000", currentPt: "0", eventBonusPercent: "150", preferredDifficulty: "expert", maxDurationSeconds: "150", minNoteCount: "", limit: "5", liveType: "multi", boost: "3", baseScore: "2000000" });
   const [areaRecommendResult, setAreaRecommendResult] = useState<any>(null);
@@ -706,6 +784,10 @@ export function App() {
   }, [routeSection, location.search]);
 
   useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedFilter(filter), 250);
     return () => window.clearTimeout(timer);
   }, [filter]);
@@ -734,6 +816,17 @@ export function App() {
     setVirtualLiveDetail(null);
     setVirtualLivePlayback(null);
     setMysekaiDetail(null);
+    detailRequestId.current += 1;
+    setPendingDetail(null);
+    setSelectedSong(null);
+    setSelectedCard(null);
+    setSelectedEvent(null);
+    setSelectedCollection(null);
+    setSelectedChart(null);
+    setDeckResult(null);
+    setDeckError("");
+    setDeckLoading(false);
+    deckRequestId.current += 1;
     return () => {
       if (baseRequest.current?.region === region) baseRequest.current.controller.abort();
     };
@@ -756,13 +849,6 @@ export function App() {
   }, [region, rankingBoard, worldLinkCharacterId]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setRankingCountdown(rankingNextRefreshAt ? Math.max(0, Math.ceil((rankingNextRefreshAt - Date.now()) / 1000)) : 10);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [rankingNextRefreshAt]);
-
-  useEffect(() => {
     if (rankingBoard !== "worldlink") return;
     const validWorldLinkContext = event?.eventType === "world_bloom"
       && worldLinkAvailable
@@ -783,7 +869,7 @@ export function App() {
     if (["information", "exchanges", "missions", "mysekai"].includes(activeSection)) {
       loadContent(activeSection).catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
     }
-  }, [activeSection, region, page, pageSize, debouncedFilter, catalogFilters, catalogToggles]);
+  }, [activeSection, region, page, pageSize, debouncedFilter, catalogFilters, catalogToggles, catalogRefreshToken]);
 
   useEffect(() => {
     if (activeSection === "mysekai") {
@@ -840,6 +926,7 @@ export function App() {
     setRankingDetailLoading(false);
     setCatalogTotals({ songs: null, cards: null });
     setCatalogs({});
+    setCatalogLoadStates({});
     setCollections({});
     try {
       const [nextRegions, currentEvent, songPage, cardPage] = await Promise.all([
@@ -918,18 +1005,42 @@ export function App() {
   async function loadCatalog(type: string) {
     catalogAborts.current.get(type)?.abort();
     const controller = new AbortController();
+    const requestRegion = region;
     catalogAborts.current.set(type, controller);
+    setCatalogLoadStates((current) => ({ ...current, [type]: { status: "loading", hasVisibleData: Boolean(catalogs[type]) || current[type]?.hasVisibleData } }));
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), sort: "id-desc" });
     if (debouncedFilter.trim()) params.set("q", debouncedFilter.trim());
     for (const [key, values] of Object.entries(catalogFilters)) if (values.length) params.set(key, values.join(","));
     for (const [key, value] of Object.entries(catalogToggles)) if (value) params.set(key, "true");
-    const path = `/api/master/${region}/catalogs/${type}?${params}`;
-    const apply = (data: CatalogResponse<any>) => setCatalogs((current) => ({ ...current, [type]: data }));
+    const path = `/api/master/${requestRegion}/catalogs/${type}?${params}`;
+    const apply = (data: CatalogResponse<any>, complete: boolean) => {
+      setCatalogs((current) => ({ ...current, [type]: data }));
+      setCatalogLoadStates((current) => ({ ...current, [type]: { status: complete ? "ready" : "loading", hasVisibleData: true } }));
+    };
     try {
-      const data = await loadCachedCatalog<CatalogResponse<any>>(path, { signal: controller.signal, onCached: apply });
-      if (!controller.signal.aborted) apply(data);
+      const data = await loadCachedCatalog<CatalogResponse<any>>(path, {
+        signal: controller.signal,
+        onCached: (cached) => {
+          if (!controller.signal.aborted && regionRef.current === requestRegion) apply(cached, false);
+        }
+      });
+      if (!controller.signal.aborted && regionRef.current === requestRegion) apply(data, true);
     } catch (error) {
-      if ((error as Error).name !== "AbortError") throw error;
+      if ((error as Error).name !== "AbortError" && !controller.signal.aborted && regionRef.current === requestRegion) {
+        setCatalogLoadStates((current) => ({ ...current, [type]: { status: "error", error: error instanceof Error ? error.message : String(error), hasVisibleData: Boolean(catalogs[type]) || current[type]?.hasVisibleData } }));
+      }
+    }
+  }
+
+  async function refreshBaseAndCatalog() {
+    setBaseRefreshing(true);
+    try {
+      await loadBase(region);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCatalogRefreshToken((current) => current + 1);
+      setBaseRefreshing(false);
     }
   }
 
@@ -1144,39 +1255,104 @@ export function App() {
     navigate(section === "home" ? "/" : `/section/${section}`);
   }
 
-  async function openSong(id: string) {
-    const detail = await apiGet<FullSong>(`/api/master/${region}/music/${id}/full`);
+  async function openSong(id: string, title = "歌曲详情") {
+    const requestId = ++detailRequestId.current;
+    const requestRegion = region;
+    setSelectedSong(null);
     setSelectedCard(null);
     setSelectedEvent(null);
     setSelectedCollection(null);
-    setSelectedSong(detail);
+    setPendingDetail({ kind: "song", id, title });
+    try {
+      const detail = await apiGet<FullSong>(`/api/master/${requestRegion}/music/${id}/full`);
+      if (requestId === detailRequestId.current && regionRef.current === requestRegion) {
+        setSelectedSong(detail);
+        setPendingDetail(null);
+      }
+    } catch (error) {
+      if (requestId === detailRequestId.current && regionRef.current === requestRegion) {
+        setPendingDetail({ kind: "song", id, title, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
   }
 
-  async function openCard(id: string, preserveParent = false) {
+  async function openCard(id: string, preserveParent = false, title = "卡牌详情") {
+    const requestId = ++detailRequestId.current;
+    const requestRegion = region;
     setSkillLevel(4);
-    const detail = await apiGet<FullCard>(`/api/master/${region}/cards/${id}/full`);
+    setSelectedCard(null);
     if (!preserveParent) {
       setSelectedSong(null);
       setSelectedEvent(null);
       setSelectedCollection(null);
     }
-    setSelectedCard(detail);
+    setPendingDetail({ kind: "card", id, title, preserveParent });
+    try {
+      const detail = await apiGet<FullCard>(`/api/master/${requestRegion}/cards/${id}/full`);
+      if (requestId === detailRequestId.current && regionRef.current === requestRegion) {
+        setSelectedCard(detail);
+        setPendingDetail(null);
+      }
+    } catch (error) {
+      if (requestId === detailRequestId.current && regionRef.current === requestRegion) {
+        setPendingDetail({ kind: "card", id, title, preserveParent, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
   }
 
-  async function openEvent(id: string) {
-    const detail = await apiGet<FullEvent>(`/api/master/${region}/events/${id}/full`);
+  async function openEvent(id: string, title = "活动详情") {
+    const requestId = ++detailRequestId.current;
+    const requestRegion = region;
     setSelectedSong(null);
     setSelectedCard(null);
     setSelectedCollection(null);
-    setSelectedEvent(detail);
+    setSelectedEvent(null);
+    setPendingDetail({ kind: "event", id, title });
+    try {
+      const detail = await apiGet<FullEvent>(`/api/master/${requestRegion}/events/${id}/full`);
+      if (requestId === detailRequestId.current && regionRef.current === requestRegion) {
+        setSelectedEvent(detail);
+        setPendingDetail(null);
+      }
+    } catch (error) {
+      if (requestId === detailRequestId.current && regionRef.current === requestRegion) {
+        setPendingDetail({ kind: "event", id, title, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
   }
 
-  async function openCollection(type: string, id: string) {
-    const detail = await apiGet<{ item: CollectionItem; assets: AssetInfo; relations?: { relatedCards?: Card[] } }>(`/api/master/${region}/${type}/${id}/full`);
+  async function openCollection(type: string, id: string, title = "资料详情") {
+    const requestId = ++detailRequestId.current;
+    const requestRegion = region;
     setSelectedSong(null);
     setSelectedCard(null);
     setSelectedEvent(null);
-    setSelectedCollection(detail);
+    setSelectedCollection(null);
+    setPendingDetail({ kind: "collection", id, title, collectionType: type });
+    try {
+      const detail = await apiGet<{ item: CollectionItem; assets: AssetInfo; relations?: { relatedCards?: Card[] } }>(`/api/master/${requestRegion}/${type}/${id}/full`);
+      if (requestId === detailRequestId.current && regionRef.current === requestRegion) {
+        setSelectedCollection(detail);
+        setPendingDetail(null);
+      }
+    } catch (error) {
+      if (requestId === detailRequestId.current && regionRef.current === requestRegion) {
+        setPendingDetail({ kind: "collection", id, title, collectionType: type, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+
+  function closePendingDetail() {
+    detailRequestId.current += 1;
+    setPendingDetail(null);
+  }
+
+  function retryPendingDetail() {
+    if (!pendingDetail) return;
+    if (pendingDetail.kind === "song") void openSong(pendingDetail.id, pendingDetail.title);
+    if (pendingDetail.kind === "card") void openCard(pendingDetail.id, pendingDetail.preserveParent, pendingDetail.title);
+    if (pendingDetail.kind === "event") void openEvent(pendingDetail.id, pendingDetail.title);
+    if (pendingDetail.kind === "collection" && pendingDetail.collectionType) void openCollection(pendingDetail.collectionType, pendingDetail.id, pendingDetail.title);
   }
 
   async function openRankingDetail(rank: number) {
@@ -1227,11 +1403,22 @@ export function App() {
   }
 
   async function calculateDeck() {
-    setDeckResult(await apiPost("/api/tools/deck-recommend", {
-      region,
-      eventId: event?.id === "none" ? undefined : event?.id,
-      ownedCardIds: deckOwnedIds.split(/[,\s]+/).filter(Boolean)
-    }));
+    const requestId = ++deckRequestId.current;
+    const requestRegion = region;
+    setDeckLoading(true);
+    setDeckError("");
+    try {
+      const result = await apiPost("/api/tools/deck-recommend", {
+        region: requestRegion,
+        eventId: event?.id === "none" ? undefined : event?.id,
+        ownedCardIds: deckOwnedIds.split(/[,\s]+/).filter(Boolean)
+      });
+      if (requestId === deckRequestId.current && regionRef.current === requestRegion) setDeckResult(result);
+    } catch (error) {
+      if (requestId === deckRequestId.current && regionRef.current === requestRegion) setDeckError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (requestId === deckRequestId.current && regionRef.current === requestRegion) setDeckLoading(false);
+    }
   }
 
   async function calculateMusicRecommend() {
@@ -1667,7 +1854,7 @@ export function App() {
     return (
       <section className="rank-page">
         <div className="rank-hero">
-          <div><span className="home-kicker">活动排名每 10 秒更新 · 当前查看 {boardLabel}</span><h2>{event?.name ?? "正在加载活动"}</h2><div className="rank-meta"><span>{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</span><span>{ranking.length} 条 T100 数据</span><span>{borders.length} 条{rankingBoard === "worldlink" ? "角色" : "总榜"}分数线</span><span>{sourceLabel}</span><span>更新 {formatDate(rankingUpdatedAt ?? undefined)}</span><span>{rankingRefreshing ? "刷新中" : `${rankingCountdown}s 后刷新`}</span></div></div>
+          <div><span className="home-kicker">活动排名每 10 秒更新 · 当前查看 {boardLabel}</span><h2>{event?.name ?? "正在加载活动"}</h2><div className="rank-meta"><span>{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</span><span>{ranking.length} 条 T100 数据</span><span>{borders.length} 条{rankingBoard === "worldlink" ? "角色" : "总榜"}分数线</span><span>{sourceLabel}</span><span>更新 {formatDate(rankingUpdatedAt ?? undefined)}</span><span>{rankingRefreshing ? "刷新中" : <><RankingCountdown nextRefreshAt={rankingNextRefreshAt} />s 后刷新</>}</span></div></div>
           <div className="rank-actions"><button type="button" onClick={() => loadRankings(region, rankingBoard, worldLinkCharacterId)} disabled={rankingRefreshing}><RefreshCw size={16} />{rankingRefreshing ? "刷新中" : "立即刷新"}</button><button type="button" className="secondary" onClick={() => goSection("forecast")}>预测线</button></div>
         </div>
         {showWorldLinkControls && <article className="panel wide ranking-board-controls" aria-label="榜单类型和角色选择">
@@ -1868,30 +2055,38 @@ export function App() {
   }
 
   function CatalogPage({ type }: { type: "events" | "songs" | "cards" | keyof typeof collectionMeta }) {
+    const catalogType = type === "events" || type === "songs" || type === "cards" ? type : collectionMeta[type].type;
+    const pageData = catalogs[catalogType];
+    const loadState = catalogLoadStates[catalogType] ?? { status: "idle" as const };
+    const viewState = resolveCatalogUiState({ status: loadState.status, itemCount: pageData?.items.length });
+    const hasActiveFilters = Object.values(catalogFilters).some((values) => values.length) || Object.values(catalogToggles).some(Boolean) || Boolean(filter.trim());
+    const bodyProps = {
+      viewState,
+      hasVisibleData: Boolean(pageData),
+      error: loadState.error,
+      hasActiveFilters,
+      onRetry: () => void loadCatalog(catalogType),
+      onClear: () => { setFilter(""); setPage(1); setCatalogFilters({}); setCatalogToggles({}); }
+    };
     if (type === "events") {
-      const pageData = catalogs.events ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
-      return <section className="panel wide"><div className="panel-heading"><div><h2>活动图鉴</h2><p>浏览历次活动、加成角色与相关资料。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索活动名称或 ID" /></div>{renderCatalogFilters(pageData)}<div className="catalog-grid event-grid">{pageData.items.map((eventItem: EventInfo) => { const candidates = imageCandidates(eventItem.assets); return <article key={`${region}:event:${eventItem.id}`} className="catalog-card event-card"><button type="button" className="catalog-card-main" onClick={() => openEvent(eventItem.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={eventItem.name} variant="event" /><strong>{eventItem.name}</strong><span>{eventItem.eventType ?? "活动"}{eventItem.eventUnit ? ` · ${eventItem.eventUnit}` : ""}</span><small>{formatDate(eventItem.startAt)} · ID {eventItem.id}</small></button><FavoriteButton compact type="event" region={region} targetId={eventItem.id} label={eventItem.name} /></article>; })}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h1>活动图鉴</h1><p>浏览历次活动、加成角色与相关资料。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索活动名称或 ID" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid event-grid">{pageData?.items.map((eventItem: EventInfo) => { const candidates = imageCandidates(eventItem.assets); return <article key={`${region}:event:${eventItem.id}`} className="catalog-card event-card"><button type="button" className="catalog-card-main" onClick={() => void openEvent(eventItem.id, eventItem.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={eventItem.name} variant="event" /><strong>{eventItem.name}</strong><span>{eventItem.eventType ?? "活动"}{eventItem.eventUnit ? ` · ${eventItem.eventUnit}` : ""}</span><small>{formatDate(eventItem.startAt)} · ID {eventItem.id}</small></button><FavoriteButton compact type="event" region={region} targetId={eventItem.id} label={eventItem.name} /></article>; })}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     if (type === "songs") {
-      const pageData = catalogs.songs ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
-      return <section className="panel wide"><div className="panel-heading"><div><h2>歌曲图鉴</h2><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索歌曲、ID、分类" /></div>{renderCatalogFilters(pageData)}<div className="catalog-grid songs">{pageData.items.map((song: Song, index: number) => <article key={`${region}:song:${song.id}`} className="catalog-card song-card"><button type="button" className="catalog-card-main" onClick={() => openSong(song.id)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span className="song-card-copy"><strong>{song.title}</strong><span>{song.unit} · ID {song.id}</span><small>{song.durationSeconds ? `时长 ${song.durationSeconds}s` : "时长待同步"}</small></span></button><FavoriteButton compact type="song" region={region} targetId={song.id} label={song.title} /></article>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h1>歌曲图鉴</h1><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索歌曲、ID、分类" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid songs">{pageData?.items.map((song: Song, index: number) => <article key={`${region}:song:${song.id}`} className="catalog-card song-card"><button type="button" className="catalog-card-main" onClick={() => void openSong(song.id, song.title)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span className="song-card-copy"><strong>{song.title}</strong><span>{song.unit} · ID {song.id}</span><small>{song.durationSeconds ? `时长 ${song.durationSeconds}s` : "时长待同步"}</small></span></button><FavoriteButton compact type="song" region={region} targetId={song.id} label={song.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     if (type === "cards") {
-      const pageData = catalogs.cards ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
-      return <section className="panel wide"><div className="panel-heading"><div><h2>卡牌图鉴</h2><p>浏览卡面、角色信息与各等级技能效果。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索角色、卡名、属性" /></div>{renderCatalogFilters(pageData)}<div className="catalog-grid cards">{pageData.items.map((card: Card, index: number) => <article key={`${region}:card:${card.id}`} className="catalog-card card-card"><button type="button" className="catalog-card-main" onClick={() => openCard(card.id)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates} label={card.title} variant="square" eager={index < 8} /><strong>{card.title}</strong><span>{card.character}</span><small>星级 {card.rarity} / {card.attribute} / ID {card.id}</small></button><FavoriteButton compact type="card" region={region} targetId={card.id} label={card.title} /></article>)}</div><Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} /></section>;
+      return <section className="panel wide"><div className="panel-heading"><div><h1>卡牌图鉴</h1><p>浏览卡面、角色信息与各等级技能效果。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索角色、卡名、属性" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid cards">{pageData?.items.map((card: Card, index: number) => <article key={`${region}:card:${card.id}`} className="catalog-card card-card"><button type="button" className="catalog-card-main" onClick={() => void openCard(card.id, false, card.title)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.normalThumbnailCandidates ?? card.assets?.imageCandidates} label={card.title} variant="square" eager={index < 8} /><strong>{card.title}</strong><span>{card.character}</span><small>星级 {card.rarity} / {card.attribute} / ID {card.id}</small></button><FavoriteButton compact type="card" region={region} targetId={card.id} label={card.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     const collectionType = collectionMeta[type].type;
-    const activeCollection = catalogs[collectionType];
-    const pageData = activeCollection ?? { items: [], page, pageSize, total: 0, totalPages: 1 };
     return (
       <section className="panel wide">
-        <div className="panel-heading"><div><h2>{collectionMeta[type].label}</h2><p>按名称、分类和 ID 浏览。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索名称、分类、ID" /></div>
-        {renderCatalogFilters(pageData)}
-        <div className={`catalog-grid collection-grid collection-grid-${collectionType}`}>{pageData.items.map((item: CollectionItem) => {
+        <div className="panel-heading"><div><h1>{collectionMeta[type].label}</h1><p>按名称、分类和 ID 浏览。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索名称、分类、ID" /></div>
+        {pageData && renderCatalogFilters(pageData)}
+        <CatalogBody {...bodyProps}><div className={`catalog-grid collection-grid collection-grid-${collectionType}`}>{pageData?.items.map((item: CollectionItem) => {
           const candidates = collectionImageCandidates(collectionType, item.assets);
-          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card collection-card collection-card-${collectionType}`}><button type="button" className="catalog-card-main" onClick={() => openCollection(collectionType, item.id)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : item.category ?? item.rarity ?? "详细资料"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
+          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card collection-card collection-card-${collectionType}`}><button type="button" className="catalog-card-main" onClick={() => void openCollection(collectionType, item.id, item.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : item.category ?? item.rarity ?? "详细资料"}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
         })}</div>
-        <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+        {pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody>
       </section>
     );
   }
@@ -2083,14 +2278,6 @@ export function App() {
     const filteredToolSongs = songQuery ? songs.filter((song) => `${song.title} ${song.id}`.toLowerCase().includes(songQuery)) : songs;
     const selectedToolSong = songs.find((song) => song.id === normalPlanForm.musicId);
     const songSelectionReady = toolSongsStatus === "ready" && !toolDataLoading && !toolDataError && songs.length > 0 && Boolean(selectedToolSong);
-    const Field = ({ label, unit, help, children }: { label: string; unit?: string; help: string; children: any }) => <label className="tool-field"><span className="tool-field-label">{label}{unit && <small>{unit}</small>}</span>{children}<small className="tool-field-help">{help}</small></label>;
-    const JsonDetails = ({ value }: { value: any }) => value ? <details className="tool-json-details"><summary>查看完整计算详情（JSON）</summary><pre className="json-preview">{JSON.stringify(value, null, 2)}</pre></details> : null;
-    function ResultWarnings({ result }: { result: any }) {
-      const missing = result?.missingFields ?? [];
-      const warnings = result?.warnings ?? [];
-      if (!missing.length && !warnings.length) return null;
-      return <div className="tool-notice"><strong>数据完整性提示</strong><span>缺失数据会使用估算或使部分结果不可用，详细字段保留在完整结果中。</span>{missing.length > 0 && <p>缺失：{missing.slice(0, 8).join(" / ")}</p>}{warnings.length > 0 && <p>警告：{warnings.slice(0, 8).join(" / ")}</p>}</div>;
-    }
     function PlanResultView({ result }: { result: any }) {
       if (!result) return null;
       const sections = result.sections ?? {};
@@ -2144,7 +2331,7 @@ export function App() {
              <span>风险提示</span>
              {(result.warnings ?? []).slice(0, 12).map((item: string) => <code key={item}>{item}</code>)}
            </div>
-           <JsonDetails value={result} />
+           <ToolJsonDetails value={result} />
          </article>
        );
      }
@@ -2157,7 +2344,7 @@ export function App() {
         {boundToolResult.tool === "music" && <RecommendationList items={result?.recommendations} type="music" />}
         {boundToolResult.tool === "area" && <RecommendationList items={result?.recommendations} type="area" />}
         {boundToolResult.tool === "mysekai" && <p className="empty-state">MySekai 计算完成，展开完整结果可查看所有字段。</p>}
-        <ResultWarnings result={result} /><JsonDetails value={result} /></section>;
+        <ToolResultWarnings result={result} /><ToolJsonDetails value={result} /></section>;
     }
     function RecommendationList({ items = [], type }: { items?: any[]; type: "music" | "area" }) {
       if (!items.length) return <p className="empty-state">当前没有可展示的候选，请查看数据完整性提示。</p>;
@@ -2193,16 +2380,16 @@ export function App() {
           {toolDataError && toolSongsStatus !== "error" && <div className="tool-data-state error"><span>完整工具数据加载失败：{toolDataError}</span><button type="button" className="secondary" onClick={() => ensureFullToolData().catch((error) => setMessage(error instanceof Error ? error.message : String(error)))}>重试加载</button></div>}
           {toolSongsStatus === "ready" && songs.length === 0 && <div className="tool-data-state"><span>当前区服暂无歌曲数据，暂不能进行普通活动规划或活动 PT 计算。</span><button type="button" className="secondary" onClick={() => ensureFullToolData(true).catch((error) => setMessage(error instanceof Error ? error.message : String(error)))}>重新检查</button></div>}
           <div className="tool-form-grid">
-            <Field label="目标活动 PT" unit="pt" help="活动页面右上角的目标总分，例如 1,000,000 PT。"><input type="number" min="0" value={normalPlanForm.targetPt} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, targetPt: event.target.value })} placeholder="例如 1000000" /></Field>
-            <Field label="当前活动 PT" unit="pt" help="活动页面当前已获得的累计 PT。"><input type="number" min="0" value={normalPlanForm.currentPt} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, currentPt: event.target.value })} placeholder="例如 250000" /></Field>
-            <Field label="剩余时间" unit="分钟" help="从现在到活动结束还能游玩的时间，例如 3 小时填 180。"><input type="number" min="0" value={normalPlanForm.remainingMinutes} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, remainingMinutes: event.target.value })} placeholder="例如 180" /></Field>
-            <Field label="每局消耗火量" help={`Live 开始前选择的火量；当前对应活动 PT x${boostRates[Number(normalPlanForm.boost)] ?? 1}。`}><select value={normalPlanForm.boost} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, boost: event.target.value })}>{boostRates.map((rate, fires) => <option key={fires} value={fires}>{fires} 火（PT x{rate}）</option>)}</select></Field>
-            <Field label="歌曲" help="必须明确选择准备周回的歌曲；可按歌名或 musicId 搜索，不会自动用曲库第一首代替。"><div className="song-picker"><input type="search" value={toolSongSearch} onChange={(event) => setToolSongSearch(event.target.value)} placeholder="搜索歌名或歌曲 ID" disabled={toolSongsStatus !== "ready" || songs.length === 0} /><select value={normalPlanForm.musicId} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, musicId: event.target.value })} disabled={toolSongsStatus !== "ready" || songs.length === 0}><option value="">{toolSongsStatus === "loading" || toolSongsStatus === "idle" ? "歌曲列表加载中…" : toolSongsStatus === "error" ? "歌曲列表加载失败" : songs.length === 0 ? "暂无歌曲" : filteredToolSongs.length === 0 ? "没有匹配的歌曲" : "请选择歌曲"}</option>{selectedToolSong && !filteredToolSongs.some((song) => song.id === selectedToolSong.id) && <option value={selectedToolSong.id}>{selectedToolSong.title}（ID {selectedToolSong.id}，当前选择）</option>}{filteredToolSongs.map((song) => <option key={song.id} value={song.id}>{song.title}（ID {song.id}）</option>)}</select><small>{toolSongsStatus === "ready" && songs.length > 0 ? `已加载 ${formatNumber(songs.length)} 首，当前筛选 ${formatNumber(filteredToolSongs.length)} 首。` : "歌曲加载完成后才能选择。"}</small></div></Field>
-            <Field label="难度" help="选择实际游玩的谱面难度。"><select value={normalPlanForm.difficulty} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, difficulty: event.target.value })}>{difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty.toUpperCase()}</option>)}</select></Field>
-            <Field label="Live 类型" help="多人/欢乐嘉年华会考虑队友得分与 Fever。"><select value={normalPlanForm.liveType} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, liveType: event.target.value })}>{liveTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
-            <Field label="预计结算分数" unit="分" help="可留空。填最近相同队伍、歌曲和模式的结算分数；留空时由卡组或默认值估算。"><input type="number" min="0" value={normalPlanForm.baseScore} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, baseScore: event.target.value })} placeholder="可留空，例如 2000000" /></Field>
-            <Field label="活动加成" unit="%" help="可留空。编成页面显示 621% 就填 621；绑定资产时可自动推导。"><input type="number" min="0" value={normalPlanForm.eventBonusPercent} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, eventBonusPercent: event.target.value })} placeholder="可留空，例如 621" /></Field>
-            <Field label="持有卡牌 ID" help="公开模式用于推荐卡组，以逗号或空格分隔；登录后建议使用绑定 UID。"><textarea value={normalPlanForm.ownedCardIds} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, ownedCardIds: event.target.value })} placeholder="例如 1, 2, 3, 4, 5" /></Field>
+            <ToolField label="目标活动 PT" unit="pt" help="活动页面右上角的目标总分，例如 1,000,000 PT。"><input type="number" min="0" value={normalPlanForm.targetPt} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, targetPt: event.target.value })} placeholder="例如 1000000" /></ToolField>
+            <ToolField label="当前活动 PT" unit="pt" help="活动页面当前已获得的累计 PT。"><input type="number" min="0" value={normalPlanForm.currentPt} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, currentPt: event.target.value })} placeholder="例如 250000" /></ToolField>
+            <ToolField label="剩余时间" unit="分钟" help="从现在到活动结束还能游玩的时间，例如 3 小时填 180。"><input type="number" min="0" value={normalPlanForm.remainingMinutes} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, remainingMinutes: event.target.value })} placeholder="例如 180" /></ToolField>
+            <ToolField label="每局消耗火量" help={`Live 开始前选择的火量；当前对应活动 PT x${boostRates[Number(normalPlanForm.boost)] ?? 1}。`}><select value={normalPlanForm.boost} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, boost: event.target.value })}>{boostRates.map((rate, fires) => <option key={fires} value={fires}>{fires} 火（PT x{rate}）</option>)}</select></ToolField>
+            <ToolField label="歌曲" help="必须明确选择准备周回的歌曲；可按歌名或 musicId 搜索，不会自动用曲库第一首代替。"><div className="song-picker"><input type="search" value={toolSongSearch} onChange={(event) => setToolSongSearch(event.target.value)} placeholder="搜索歌名或歌曲 ID" disabled={toolSongsStatus !== "ready" || songs.length === 0} /><select value={normalPlanForm.musicId} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, musicId: event.target.value })} disabled={toolSongsStatus !== "ready" || songs.length === 0}><option value="">{toolSongsStatus === "loading" || toolSongsStatus === "idle" ? "歌曲列表加载中…" : toolSongsStatus === "error" ? "歌曲列表加载失败" : songs.length === 0 ? "暂无歌曲" : filteredToolSongs.length === 0 ? "没有匹配的歌曲" : "请选择歌曲"}</option>{selectedToolSong && !filteredToolSongs.some((song) => song.id === selectedToolSong.id) && <option value={selectedToolSong.id}>{selectedToolSong.title}（ID {selectedToolSong.id}，当前选择）</option>}{filteredToolSongs.map((song) => <option key={song.id} value={song.id}>{song.title}（ID {song.id}）</option>)}</select><small>{toolSongsStatus === "ready" && songs.length > 0 ? `已加载 ${formatNumber(songs.length)} 首，当前筛选 ${formatNumber(filteredToolSongs.length)} 首。` : "歌曲加载完成后才能选择。"}</small></div></ToolField>
+            <ToolField label="难度" help="选择实际游玩的谱面难度。"><select value={normalPlanForm.difficulty} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, difficulty: event.target.value })}>{difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty.toUpperCase()}</option>)}</select></ToolField>
+            <ToolField label="Live 类型" help="多人/欢乐嘉年华会考虑队友得分与 Fever。"><select value={normalPlanForm.liveType} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, liveType: event.target.value })}>{liveTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></ToolField>
+            <ToolField label="预计结算分数" unit="分" help="可留空。填最近相同队伍、歌曲和模式的结算分数；留空时由卡组或默认值估算。"><input type="number" min="0" value={normalPlanForm.baseScore} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, baseScore: event.target.value })} placeholder="可留空，例如 2000000" /></ToolField>
+            <ToolField label="活动加成" unit="%" help="可留空。编成页面显示 621% 就填 621；绑定资产时可自动推导。"><input type="number" min="0" value={normalPlanForm.eventBonusPercent} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, eventBonusPercent: event.target.value })} placeholder="可留空，例如 621" /></ToolField>
+            <ToolField label="持有卡牌 ID" help="公开模式用于推荐卡组，以逗号或空格分隔；登录后建议使用绑定 UID。"><textarea value={normalPlanForm.ownedCardIds} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, ownedCardIds: event.target.value })} placeholder="例如 1, 2, 3, 4, 5" /></ToolField>
           </div>
           <div className="button-row">
             <button type="button" disabled={!songSelectionReady} onClick={calculatePublicNormalPlan}><Wand2 size={16} />使用手动数据规划</button>
@@ -2212,21 +2399,27 @@ export function App() {
         </article>
         <PlanResultView result={plan} />
         <article className="panel tool-card-panel"><div className="panel-heading compact-heading"><div><h2>周回 / 控分</h2><p>已有可靠的单局 PT 时，计算还需局数和每小时进度要求。</p></div></div><div className="tool-form-grid compact">
-          <Field label="当前活动 PT" unit="pt" help="活动页面当前累计 PT。"><input type="number" min="0" value={controlForm.currentPt} onChange={(event) => setControlForm({ ...controlForm, currentPt: event.target.value })} /></Field>
-          <Field label="目标活动 PT" unit="pt" help="希望最终达到的累计 PT。"><input type="number" min="0" value={controlForm.targetPt} onChange={(event) => setControlForm({ ...controlForm, targetPt: event.target.value })} /></Field>
-          <Field label="剩余时间" unit="分钟" help="例如 3 小时填 180。"><input type="number" min="0" value={controlForm.remainingMinutes} onChange={(event) => setControlForm({ ...controlForm, remainingMinutes: event.target.value })} /></Field>
-          <Field label="单局活动 PT" unit="pt/局" help="填一局结算画面的活动 PT；不确定时先用上方规划估算。"><input type="number" min="0" value={controlForm.ptPerRun} onChange={(event) => setControlForm({ ...controlForm, ptPerRun: event.target.value })} placeholder="例如 55875" /></Field>
-          <Field label="最多可打局数" unit="局" help="按体力、时间或预算估算的局数上限。"><input type="number" min="0" value={controlForm.availableRuns} onChange={(event) => setControlForm({ ...controlForm, availableRuns: event.target.value })} /></Field>
-        </div><button type="button" onClick={calculateControl}><Check size={16} />计算目标路径</button>{controlResult && <><div className="tool-result-metrics"><div><span>还差 PT</span><strong>{formatNumber(controlResult.remainingPt)}</strong></div><div><span>所需局数</span><strong>{formatNumber(controlResult.requiredRuns)} 局</strong></div><div><span>每小时需打</span><strong>{typeof controlResult.requiredRunsPerHour === "number" ? controlResult.requiredRunsPerHour.toFixed(1) : "-"} 局</strong></div><div><span>计划状态</span><strong>{controlResult.feasible ? "可行" : "需调整"}</strong></div></div><ResultWarnings result={controlResult} /><JsonDetails value={controlResult} /></>}</article>
-        <article className="panel tool-card-panel"><div className="panel-heading compact-heading"><div><h2>组卡推荐</h2><p>卡牌 ID 可在卡牌图鉴详情中查看，公开模式只使用手动填写的持有卡。</p></div></div><Field label="持有卡牌 ID" help="以逗号或空格分隔，只填写真正持有的卡。"><textarea value={deckOwnedIds} onChange={(event) => setDeckOwnedIds(event.target.value)} placeholder="例如 1, 2, 109, 325" /></Field><button type="button" onClick={calculateDeck}><Wand2 size={16} />推荐卡组</button>{deckResult && <><p className="empty-state">推荐已生成；若候选为空，请查看缺失字段。</p><ResultWarnings result={deckResult} /><JsonDetails value={deckResult} /></>}</article>
+          <ToolField label="当前活动 PT" unit="pt" help="活动页面当前累计 PT。"><input type="number" min="0" value={controlForm.currentPt} onChange={(event) => setControlForm({ ...controlForm, currentPt: event.target.value })} /></ToolField>
+          <ToolField label="目标活动 PT" unit="pt" help="希望最终达到的累计 PT。"><input type="number" min="0" value={controlForm.targetPt} onChange={(event) => setControlForm({ ...controlForm, targetPt: event.target.value })} /></ToolField>
+          <ToolField label="剩余时间" unit="分钟" help="例如 3 小时填 180。"><input type="number" min="0" value={controlForm.remainingMinutes} onChange={(event) => setControlForm({ ...controlForm, remainingMinutes: event.target.value })} /></ToolField>
+          <ToolField label="单局活动 PT" unit="pt/局" help="填一局结算画面的活动 PT；不确定时先用上方规划估算。"><input type="number" min="0" value={controlForm.ptPerRun} onChange={(event) => setControlForm({ ...controlForm, ptPerRun: event.target.value })} placeholder="例如 55875" /></ToolField>
+          <ToolField label="最多可打局数" unit="局" help="按体力、时间或预算估算的局数上限。"><input type="number" min="0" value={controlForm.availableRuns} onChange={(event) => setControlForm({ ...controlForm, availableRuns: event.target.value })} /></ToolField>
+        </div><button type="button" onClick={calculateControl}><Check size={16} />计算目标路径</button>{controlResult && <><div className="tool-result-metrics"><div><span>还差 PT</span><strong>{formatNumber(controlResult.remainingPt)}</strong></div><div><span>所需局数</span><strong>{formatNumber(controlResult.requiredRuns)} 局</strong></div><div><span>每小时需打</span><strong>{typeof controlResult.requiredRunsPerHour === "number" ? controlResult.requiredRunsPerHour.toFixed(1) : "-"} 局</strong></div><div><span>计划状态</span><strong>{controlResult.feasible ? "可行" : "需调整"}</strong></div></div><ToolResultWarnings result={controlResult} /><ToolJsonDetails value={controlResult} /></>}</article>
+        <article className="panel tool-card-panel">
+          <div className="panel-heading compact-heading"><div><h2>组卡推荐</h2><p>卡牌 ID 可在卡牌图鉴详情中查看，公开模式只使用手动填写的持有卡。</p></div></div>
+          <ToolField label="持有卡牌 ID" help="以逗号或空格分隔，只填写真正持有的卡。"><textarea value={deckOwnedIds} onChange={(event) => setDeckOwnedIds(event.target.value)} placeholder="例如 1, 2, 109, 325" /></ToolField>
+          <button type="button" onClick={calculateDeck} disabled={deckLoading}><Wand2 size={16} />{deckLoading ? "正在推荐…" : "推荐卡组"}</button>
+          {deckError && <div className="catalog-feedback error" role="alert"><strong>组卡推荐失败</strong><span>{deckError}</span><button type="button" className="secondary" onClick={calculateDeck}>重试</button></div>}
+          {deckResult && <><DeckRecommendationPreview result={deckResult} /><ToolResultWarnings result={deckResult} /><ToolJsonDetails value={deckResult} /></>}
+        </article>
         <article className="panel wide tool-card-panel"><div className="panel-heading compact-heading"><div><h2>周回歌曲推荐</h2><p>按共享活动 PT 公式计算候选歌曲，再按每分钟 PT 排序。</p></div></div><div className="tool-form-grid">
-          <Field label="目标 / 当前 PT" help="用于估算每首歌到目标还需多少局。"><div className="inline-pair"><input type="number" min="0" value={musicRecommendForm.targetPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, targetPt: event.target.value })} placeholder="目标 PT" /><input type="number" min="0" value={musicRecommendForm.currentPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, currentPt: event.target.value })} placeholder="当前 PT" /></div></Field>
-          <Field label="活动加成" unit="%" help="编成页面显示 621% 就填 621。"><input type="number" min="0" value={musicRecommendForm.eventBonusPercent} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, eventBonusPercent: event.target.value })} /></Field>
-          <Field label="预计结算分数" unit="分" help="填最近同队伍、同模式的结算分数；可留空。"><input type="number" min="0" value={musicRecommendForm.baseScore} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, baseScore: event.target.value })} /></Field>
-          <Field label="Live 类型 / 火量" help="火量按页面上方倍率表计算。"><div className="inline-pair"><select value={musicRecommendForm.liveType} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, liveType: event.target.value })}>{liveTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select value={musicRecommendForm.boost} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, boost: event.target.value })}>{boostRates.map((rate, fires) => <option key={fires} value={fires}>{fires} 火（x{rate}）</option>)}</select></div></Field>
-          <Field label="难度 / 最长时长" help="只比较指定难度且不超过该时长的谱面。"><div className="inline-pair"><select value={musicRecommendForm.preferredDifficulty} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, preferredDifficulty: event.target.value })}>{difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty.toUpperCase()}</option>)}</select><input type="number" min="1" value={musicRecommendForm.maxDurationSeconds} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, maxDurationSeconds: event.target.value })} placeholder="最长秒数" /></div></Field>
-        </div><button type="button" onClick={calculateMusicRecommend}><Music size={16} />计算歌曲效率</button>{musicRecommendResult && <><RecommendationList items={musicRecommendResult.recommendations} type="music" /><ResultWarnings result={musicRecommendResult} /><JsonDetails value={musicRecommendResult} /></>}</article>
-        <article className="panel wide tool-card-panel"><div className="panel-heading compact-heading"><div><h2>区域道具升级建议</h2><p>对照 Moesekai 区域道具公式，比较目标卡组升级前后的综合力变化；成本数据缺失时明确标记。</p></div></div><div className="tool-form-grid"><Field label="目标卡组 ID" help="填写正在使用的 1–5 张卡牌 ID；绑定资产可结合当前区域道具等级与素材。"><textarea value={areaRecommendForm.cardIds} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, cardIds: event.target.value })} placeholder="例如 101, 205, 309, 410, 512" /></Field><Field label="排序方式" help="选择更看重金币效率、绝对综合力提升或当前材料是否足够。"><select value={areaRecommendForm.sortBy} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, sortBy: event.target.value })}><option value="coin-efficiency">金币效率优先</option><option value="power-gain">综合力提升优先</option><option value="affordable">当前可升级优先</option></select></Field><label className="tool-check-field"><input type="checkbox" checked={areaRecommendForm.includeUnaffordable} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, includeUnaffordable: event.target.checked })} /><span><strong>显示材料不足的项目</strong><small>材料数据缺失时仍会保留候选并标明成本未知。</small></span></label></div><div className="button-row"><button type="button" onClick={calculateAreaRecommend}><Package size={16} />用手动卡组生成建议</button><button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("area")}>使用绑定 UID 资产</button></div>{areaRecommendResult && <><RecommendationList items={areaRecommendResult.recommendations} type="area" /><ResultWarnings result={areaRecommendResult} /><JsonDetails value={areaRecommendResult} /></>}</article>
+          <ToolField label="目标 / 当前 PT" help="用于估算每首歌到目标还需多少局。"><div className="inline-pair"><input type="number" min="0" value={musicRecommendForm.targetPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, targetPt: event.target.value })} placeholder="目标 PT" /><input type="number" min="0" value={musicRecommendForm.currentPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, currentPt: event.target.value })} placeholder="当前 PT" /></div></ToolField>
+          <ToolField label="活动加成" unit="%" help="编成页面显示 621% 就填 621。"><input type="number" min="0" value={musicRecommendForm.eventBonusPercent} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, eventBonusPercent: event.target.value })} /></ToolField>
+          <ToolField label="预计结算分数" unit="分" help="填最近同队伍、同模式的结算分数；可留空。"><input type="number" min="0" value={musicRecommendForm.baseScore} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, baseScore: event.target.value })} /></ToolField>
+          <ToolField label="Live 类型 / 火量" help="火量按页面上方倍率表计算。"><div className="inline-pair"><select value={musicRecommendForm.liveType} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, liveType: event.target.value })}>{liveTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select value={musicRecommendForm.boost} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, boost: event.target.value })}>{boostRates.map((rate, fires) => <option key={fires} value={fires}>{fires} 火（x{rate}）</option>)}</select></div></ToolField>
+          <ToolField label="难度 / 最长时长" help="只比较指定难度且不超过该时长的谱面。"><div className="inline-pair"><select value={musicRecommendForm.preferredDifficulty} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, preferredDifficulty: event.target.value })}>{difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty.toUpperCase()}</option>)}</select><input type="number" min="1" value={musicRecommendForm.maxDurationSeconds} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, maxDurationSeconds: event.target.value })} placeholder="最长秒数" /></div></ToolField>
+        </div><button type="button" onClick={calculateMusicRecommend}><Music size={16} />计算歌曲效率</button>{musicRecommendResult && <><RecommendationList items={musicRecommendResult.recommendations} type="music" /><ToolResultWarnings result={musicRecommendResult} /><ToolJsonDetails value={musicRecommendResult} /></>}</article>
+        <article className="panel wide tool-card-panel"><div className="panel-heading compact-heading"><div><h2>区域道具升级建议</h2><p>对照 Moesekai 区域道具公式，比较目标卡组升级前后的综合力变化；成本数据缺失时明确标记。</p></div></div><div className="tool-form-grid"><ToolField label="目标卡组 ID" help="填写正在使用的 1–5 张卡牌 ID；绑定资产可结合当前区域道具等级与素材。"><textarea value={areaRecommendForm.cardIds} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, cardIds: event.target.value })} placeholder="例如 101, 205, 309, 410, 512" /></ToolField><ToolField label="排序方式" help="选择更看重金币效率、绝对综合力提升或当前材料是否足够。"><select value={areaRecommendForm.sortBy} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, sortBy: event.target.value })}><option value="coin-efficiency">金币效率优先</option><option value="power-gain">综合力提升优先</option><option value="affordable">当前可升级优先</option></select></ToolField><label className="tool-check-field"><input type="checkbox" checked={areaRecommendForm.includeUnaffordable} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, includeUnaffordable: event.target.checked })} /><span><strong>显示材料不足的项目</strong><small>材料数据缺失时仍会保留候选并标明成本未知。</small></span></label></div><div className="button-row"><button type="button" onClick={calculateAreaRecommend}><Package size={16} />用手动卡组生成建议</button><button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("area")}>使用绑定 UID 资产</button></div>{areaRecommendResult && <><RecommendationList items={areaRecommendResult.recommendations} type="area" /><ToolResultWarnings result={areaRecommendResult} /><ToolJsonDetails value={areaRecommendResult} /></>}</article>
       </section>
     );
   }
@@ -2423,16 +2616,14 @@ export function App() {
           ) : <p className="empty-state">输入卡牌和 MySekai 资产后生成分项贡献。</p>}
         </article>
         {mysekaiDetail && (
-          <div className="modal-backdrop content-detail-backdrop" role="presentation" onMouseDown={() => setMysekaiDetail(null)}>
-            <article className="content-detail-modal mysekai-detail-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+          <ModalDialog label={mysekaiDetail.item?.name ?? "MySekai 详情"} onClose={() => setMysekaiDetail(null)} backdropClassName="modal-backdrop content-detail-backdrop" className="content-detail-modal mysekai-detail-modal">
               <div className="panel-heading"><div><h2>{mysekaiDetail.item?.name}</h2><p>{mysekaiDetail.item?.category ?? mysekaiDetail.item?.kind}</p></div><button type="button" className="icon-button" aria-label="关闭详情" onClick={() => setMysekaiDetail(null)}>×</button></div>
               <div className="mysekai-detail-layout">
                 <ArtImage src={mysekaiDetail.item?.imageUrl} srcCandidates={asArray(mysekaiDetail.item?.imageCandidates)} label={mysekaiDetail.item?.name ?? "MySekai"} />
                 <div><p>{mysekaiDetail.item?.description ?? "暂无说明"}</p><small>ID {mysekaiDetail.item?.id}</small></div>
               </div>
               {asArray(mysekaiDetail.materialCosts).length > 0 && <section><h3>制作素材</h3><div className="mysekai-cost-grid">{asArray(mysekaiDetail.materialCosts).map((cost: any, index: number) => <div key={`${cost.id ?? index}`}><ArtImage src={cost.material?.imageUrl} srcCandidates={asArray(cost.material?.imageCandidates)} label={cost.material?.name ?? "素材"} /><strong>{cost.material?.name ?? cost.mysekaiMaterialId}</strong><span>× {cost.quantity}</span></div>)}</div></section>}
-            </article>
-          </div>
+          </ModalDialog>
         )}
       </section>
     );
@@ -2489,8 +2680,7 @@ export function App() {
           {items.length === 0 && <p className="empty-state">当前区服暂时没有可展示的公告。</p>}
         </article>
         {selectedInformation && (
-          <div className="modal-backdrop content-detail-backdrop" role="presentation" onMouseDown={closeInformation}>
-            <article className="content-detail-modal announcement-detail-modal" role="dialog" aria-modal="true" aria-label={selectedInformation.title} onMouseDown={(event) => event.stopPropagation()}>
+          <ModalDialog label={selectedInformation.title} onClose={closeInformation} backdropClassName="modal-backdrop content-detail-backdrop" className="content-detail-modal announcement-detail-modal">
               <div className="panel-heading">
                 <div><h2>{selectedInformation.title}</h2><p>{contentDate(selectedInformation.startAt)}</p></div>
                 <button type="button" className="icon-button" aria-label="关闭公告详情" onClick={closeInformation}>×</button>
@@ -2512,8 +2702,7 @@ export function App() {
                 <p className="empty-state">该公告正文暂不可用，请尝试外部打开。</p>
               ) : <p className="empty-state">该公告需要使用外部应用或新窗口打开。</p>}
               {selectedInformation.detailUrl && <a className="text-link" href={selectedInformation.detailUrl} target="_blank" rel="noreferrer">在新窗口打开</a>}
-            </article>
-          </div>
+          </ModalDialog>
         )}
       </section>
     );
@@ -2568,8 +2757,7 @@ export function App() {
           {!filteredItems.length && <p className="empty-state">当前筛选没有可展示的兑换项。</p>}
         </article>
         {exchangeDetail && (
-          <div className="modal-backdrop content-detail-backdrop" role="presentation" onMouseDown={closeExchange}>
-            <article className="content-detail-modal exchange-detail-modal" role="dialog" aria-modal="true" aria-label={exchangeDetail.item?.name ?? "兑换项详情"} onMouseDown={(event) => event.stopPropagation()}>
+          <ModalDialog label={exchangeDetail.item?.name ?? "兑换项详情"} onClose={closeExchange} backdropClassName="modal-backdrop content-detail-backdrop" className="content-detail-modal exchange-detail-modal">
               <div className="panel-heading"><div><h2>{exchangeDetail.item?.name}</h2><p>{exchangeDetail.item?.summaryName ?? `ID ${exchangeDetail.item?.id}`}</p></div><button type="button" className="icon-button" aria-label="关闭兑换项详情" onClick={closeExchange}>×</button></div>
               {exchangeDetail.loading ? <p className="empty-state">正在加载兑换项详情...</p> : exchangeDetail.error ? <p className="warning-text">{exchangeDetail.error}</p> : (
                 <>
@@ -2578,8 +2766,7 @@ export function App() {
                   <section><h3>兑换成本</h3><div className="exchange-detail-resources">{asArray(exchangeDetail.item?.costs).map((cost: any) => <div key={`${cost.costGroupId}:${cost.seq}:${cost.resourceType}`}><ExchangeResourceIcon resource={cost} /><div><strong>{cost.name}</strong><span>× {cost.quantity}</span></div></div>)}</div></section>
                 </>
               )}
-            </article>
-          </div>
+          </ModalDialog>
         )}
       </section>
     );
@@ -2973,38 +3160,43 @@ export function App() {
     </section>;
   }
   function LegacySections() {
-    if (activeSection === "home") return <HomePage />;
-    if (activeSection === "currentEvent") return <RankingPage />;
-    if (activeSection === "forecast") return <ForecastPage />;
-    if (activeSection === "profile") return <ProfilePage />;
+    if (activeSection === "home") return HomePage();
+    if (activeSection === "currentEvent") return RankingPage();
+    if (activeSection === "forecast") return ForecastPage();
+    if (activeSection === "profile") return ProfilePage();
     if (activeSection === "historyEvents") return CatalogPage({ type: "events" });
     if (activeSection === "songs" || activeSection === "cards" || activeSection in collectionMeta) return CatalogPage({ type: activeSection as any });
-    if (activeSection === "tools") return <ToolsPage />;
-    if (activeSection === "deckCompare") return <DeckComparePage />;
-    if (activeSection === "share") return <SharePage />;
+    if (activeSection === "tools") return ToolsPage();
+    if (activeSection === "deckCompare") return DeckComparePage();
+    if (activeSection === "share") return SharePage();
     if (activeSection === "information") return InformationPage({ data: contentData.information });
     if (activeSection === "mysekai") return MysekaiPage();
     if (activeSection === "exchanges") return ExchangePage({ data: contentData.exchanges });
     if (activeSection === "missions") {
       return <StatefulRenderBoundary key="missions" render={() => MissionPage({ data: contentData.missions })} />;
     }
-    if (["virtualLives", "live2d"].includes(activeSection)) return <ContentPage section={activeSection as any} />;
+    if (["virtualLives", "live2d"].includes(activeSection)) return ContentPage({ section: activeSection as any });
     if (activeSection === "stories") return null;
-    if (activeSection === "about") return <AboutPage />;
-    return <HomePage />;
+    if (activeSection === "about") return AboutPage();
+    return HomePage();
   }
 
   return (
     <main className="shell">
       <aside className="sidebar">
         <Link className="brand" to="/">Project Sekai 工具台</Link>
-        <nav>
+        <div className="mobile-nav-bar">
+          <button type="button" className="secondary mobile-nav-toggle" aria-expanded={mobileNavOpen} aria-controls="main-navigation" onClick={() => setMobileNavOpen((open) => !open)}>菜单</button>
+          <strong className="mobile-current-page">{sectionTitle()}</strong>
+          <select aria-label="选择区服" value={region} onChange={(event) => changeRegion(event.target.value)}>{regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        </div>
+        <nav id="main-navigation" className={mobileNavOpen ? "mobile-open" : ""}>
           {navGroups.map((group) => (
             <div className="nav-group" key={group.title}>
               <span className="nav-group-title">{group.title}</span>
               {group.items.map((item) => {
                 const Icon = item.icon;
-                return <NavLink key={item.id} to={item.id === "home" ? "/" : `/section/${item.id}`} className={({ isActive }) => `nav-item ${isActive || activeSection === item.id ? "active" : ""}`}><Icon size={18} />{item.label}</NavLink>;
+                return <NavLink key={item.id} to={item.id === "home" ? "/" : `/section/${item.id}`} onClick={() => setMobileNavOpen(false)} className={({ isActive }) => `nav-item ${isActive || activeSection === item.id ? "active" : ""}`}><Icon size={18} />{item.label}</NavLink>;
               })}
             </div>
           ))}
@@ -3012,13 +3204,13 @@ export function App() {
             <span className="nav-group-title">账号</span>
             {auth.isAuthenticated ? (
               <>
-                <NavLink to="/me" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><UserRound size={18} />个人信息管理</NavLink>
-                <NavLink to="/me/favorites" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><Star size={18} />我的收藏</NavLink>
+                <NavLink to="/me" onClick={() => setMobileNavOpen(false)} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><UserRound size={18} />个人信息管理</NavLink>
+                <NavLink to="/me/favorites" onClick={() => setMobileNavOpen(false)} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><Star size={18} />我的收藏</NavLink>
               </>
             ) : (
               <>
-                <NavLink to="/login" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><LogIn size={18} />登录</NavLink>
-                <NavLink to="/register" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><BadgePlus size={18} />注册</NavLink>
+                <NavLink to="/login" onClick={() => setMobileNavOpen(false)} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><LogIn size={18} />登录</NavLink>
+                <NavLink to="/register" onClick={() => setMobileNavOpen(false)} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}><BadgePlus size={18} />注册</NavLink>
               </>
             )}
           </div>
@@ -3027,8 +3219,8 @@ export function App() {
 
       <section className="content">
         <header className="topbar">
-          <div><h1>{sectionTitle()}</h1><p>{location.pathname.startsWith("/me") ? auth.message : message}</p></div>
-          <div className="top-actions"><select value={region} onChange={(event) => changeRegion(event.target.value)}>{regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" onClick={() => loadBase(region)}><RefreshCw size={16} />刷新</button></div>
+          <div className="topbar-status" aria-live="polite">{(location.pathname.startsWith("/me") ? auth.message : (message === "准备就绪" || message === "基础数据已就绪，图鉴将在打开时加载" ? "" : message)) && <p>{location.pathname.startsWith("/me") ? auth.message : message}</p>}</div>
+          <div className="top-actions"><select value={region} onChange={(event) => changeRegion(event.target.value)}>{regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" onClick={() => void refreshBaseAndCatalog()} disabled={baseRefreshing}><RefreshCw size={16} />{baseRefreshing ? "刷新中" : "刷新"}</button></div>
         </header>
 
         <div className="route-content">
@@ -3110,7 +3302,13 @@ export function App() {
           {selectedCollection.item.type === "costumes" && <section className="costume-detail-grid"><div><h3>服装信息</h3><p>部件：{selectedCollection.item.partTypes?.join(" / ") || "缺失"}</p><p>来源：{selectedCollection.item.source ?? "未知"} / 稀有度：{selectedCollection.item.rarity ?? "未知"}</p><p>性别：{selectedCollection.item.gender ?? "未知"}{selectedCollection.item.designer ? ` / 设计：${selectedCollection.item.designer}` : ""}</p><p>适用角色：{selectedCollection.item.characterIds?.join("、") || "未提供"}</p></div><div><h3>颜色与部件</h3>{Object.entries(selectedCollection.item.parts ?? {}).map(([partType, variants]) => <div key={partType} className="costume-part"><strong>{partType}</strong><span>{variants.map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}{(selectedCollection.item.extraParts ?? []).map((part, index) => <div key={`${part.characterId}-${part.partType}-${index}`} className="costume-part"><strong>{part.partType ?? "extra"} / 角色 {part.characterId ?? "-"}</strong><span>{(part.variants ?? []).map((variant) => variant.colorName || `Color ${variant.colorId ?? "-"}`).join("、")}</span></div>)}</div></section>}
           <section className="related-card-grid">{(selectedCollection.relations?.relatedCards ?? []).slice(0, 30).map((card) => renderRelatedCardTile(card, `${region}:collection-card:${card.id}`))}</section>
         </DetailDrawer>
-      )}    </main>
+      )}
+      {pendingDetail && (
+        <DetailDrawer title={pendingDetail.title} onClose={closePendingDetail} elevated>
+          {pendingDetail.error ? <div className="detail-request-state error" role="alert"><strong>详情加载失败</strong><span>{pendingDetail.error}</span><button type="button" onClick={retryPendingDetail}><RefreshCw size={16} />重试</button></div> : <div className="detail-request-state loading" role="status"><strong>正在加载详情</strong><span>正在获取当前区服的完整资料。</span></div>}
+        </DetailDrawer>
+      )}
+    </main>
   );
 }
 

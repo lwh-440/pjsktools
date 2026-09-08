@@ -420,6 +420,10 @@ select {
   margin-bottom: 24px;
 }
 
+.mobile-nav-bar {
+  display: none;
+}
+
 nav {
   display: grid;
   gap: 14px;
@@ -490,11 +494,35 @@ nav {
 }
 
 .topbar h1,
+.panel h1,
 .panel h2,
 .panel h3,
 .topbar p,
 .panel p {
   margin-top: 0;
+}
+
+.topbar-status {
+  min-width: 0;
+}
+
+.topbar-status p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-actions select {
+  width: auto;
+  min-width: 104px;
+  min-height: 36px;
+  padding: 6px 9px;
+}
+
+.top-actions button {
+  min-height: 36px;
+  padding: 7px 10px;
 }
 
 .topbar h1 {
@@ -1187,6 +1215,68 @@ small {
   color: #2f6f88;
   font-weight: 700;
 }
+
+.deck-recommendation-preview {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.deck-recommendation-preview h3 {
+  margin: 0;
+}
+
+.deck-recommendation-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.deck-recommendation-card {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dce6ef;
+  border-radius: 9px;
+  background: #fbfdff;
+}
+
+.deck-recommendation-card .art-frame,
+.deck-recommendation-card .art-image,
+.deck-recommendation-card .art-fallback {
+  width: 64px;
+  height: 64px;
+}
+
+.deck-recommendation-card > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.deck-recommendation-card strong,
+.deck-recommendation-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deck-recommendation-card dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 3px 0 0;
+}
+
+.deck-recommendation-card dl div {
+  display: inline-flex;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.deck-recommendation-card dt { color: #607080; }
+.deck-recommendation-card dd { margin: 0; font-weight: 800; }
 
 .normal-plan-grid {
   display: grid;
@@ -2627,6 +2717,48 @@ small {
   margin: 0;
   color: #607080;
   line-height: 1.6;
+}
+
+.catalog-feedback,
+.detail-request-state {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+  min-height: 132px;
+  padding: 24px;
+  border: 1px solid #d7e3eb;
+  border-radius: 10px;
+  background: #f8fbfd;
+  color: #536678;
+}
+
+.catalog-feedback strong,
+.detail-request-state strong { color: #1c2430; }
+.catalog-feedback.error,
+.detail-request-state.error { border-color: #e6a5a5; background: #fff4f4; color: #8b3737; }
+.catalog-feedback.loading,
+.detail-request-state.loading { background: linear-gradient(110deg, #f8fbfd 20%, #eef6f8 45%, #f8fbfd 70%); }
+.catalog-feedback.empty { justify-items: center; text-align: center; }
+.catalog-feedback button { margin-top: 4px; }
+
+.catalog-refresh-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px solid #c7dde2;
+  border-radius: 8px;
+  color: #35525c;
+  background: #f1fafb;
+  font-size: 13px;
+}
+
+.catalog-refresh-state.error {
+  border-color: #e6a5a5;
+  color: #8b3737;
+  background: #fff4f4;
 }
 
 .warning-text {
@@ -4390,6 +4522,8 @@ small {
   box-shadow: 0 20px 50px rgba(8, 18, 30, 0.28);
 }
 
+.detail-drawer:focus { outline: none; }
+
 .drawer-head {
   display: flex;
   align-items: center;
@@ -5655,16 +5789,46 @@ code {
     top: 0;
     z-index: 10;
     padding: 12px;
-    max-height: 46vh;
-    overflow: auto;
+    max-height: none;
   }
 
   .brand {
-    font-size: 15px;
-    margin-bottom: 10px;
+    display: none;
+  }
+
+  .mobile-nav-bar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(76px, auto);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mobile-nav-toggle {
+    min-height: 34px;
+    padding: 5px 9px;
+  }
+
+  .mobile-current-page {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+  }
+
+  .mobile-nav-bar select {
+    width: auto;
+    min-height: 34px;
+    padding: 5px 7px;
+    font-size: 12px;
   }
 
   nav {
+    display: none;
+    margin-top: 12px;
+  }
+
+  nav.mobile-open {
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
   }
@@ -5693,6 +5857,26 @@ code {
   .content {
     padding: 14px;
     min-width: 0;
+  }
+
+  .topbar {
+    min-height: 36px;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .top-actions select {
+    display: none;
+  }
+
+  .top-actions button {
+    min-height: 34px;
+    padding: 5px 9px;
+    font-size: 12px;
+  }
+
+  .topbar-status p {
+    font-size: 12px;
   }
 
   .live2d-model-scroll {
