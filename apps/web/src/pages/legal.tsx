@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { HARUKI_FEATURE_ENABLED } from "../features";
 
 const POLICY_EFFECTIVE_DATE = "2026 年 8 月 4 日";
 
@@ -64,7 +65,9 @@ export function PrivacyPage() {
           <li>邮件服务商：发送注册验证码、安全通知并接收隐私和举报邮件。</li>
           <li>游戏数据与资产来源：用于展示公开游戏资料，不向其发送你的 SEKAI TOOLS 账号密码。</li>
         </ul>
-        <p>Haruki 相关能力当前不对用户开放。只有未来正式开放、说明具体用途且你主动授权后，才会处理相应绑定和游戏数据。</p>
+        <p>{HARUKI_FEATURE_ENABLED
+          ? "Haruki 账号连接与同步功能仅在你主动授权后读取玩家公开资料、已验证绑定和游戏数据，用于绑定与同步；你可以随时断开授权。"
+          : "Haruki 相关能力当前不对用户开放。只有未来正式开放、说明具体用途且你主动授权后，才会处理相应绑定和游戏数据。"}</p>
       </section>
 
       <section>
