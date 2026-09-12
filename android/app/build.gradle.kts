@@ -12,7 +12,7 @@ plugins {
 val webRuntimeBaseUrl = providers.gradleProperty("PJSKTOOLS_WEB_RUNTIME_BASE_URL").orElse("")
 val configuredApiBaseUrl = providers.gradleProperty("PJSKTOOLS_API_BASE_URL")
     .orElse(providers.environmentVariable("PJSKTOOLS_API_BASE_URL"))
-    .orElse("")
+    .orElse("https://api.sekai-tools.cn/")
     .get()
 val debugApiBaseUrl = providers.gradleProperty("pjsk.debugApiBaseUrl")
     .orElse(configuredApiBaseUrl.ifBlank { "http://10.0.2.2:4000/" })
@@ -75,8 +75,8 @@ android {
             applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
             matchingFallbacks += listOf("debug")
-            buildConfigField("String", "API_BASE_URL", quotedBuildConfig(apiBaseUrl(configuredApiBaseUrl.ifBlank { "https://staging.example.invalid/" })))
-            buildConfigField("boolean", "HARUKI_FEATURE_ENABLED", "false")
+            buildConfigField("String", "API_BASE_URL", quotedBuildConfig(apiBaseUrl(configuredApiBaseUrl)))
+            buildConfigField("boolean", "HARUKI_FEATURE_ENABLED", "true")
         }
         release {
             isMinifyEnabled = true
@@ -85,7 +85,7 @@ android {
             // without the unstable post-link shrink step.
             isShrinkResources = false
             buildConfigField("String", "API_BASE_URL", quotedBuildConfig(apiBaseUrl(configuredApiBaseUrl)))
-            buildConfigField("boolean", "HARUKI_FEATURE_ENABLED", "false")
+            buildConfigField("boolean", "HARUKI_FEATURE_ENABLED", "true")
             manifestPlaceholders["usesCleartextTraffic"] = (temporaryHttpHost.isNotBlank()).toString()
             if (signingPropertiesFile.isFile) signingConfig = signingConfigs.getByName("release")
             proguardFiles(
