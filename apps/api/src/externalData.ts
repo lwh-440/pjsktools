@@ -287,9 +287,8 @@ function harukiRegionAssetCandidates(region: RegionId, path: string) {
   const base = config.harukiAssetBaseUrl.replace(/\/+$/, "");
   if (!base) return [];
   return [
-    `${base}/${regionAssetDir[region]}/${normalized}`,
-    `${base}/${region}/${normalized}`,
-    `${base}/${normalized}`
+    `${base}/${region}-assets/${normalized}`,
+    `${base}/${regionAssetDir[region]}/${normalized}`
   ];
 }
 

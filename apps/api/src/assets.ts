@@ -12,12 +12,21 @@ const live2dAssetBase = `${sekaiBestAssetBase}/sekai-live2d-assets`;
 const harukiAssetBase = config.harukiAssetBaseUrl.replace(/\/+$/, "");
 
 const regionAssetDir: Record<RegionId, string> = {
-  jp: "sekai-jp-assets",
-  en: "sekai-en-assets",
-  tw: "sekai-tw-assets",
-  kr: "sekai-kr-assets",
-  cn: "sekai-cn-assets"
+  jp: "jp-assets",
+  en: "en-assets",
+  tw: "tw-assets",
+  kr: "kr-assets",
+  cn: "cn-assets"
 };
+
+function harukiPath(assetPath: string) {
+  const path = assetPath.replace(/^\/+/, "");
+  const card = path.match(/^character\/member\/([^/]+)\/card_(normal|after_training)\.webp$/);
+  if (card) return `startapp/thumbnail/chara/${card[1]}_${card[2]}.png`;
+  const thumbnail = path.match(/^thumbnail\/chara\/([^/]+)_(normal|after_training)\.webp$/);
+  if (thumbnail) return `startapp/thumbnail/chara/${thumbnail[1]}_${thumbnail[2]}.png`;
+  return path;
+}
 
 function padMusicId(musicId: string | number) {
   return String(musicId).padStart(4, "0");
@@ -75,7 +84,7 @@ function sekaiBestAssetUrl(region: RegionId, assetPath: string) {
 }
 
 function harukiAssetCandidates(region: RegionId, assetPath: string) {
-  const path = assetPath.replace(/^\/+/, "");
+  const path = harukiPath(assetPath);
   if (!harukiAssetBase) return [];
   return [
     `${harukiAssetBase}/${regionAssetDir[region]}/${path}`,
@@ -184,7 +193,7 @@ export function getMusicAssetDetail(region: RegionId, song: Song) {
     title: song.title,
     jacketUrl: imageCandidates[0] ?? getMusicJacketUrl(region, song),
     imageCandidates,
-    assetSourceTrace: { region, assetDirectory: regionAssetDir[region], priority: ["exmeaning", "pjsk.moe", "sekai.best", "proxy"] },
+    assetSourceTrace: { region, assetDirectory: regionAssetDir[region], priority: ["haruki", "exmeaning", "pjsk.moe", "sekai.best", "proxy"] },
     assetbundleName: song.assetbundleName,
     jacketAssetbundleName: song.jacketAssetbundleName,
     sources: {
@@ -236,7 +245,7 @@ export function getCardAssetDetail(region: RegionId, card: Card) {
     normalThumbnailCandidates,
     afterTrainingImageCandidates: uniqueStrings([...afterTrainingImageCandidates, ...afterTrainingThumbnailCandidates]),
     afterTrainingThumbnailCandidates,
-    assetSourceTrace: { region, assetDirectory: regionAssetDir[region], priority: ["exmeaning", "pjsk.moe", "sekai.best", "proxy"] },
+    assetSourceTrace: { region, assetDirectory: regionAssetDir[region], priority: ["haruki", "exmeaning", "pjsk.moe", "sekai.best", "proxy"] },
     assetbundleName: card.assetbundleName,
     sources: {
       normalUrl: "Sekai Viewer asset mirror",
