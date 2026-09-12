@@ -132,7 +132,7 @@ export function harukiMusicMetasUrl(region: RegionId) {
   const base = normalizedBaseUrl();
   if (!base) throw new HarukiMasterError("not-configured", "HARUKI_MASTER_BASE_URL is not configured");
   return base === "https://raw.githubusercontent.com"
-    ? rawHarukiUrl(region, "music_metas.json")
+    ? rawHarukiUrl(region, "musics.json")
     : `${base}/v1/metas/${region}/music_metas.json`;
 }
 
