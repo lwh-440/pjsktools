@@ -1,4 +1,4 @@
-import { regions, type RegionId } from "./config.js";
+import { config, regions, type RegionId } from "./config.js";
 import { externalAssetSources } from "./externalData.js";
 import type { Card, EventInfo, MasterCollectionItem, Song } from "./types.js";
 
@@ -9,6 +9,7 @@ const moeStaticBase = "https://moe.exmeaning.com";
 const moeChartBase = "https://charts-new.unipjsk.com/moe/svg";
 const comicsAssetBase = `${sekaiBestAssetBase}/sekai-comics`;
 const live2dAssetBase = `${sekaiBestAssetBase}/sekai-live2d-assets`;
+const harukiAssetBase = config.harukiAssetBaseUrl.replace(/\/+$/, "");
 
 const regionAssetDir: Record<RegionId, string> = {
   jp: "sekai-jp-assets",
@@ -69,8 +70,26 @@ function costumeRepresentativePart(raw: Record<string, unknown>) {
   return undefined;
 }
 
-function assetUrl(region: RegionId, assetPath: string) {
+function sekaiBestAssetUrl(region: RegionId, assetPath: string) {
   return `${sekaiBestAssetBase}/${regionAssetDir[region]}/${assetPath.replace(/^\/+/, "")}`;
+}
+
+function harukiAssetCandidates(region: RegionId, assetPath: string) {
+  const path = assetPath.replace(/^\/+/, "");
+  if (!harukiAssetBase) return [];
+  return [
+    `${harukiAssetBase}/${regionAssetDir[region]}/${path}`,
+    `${harukiAssetBase}/${region}/${path}`,
+    `${harukiAssetBase}/${path}`
+  ];
+}
+
+function harukiAssetUrl(region: RegionId, assetPath: string) {
+  return harukiAssetCandidates(region, assetPath)[0] ?? "";
+}
+
+function assetUrl(region: RegionId, assetPath: string) {
+  return harukiAssetUrl(region, assetPath) || sekaiBestAssetUrl(region, assetPath);
 }
 
 function moeAssetUrl(region: RegionId, assetPath: string) {
@@ -92,7 +111,7 @@ export function proxiedAssetUrl(url: string) {
 
 export function getAssetCandidates(region: RegionId, assetPath: string) {
   const path = assetPath.replace(/^\/+/, "");
-  const direct = [moeAssetUrl(region, path), moeOverseasAssetUrl(region, path), assetUrl(region, path)];
+  const direct = [...harukiAssetCandidates(region, path), moeAssetUrl(region, path), moeOverseasAssetUrl(region, path), sekaiBestAssetUrl(region, path)];
   return uniqueStrings([...direct, ...direct.map(proxiedAssetUrl)]);
 }
 
@@ -112,7 +131,13 @@ export function getAssetConfig(region: RegionId) {
   return {
     region,
     assetDirectory: assetDir,
-    mirrorPriority: [moeAssetBase, moeOverseasAssetBase, sekaiBestAssetBase, "same-origin asset proxy"],
+    mirrorPriority: [
+      ...(harukiAssetBase ? [harukiAssetBase] : []),
+      moeAssetBase,
+      moeOverseasAssetBase,
+      sekaiBestAssetBase,
+      "same-origin asset proxy"
+    ],
     cachePolicy: {
       stableAssets: "public, max-age=31536000, immutable",
       proxyFailureTtlSeconds: 60,
@@ -125,11 +150,11 @@ export function getAssetConfig(region: RegionId) {
     },
     repository: regionConfig?.repository ?? "",
     sources: {
-      master: "Moesekai metadata.exmeaning.com primary, metadata.pjsk.moe and Team-Haruki compatibility fallbacks",
-      formulaReferenceMaster: "Moesekai metadata.exmeaning.com primary, metadata.pjsk.moe and same-region Team-Haruki raw fallbacks",
-      realtimeRanking: "rks-n.exmeaning.com primary, rks-n.pjsk.moe global fallback",
+      master: "Haruki master registry primary, Moesekai metadata and Team-Haruki raw fallbacks",
+      formulaReferenceMaster: "Haruki master registry primary, Moesekai metadata and Team-Haruki raw fallbacks",
+      realtimeRanking: "Haruki toolbox primary, rks-n fallback",
       publicPlayerAssets: "Haruki Suite Public API for user-uploaded public player assets",
-      rankingFallback: "Haruki toolbox for ranking detail and fallback snapshots",
+      rankingFallback: "Haruki toolbox primary; rks-n fallback for churn/tier-series/worldlink",
       sekaiBestAssets: `${sekaiBestAssetBase}/${assetDir}`,
       moeAssets: `${moeAssetBase}/${assetDir}`,
       moeChartSvg: moeChartBase,
@@ -291,6 +316,11 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
   switch (type) {
     case "gachas":
       return uniqueStrings([
+        gachaId ? harukiAssetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined,
+        assetbundleName ? harukiAssetUrl(region, `gacha/${assetbundleName}/logo/logo.webp`) : undefined,
+        assetbundleName && gachaId ? harukiAssetUrl(region, `gacha/${assetbundleName}/screen/bg_gacha${gachaId}_1.webp`) : undefined,
+        gachaFallbackId ? harukiAssetUrl(region, `home/banner/banner_gacha${gachaFallbackId}/banner_gacha${gachaFallbackId}.webp`) : undefined,
+        gachaFallbackAssetbundleName ? harukiAssetUrl(region, `gacha/${gachaFallbackAssetbundleName}/logo/logo.webp`) : undefined,
         ...(gachaId ? moeAssetUrlPair(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : []),
         ...(assetbundleName ? moeAssetUrlPair(region, `gacha/${assetbundleName}/logo/logo.webp`) : []),
         ...(assetbundleName && gachaId ? moeAssetUrlPair(region, `gacha/${assetbundleName}/screen/bg_gacha${gachaId}_1.webp`) : []),
@@ -336,12 +366,14 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
       return assetbundleName ? [assetUrl(region, `stamp/${assetbundleName}/${assetbundleName}.png`), assetUrl(region, `stamp/${assetbundleName}/${assetbundleName}.webp`)] : [];
     case "comics":
       return uniqueStrings(assetbundleName ? [
+        harukiAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
+        harukiAssetUrl(region, `comic/${assetbundleName}/${assetbundleName}.webp`),
         `${comicsAssetBase}/comic/one_frame/${assetbundleName}.webp`,
         moeAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
         moeOverseasAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
         `${comicsAssetBase}/comic/${assetbundleName}/${assetbundleName}.webp`,
-        assetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
-        assetUrl(region, `comic/${assetbundleName}/${assetbundleName}.webp`),
+        sekaiBestAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
+        sekaiBestAssetUrl(region, `comic/${assetbundleName}/${assetbundleName}.webp`),
         numericId ? `${moeStaticBase}/mangas/${numericId}.webp` : undefined
       ] : [
         numericId ? `${moeStaticBase}/mangas/${numericId}.webp` : undefined,
@@ -362,10 +394,12 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
     case "live2d": {
       const modelPath = stringField(raw, ["modelPath", "path", "modelBase"]);
       const modelFile = stringField(raw, ["modelFile", "file"]) || "model.model3.json";
-      return modelPath ? [
+      return modelPath ? uniqueStrings([
+        harukiAssetUrl(region, `live2d/model/${modelPath}/${modelFile}`),
+        harukiAssetUrl(region, `live2d/model/${modelPath}/buildmodeldata.asset`),
         `${live2dAssetBase}/live2d/model/${modelPath}/${modelFile}`,
         `${live2dAssetBase}/live2d/model/${modelPath}/buildmodeldata.asset`
-      ] : [];
+      ]) : [];
     }
     default:
       return [];
@@ -380,9 +414,9 @@ export function getCollectionItemAssetDetail(region: RegionId, type: string, ite
   const imageCandidates = collectionAssetCandidates(region, type, item.id, assetbundleName, raw);
   const imageUrl = imageCandidates[0] ?? "";
   const gachaId = stringField(raw, ["id"]) || item.id;
-  const gachaLogoUrl = type === "gachas" && assetbundleName ? moeAssetUrl(region, `gacha/${assetbundleName}/logo/logo.webp`) : undefined;
-  const gachaBannerUrl = type === "gachas" && gachaId ? moeAssetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined;
-  const gachaScreenUrl = type === "gachas" && assetbundleName && gachaId ? moeAssetUrl(region, `gacha/${assetbundleName}/screen/bg_gacha${gachaId}_1.webp`) : undefined;
+  const gachaLogoUrl = type === "gachas" && assetbundleName ? assetUrl(region, `gacha/${assetbundleName}/logo/logo.webp`) : undefined;
+  const gachaBannerUrl = type === "gachas" && gachaId ? assetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined;
+  const gachaScreenUrl = type === "gachas" && assetbundleName && gachaId ? assetUrl(region, `gacha/${assetbundleName}/screen/bg_gacha${gachaId}_1.webp`) : undefined;
   const honorGroup = raw.honorGroup && typeof raw.honorGroup === "object" ? (raw.honorGroup as Record<string, unknown>) : {};
   const backgroundName = stringField(honorGroup, ["backgroundAssetbundleName"]) || assetbundleName;
   return {

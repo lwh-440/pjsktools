@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config, regions, type RegionId } from "./config.js";
+import { fetchHarukiMasterJson, harukiMasterConfigured, harukiMasterFileUrl, HarukiMasterError } from "./harukiMasterClient.js";
 
 export const formulaMasterKeys = [
   "cards",
@@ -85,6 +86,16 @@ function sourceUrls(region: RegionId, key: FormulaMasterKey) {
   const repository = regions.find((item) => item.id === region)?.repository;
   const rawBase = config.masterRawBaseUrl.replace(/\/+$/, "");
   return [
+    ...(harukiMasterConfigured() ? [harukiMasterFileUrl(region, `${key}.json`)] : []),
+    ...metadataBases.map((base) => `${base}/${region}/master/${key}.json`),
+    ...(repository ? [`${rawBase}/${repository}/main/master/${key}.json`] : [])
+  ];
+}
+
+function fallbackSourceUrls(region: RegionId, key: FormulaMasterKey) {
+  const repository = regions.find((item) => item.id === region)?.repository;
+  const rawBase = config.masterRawBaseUrl.replace(/\/+$/, "");
+  return [
     ...metadataBases.map((base) => `${base}/${region}/master/${key}.json`),
     ...(repository ? [`${rawBase}/${repository}/main/master/${key}.json`] : [])
   ];
@@ -135,7 +146,17 @@ export async function fetchReference(region: RegionId, key: FormulaMasterKey) {
   const options = fetchOptions();
   let lastError: unknown;
   let notReleased = true;
-  for (const sourceUrl of sourceUrls(region, key)) {
+  if (harukiMasterConfigured()) {
+    try {
+      const result = await fetchHarukiMasterJson<unknown[]>(region, [`${key}.json`]);
+      const rows = Array.isArray(result.value) ? result.value : [];
+      return { status: rows.length ? "available" as const : "available-empty" as const, rows, sourceUrl: result.sourceUrl };
+    } catch (error) {
+      lastError = error;
+      notReleased = error instanceof HarukiMasterError && error.kind === "not-found";
+    }
+  }
+  for (const sourceUrl of fallbackSourceUrls(region, key)) {
     for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), options.timeoutMs);

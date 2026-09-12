@@ -39,4 +39,38 @@ describe.sequential("Haruki request controls", () => {
     await expect(harukiClient.getPlayerProfile("en", "990000000000000003")).rejects.toBeInstanceOf(HarukiRequestError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("builds the overall ranking snapshot from Haruki top and border boards", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/leaderboards/total/overview")) {
+        return new Response(JSON.stringify({
+          topRankings: [
+            {
+              rankData: { rank: 1, userId: "u1", score: 123456, timestamp: 1_700_000_000 },
+              userData: { name: "player-1", cardId: 1001 }
+            }
+          ],
+          topRankGrowths: []
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      let rank = 500;
+      const match = url.match(/details\/rank\/(\d+)/);
+      if (match) rank = Number(match[1]);
+      return new Response(JSON.stringify({
+        current: {
+          rankData: { rank, userId: `u${rank}`, score: 100000 - rank, timestamp: 1_700_000_000 },
+          userData: { name: `border-${rank}`, cardId: 2000 }
+        }
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const snapshot = await harukiClient.getRankingLatestSnapshot("jp", "210");
+
+    expect(snapshot.sourceLine).toBe("main");
+    expect(snapshot.eventId).toBe("210");
+    expect(snapshot.entries.map((entry) => entry.rank)).toEqual([1, 500, 1000, 2000, 5000]);
+    expect(snapshot.entries.find((entry) => entry.rank === 500)?.source).toBe("toolbox-api");
+  });
 });

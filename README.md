@@ -14,7 +14,7 @@
 - 提供玩家资料、玩家快照、收藏、成绩、卡组、活动规划、歌曲/卡组推荐和分享卡片工具。
 - 支持邮箱验证码注册/登录、QQ Connect 登录与绑定、收藏夹、跨端玩家快照、个人数据导出和账号注销。
 - Web 与 Android 均提供隐私政策、用户协议、安全举报、公安备案和 ICP 备案入口。
-- Haruki 集成功能已实现相应接口和客户端能力，但当前生产环境保持关闭，必须由用户主动授权并完成真实联调后才能开启。
+- Haruki 集成已获授权。OAuth 绑定/同步仍由 `HARUKI_FEATURE_ENABLED` 控制；公开玩家资料、master 数据、公式参考、静态资产和排行榜按 Haruki 优先、现有来源 fallback 的顺序读取。
 
 ## 技术架构
 
@@ -49,6 +49,16 @@ npm run dev:web   # Web: http://127.0.0.1:5173
 ```
 
 基础开发环境未配置 PostgreSQL 时可使用内存存储，但重启会丢失数据。不要提交 `.env`、`.secrets/`、OAuth 凭据、SMTP 授权码、COS 密钥、数据库备份或签名密钥。
+
+Haruki 上游数据配置：
+
+```dotenv
+HARUKI_MASTER_BASE_URL=http://127.0.0.1:9998
+HARUKI_MASTER_TOKEN=
+HARUKI_ASSET_BASE_URL=
+```
+
+`HARUKI_MASTER_BASE_URL` 指向 Team Haruki 的 master registry；未配置时继续使用 Moesekai metadata、GitHub raw 和本地缓存。`HARUKI_ASSET_BASE_URL` 指向已确认的公开资产镜像；未配置时继续使用 Sekai.best、Moesekai 和 pjsk.moe。所有来源都不可用时，接口显示真实缺失状态，不补造数据。
 
 ## 常用验证
 

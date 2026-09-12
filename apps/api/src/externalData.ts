@@ -1,4 +1,4 @@
-import { type RegionId } from "./config.js";
+import { config, type RegionId } from "./config.js";
 import type { MasterCollection, MasterCollectionItem } from "./types.js";
 
 export type CollectionSourceType = "team-haruki" | "metadata" | "information-api" | "asset-list" | "live2d-assets";
@@ -282,13 +282,31 @@ function regionAssetBase(region: RegionId) {
   return `${sekaiBestAssetBase}/${regionAssetDir[region]}`;
 }
 
+function harukiRegionAssetCandidates(region: RegionId, path: string) {
+  const normalized = path.replace(/^\/+/, "");
+  const base = config.harukiAssetBaseUrl.replace(/\/+$/, "");
+  if (!base) return [];
+  return [
+    `${base}/${regionAssetDir[region]}/${normalized}`,
+    `${base}/${region}/${normalized}`,
+    `${base}/${normalized}`
+  ];
+}
+
+function harukiGlobalAssetCandidates(path: string) {
+  const normalized = path.replace(/^\/+/, "");
+  const base = config.harukiAssetBaseUrl.replace(/\/+$/, "");
+  return base ? [`${base}/${normalized}`] : [];
+}
+
 function regionAssetUrl(region: RegionId, path: string) {
-  return `${regionAssetBase(region)}/${path.replace(/^\/+/, "")}`;
+  return harukiRegionAssetCandidates(region, path)[0] ?? `${regionAssetBase(region)}/${path.replace(/^\/+/, "")}`;
 }
 
 function regionAssetCandidates(region: RegionId, path: string) {
   const normalized = path.replace(/^\/+/, "");
   const direct = [
+    ...harukiRegionAssetCandidates(region, normalized),
     `${moeAssetBase}/${regionAssetDir[region]}/${normalized}`,
     `${moeOverseasAssetBase}/${regionAssetDir[region]}/${normalized}`,
     `${sekaiBestAssetBase}/${regionAssetDir[region]}/${normalized}`
@@ -1010,6 +1028,8 @@ function staticComicItems(region: RegionId) {
     title: `Comic ${index + 1}`,
     assetbundleName,
     imageCandidates: [
+      ...harukiGlobalAssetCandidates(`comic/one_frame/${assetbundleName}.webp`),
+      ...harukiGlobalAssetCandidates(`comic/${assetbundleName}/${assetbundleName}.webp`),
       `${comicsAssetBase}/comic/one_frame/${assetbundleName}.webp`,
       `${moeAssetBase}/${regionAssetDir[region]}/comic/one_frame/${assetbundleName}.webp`,
       `${moeOverseasAssetBase}/${regionAssetDir[region]}/comic/one_frame/${assetbundleName}.webp`,
@@ -1174,7 +1194,9 @@ export async function getLive2dModels(region: RegionId, options: Live2dCatalogOp
       const raw = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const modelPath = String(raw.modelPath ?? raw.path ?? raw.modelBase ?? "");
       const modelFile = String(raw.modelFile ?? raw.file ?? "model.model3.json");
-      const modelBaseUrl = modelPath ? `${live2dAssetBase}/live2d/model/${modelPath}/` : undefined;
+      const modelBaseUrl = modelPath
+        ? (harukiGlobalAssetCandidates(`live2d/model/${modelPath}/`)[0] ?? `${live2dAssetBase}/live2d/model/${modelPath}/`)
+        : undefined;
       const id = String(raw.id ?? raw.modelId ?? raw.name ?? modelPath ?? index + 1);
       const referencedStories = [...(references.get(id)?.values() ?? [])];
       return {
@@ -1184,7 +1206,9 @@ export async function getLive2dModels(region: RegionId, options: Live2dCatalogOp
         modelFile,
         model3JsonUrl: modelPath ? `${modelBaseUrl}${modelFile}` : undefined,
         modelBaseUrl,
-        motionBaseUrl: modelPath ? `${live2dAssetBase}/live2d/motion/${modelPath}/` : undefined,
+        motionBaseUrl: modelPath
+          ? (harukiGlobalAssetCandidates(`live2d/motion/${modelPath}/`)[0] ?? `${live2dAssetBase}/live2d/motion/${modelPath}/`)
+          : undefined,
         characterId: live2dCharacterId(modelPath),
         costumeType: modelPath.split("/").filter(Boolean).at(-1) ?? modelPath,
         scope: "global-shared-model-asset",
@@ -1362,10 +1386,11 @@ export async function getMysekaiFullContext(region: RegionId) {
   return {
     ...context,
     assets: {
-      thumbnailBaseUrl: `${sekaiBestAssetBase}/${regionAssetDir[region]}/mysekai/thumbnail`,
-      fixtureBaseUrl: `${sekaiBestAssetBase}/${regionAssetDir[region]}/mysekai/fixture`,
-      materialBaseUrl: `${sekaiBestAssetBase}/${regionAssetDir[region]}/mysekai/material`,
+      thumbnailBaseUrl: regionAssetUrl(region, "mysekai/thumbnail"),
+      fixtureBaseUrl: regionAssetUrl(region, "mysekai/fixture"),
+      materialBaseUrl: regionAssetUrl(region, "mysekai/material"),
       assetCandidates: [
+        ...harukiRegionAssetCandidates(region, "mysekai"),
         `${moeAssetBase}/${regionAssetDir[region]}/mysekai`,
         `${moeOverseasAssetBase}/${regionAssetDir[region]}/mysekai`,
         `${sekaiBestAssetBase}/${regionAssetDir[region]}/mysekai`
@@ -1999,6 +2024,7 @@ export function externalAssetSources(region: RegionId) {
     metadataPrimary: `${metadataPrimaryBase}/${region}/master`,
     metadataFallback: `${metadataFallbackBase}/${region}/master`,
     informationApi: region === "jp" || region === "cn" ? `${informationBase}/${region}/information` : "unavailable for this region",
+    harukiAssets: config.harukiAssetBaseUrl ? config.harukiAssetBaseUrl.replace(/\/+$/, "") : "not-configured",
     comicsAssets: comicsAssetBase,
     live2dAssets: live2dAssetBase,
     mysekaiAssets: `${sekaiBestAssetBase}/${regionAssetDir[region]}/mysekai`
@@ -2019,6 +2045,13 @@ export function isAllowedExternalAssetUrl(value: string) {
       "production-web.sekai.colorfulpalette.org",
       "lf3-mkcncdn-tos.dailygn.com"
     ]);
+    if (config.harukiAssetBaseUrl) {
+      try {
+        allowedHosts.add(new URL(config.harukiAssetBaseUrl).hostname);
+      } catch {
+        // Malformed configured base is ignored rather than crashing the allowlist.
+      }
+    }
     return url.protocol === "https:" && allowedHosts.has(url.hostname);
   } catch {
     return false;

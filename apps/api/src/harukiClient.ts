@@ -1,7 +1,17 @@
 import type { RegionId } from "./config.js";
+import type { RealtimeRankingEntry, RealtimeRankingSnapshot } from "./realtimeRankingClient.js";
 
 const TOOLBOX_API_BASE = "https://toolbox-api-direct.haruki.seiunx.com";
 const commonBorderRanks = [500, 1000, 2000, 5000];
+
+export type RankingBorderHourlyGrowth = {
+  region: RegionId;
+  eventId: string;
+  rank: number;
+  hourlyGrowth: number;
+  sampleSpanSeconds: number;
+  source: string;
+};
 
 export type HarukiFailureKind = "not-found" | "rate-limited" | "upstream-error" | "network-error";
 export type HarukiProfileFailureKind = HarukiFailureKind;
@@ -41,6 +51,7 @@ export class HarukiProfileRequestError extends HarukiRequestError {
 }
 
 const inFlightRequests = new Map<string, Promise<unknown>>();
+const overviewCache = new Map<string, { expiresAt: number; value: any }>();
 let requestTail: Promise<unknown> = Promise.resolve();
 let nextRequestAt = 0;
 let rateLimitedUntil = 0;
@@ -119,6 +130,7 @@ async function fetchHarukiJson<T>(
 
 export function resetHarukiRequestStateForTests() {
   inFlightRequests.clear();
+  overviewCache.clear();
   requestTail = Promise.resolve();
   nextRequestAt = 0;
   rateLimitedUntil = 0;
@@ -146,6 +158,57 @@ async function fetchToolboxLeaderboard(
 async function fetchToolboxOverview(region: RegionId, eventId: string, intervalSeconds = 3600) {
   const url = `${TOOLBOX_API_BASE}/event-tracker/api/v2/web/events/${region}/${eventId}/leaderboards/total/overview?interval=${intervalSeconds}`;
   return fetchHarukiJson<any>(url, "ranking overview");
+}
+
+async function fetchToolboxOverviewCached(region: RegionId, eventId: string, intervalSeconds = 3600) {
+  const key = `${region}:${eventId}:${intervalSeconds}`;
+  const cached = overviewCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const value = await fetchToolboxOverview(region, eventId, intervalSeconds);
+  overviewCache.set(key, {
+    expiresAt: Date.now() + numericEnvironmentValue("HARUKI_OVERVIEW_CACHE_MS", 15_000),
+    value
+  });
+  return value;
+}
+
+function sourceNumber(value: unknown) {
+  if (value === null || value === undefined || typeof value === "boolean" || (typeof value === "string" && !value.trim())) return undefined;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+export function normalizeRankingBorderHourlyGrowths(
+  overview: unknown,
+  region: RegionId,
+  eventId: string,
+  nowMs = Date.now()
+): RankingBorderHourlyGrowth[] {
+  const rows = Array.isArray((overview as any)?.borderGrowths) ? (overview as any).borderGrowths : [];
+  const nowSeconds = nowMs / 1000;
+  const seenRanks = new Set<number>();
+  const result: RankingBorderHourlyGrowth[] = [];
+  for (const row of rows) {
+    const rank = sourceNumber(row?.rank);
+    const growth = sourceNumber(row?.growth);
+    const timeDiff = sourceNumber(row?.timeDiff);
+    const latest = sourceNumber(row?.timestampLatest);
+    const earlier = sourceNumber(row?.timestampEarlier);
+    if (rank === undefined || growth === undefined || timeDiff === undefined || latest === undefined || earlier === undefined) continue;
+    if (!Number.isInteger(rank) || rank <= 100 || seenRanks.has(rank)) continue;
+    if (timeDiff <= 0 || timeDiff > 3_600 || latest <= earlier || Math.abs((latest - earlier) - timeDiff) > 120) continue;
+    if (latest < nowSeconds - 15 * 60 || latest > nowSeconds + 5 * 60) continue;
+    seenRanks.add(rank);
+    result.push({
+      region,
+      eventId,
+      rank,
+      hourlyGrowth: Math.round(growth * 3_600 / timeDiff),
+      sampleSpanSeconds: Math.round(timeDiff),
+      source: "haruki-border-growths"
+    });
+  }
+  return result;
 }
 
 function flattenLeaderboardItems(json: any) {
@@ -196,6 +259,36 @@ function normalizeGrowth(item: any) {
 }
 
 export class HarukiClient {
+  async getRankingLatestSnapshot(region: RegionId, eventId: string): Promise<RealtimeRankingSnapshot> {
+    const [top100, borders] = await Promise.all([
+      this.getRankingTop100(region, eventId),
+      this.getRankingBorder(region, eventId)
+    ]);
+    const byRank = new Map<number, RealtimeRankingEntry>();
+    for (const entry of [...top100, ...borders]) {
+      if (!Number.isInteger(entry.rank) || entry.rank <= 0 || !Number.isFinite(entry.score)) continue;
+      if (!byRank.has(entry.rank)) byRank.set(entry.rank, entry);
+    }
+    const entries = [...byRank.values()].sort((left, right) => left.rank - right.rank);
+    if (!entries.length) {
+      throw new HarukiRequestError("upstream-error", 502, { operation: "ranking latest snapshot" });
+    }
+    const updatedAt = new Date().toISOString();
+    return {
+      region,
+      eventId,
+      updatedAt,
+      entries: entries.map((entry) => ({ ...entry, updatedAt })),
+      sourceLine: "main",
+      sourceUrl: `${TOOLBOX_API_BASE}/event-tracker/api/v2/web/events/${region}/${eventId}/leaderboards/total`
+    };
+  }
+
+  async getRankingBorderHourlyGrowths(region: RegionId, eventId: string) {
+    const overview = await fetchToolboxOverviewCached(region, eventId, 3600);
+    return normalizeRankingBorderHourlyGrowths(overview, region, eventId);
+  }
+
   async getPlayerProfile(region: RegionId, userId: string) {
     return fetchHarukiJson<any>(
       `${TOOLBOX_API_BASE}/event-tracker/api/v2/web/players/${region}/${userId}/profile`,
@@ -208,7 +301,7 @@ export class HarukiClient {
     const entriesByRank = new Map<number, any>();
     const updatedAt = new Date().toISOString();
     try {
-      const overview = await fetchToolboxOverview(region, eventId);
+      const overview = await fetchToolboxOverviewCached(region, eventId);
       const growthByUser = new Map((Array.isArray(overview.topPlayerGrowths) ? overview.topPlayerGrowths : []).map((item: any) => [item.userId, item]));
       const growthByRank = new Map((Array.isArray(overview.topRankGrowths) ? overview.topRankGrowths : []).map((item: any) => [item.rank, item]));
       for (const item of Array.isArray(overview.topRankings) ? overview.topRankings : []) {
@@ -238,7 +331,7 @@ export class HarukiClient {
 
   async getRankingPlayerDetail(region: RegionId, eventId: string, rank: number) {
     const json = await fetchToolboxLeaderboard(region, eventId, rank, 10000, true, true, 3600);
-    const overview = await fetchToolboxOverview(region, eventId).catch(() => null);
+    const overview = await fetchToolboxOverviewCached(region, eventId).catch(() => null);
     const updatedAt = new Date().toISOString();
     const current = normalizePlayerItem(json.current, region, eventId, updatedAt);
     const next = normalizePlayerItem(json.next, region, eventId, updatedAt);

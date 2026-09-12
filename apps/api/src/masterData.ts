@@ -12,6 +12,7 @@ import {
   proxiedAssetUrl
 } from "./assets.js";
 import { config, regions, type RegionId } from "./config.js";
+import { fetchHarukiMasterJson, harukiMasterConfigured, type HarukiMasterFetchResult } from "./harukiMasterClient.js";
 import { getReferenceMaster, getReferenceMasterHealth, isFormulaMasterKey, syncReferenceMasterRegion } from "./referenceMaster.js";
 import { getExternalCollection } from "./externalData.js";
 import { sampleCards, sampleSongs } from "./sampleData.js";
@@ -327,6 +328,12 @@ function rawUrl(repository: string, filePath: string) {
   return `${config.masterRawBaseUrl}/${repository}/main/${filePath}`;
 }
 
+function masterSourceSummary(region: RegionId) {
+  return harukiMasterConfigured()
+    ? `${config.harukiMasterBaseUrl.replace(/\/+$/, "")}/v1/master/${region} (Haruki master registry primary; Moesekai metadata, Team-Haruki GitHub raw, and local cache fallbacks)`
+    : `${moesekaiMetadataPrimaryBase[region]} (metadata.pjsk.moe, local cache, and Team-Haruki compatibility fallbacks)`;
+}
+
 function masterFetchOptions() {
   return fastMasterRefresh
     ? { attempts: 1, timeoutMs: 1_500, retryDelayMs: 0 }
@@ -386,7 +393,18 @@ async function fetchFirstAvailableJson<T>(repository: string, filePaths: string[
   return fallback;
 }
 
+async function fetchHarukiMaster<T>(region: RegionId, filePaths: Array<string | undefined>): Promise<HarukiMasterFetchResult<T>> {
+  return fetchHarukiMasterJson<T>(region, filePaths);
+}
+
 async function fetchMetadataFirstAvailableJson<T>(region: RegionId, repository: string, filePaths: string[], fallback: T): Promise<T> {
+  if (harukiMasterConfigured()) {
+    try {
+      return (await fetchHarukiMaster<T>(region, filePaths)).value;
+    } catch {
+      // Keep the existing metadata and raw GitHub fallbacks below.
+    }
+  }
   for (const filePath of filePaths) {
     const key = path.posix.basename(filePath, ".json");
     try {
@@ -399,6 +417,13 @@ async function fetchMetadataFirstAvailableJson<T>(region: RegionId, repository: 
 }
 
 async function fetchMetadataFirst<T>(region: RegionId, key: string, repository: string, filePath: string): Promise<T> {
+  if (harukiMasterConfigured()) {
+    try {
+      return (await fetchHarukiMaster<T>(region, [filePath])).value;
+    } catch {
+      // Keep the existing metadata and raw GitHub fallbacks below.
+    }
+  }
   try {
     return await fetchMoesekaiMaster<T>(region, key);
   } catch {
@@ -431,6 +456,19 @@ async function fetchMoesekaiMaster<T>(region: RegionId, key: string, fallback?: 
 
 async function fetchFormulaCollection(region: RegionId, repository: string, key: string, filePath: string, previous: RawMasterItem[] = []) {
   const metadataUrl = metadataUrls(region, key).join(" | ");
+  let harukiError: unknown;
+  if (harukiMasterConfigured()) {
+    try {
+      const result = await fetchHarukiMaster<RawMasterItem[]>(region, [filePath]);
+      const rows = Array.isArray(result.value) ? result.value : [];
+      return {
+        rows,
+        health: { status: rows.length ? "available" : "available-empty", source: result.sourceUrl, count: rows.length } satisfies MasterCollectionHealth
+      };
+    } catch (error) {
+      harukiError = error;
+    }
+  }
   try {
     const rows = await fetchMoesekaiMaster<RawMasterItem[]>(region, key);
     return {
@@ -448,7 +486,12 @@ async function fetchFormulaCollection(region: RegionId, repository: string, key:
       if (previous.length) {
         return {
           rows: previous,
-          health: { status: "cache-stale", source: metadataUrl, count: previous.length, error: errorSummary(metadataError) } satisfies MasterCollectionHealth
+          health: {
+            status: "cache-stale",
+            source: metadataUrl,
+            count: previous.length,
+            error: [harukiError ? `haruki=${errorSummary(harukiError)}` : "", `metadata=${errorSummary(metadataError)}`, `team=${errorSummary(teamError)}`].filter(Boolean).join("; ")
+          } satisfies MasterCollectionHealth
         };
       }
       const notReleased = metadataError instanceof Error && metadataError.message.includes(": 404");
@@ -458,7 +501,7 @@ async function fetchFormulaCollection(region: RegionId, repository: string, key:
           status: notReleased ? "not-released" : "source-unavailable",
           source: metadataUrl,
           count: 0,
-          error: `${errorSummary(metadataError)}; fallback=${errorSummary(teamError)}`
+          error: [harukiError ? `haruki=${errorSummary(harukiError)}` : "", `metadata=${errorSummary(metadataError)}`, `team=${errorSummary(teamError)}`].filter(Boolean).join("; ")
         } satisfies MasterCollectionHealth
       };
     }
@@ -908,18 +951,22 @@ export async function getMasterCollection(region: RegionId, type: string): Promi
     if (isFormulaMasterKey(type)) {
       const referenceRows = await getReferenceMaster<RawMasterItem>(region, type);
       if (referenceRows.length) {
+        const referenceHealth = await getReferenceMasterHealth(region);
+        const collectionHealth = referenceHealth.collections[type];
+        const sourceUrl = collectionHealth?.sourceUrl || metadataUrls(region, type).join(" | ");
+        const sourceType = /haruki|\.unipjsk\.com/i.test(sourceUrl) ? "team-haruki" : "metadata";
         return {
           region,
           type,
-          source: metadataUrls(region, type).join(" | "),
-          syncedAt: (await getReferenceMasterHealth(region)).syncedAt,
+          source: sourceUrl,
+          syncedAt: referenceHealth.syncedAt,
           items: transformCollection(referenceRows).map((item) => getDisplayCollectionItem(region, type, item)),
           sourceMetadata: {
-            sourceType: "metadata",
-            primaryUrl: metadataUrls(region, type)[0],
-            fallbackUrl: metadataUrls(region, type)[1],
-            sourceProject: "Moesekai metadata region master",
-            fetchedAt: (await getReferenceMasterHealth(region)).syncedAt ?? new Date(0).toISOString(),
+            sourceType,
+            primaryUrl: sourceUrl.split(" | ")[0],
+            fallbackUrl: metadataUrls(region, type).join(" | "),
+            sourceProject: sourceType === "team-haruki" ? "Haruki master registry" : "Moesekai metadata region master",
+            fetchedAt: referenceHealth.syncedAt ?? new Date(0).toISOString(),
             scope: "region"
           }
         };
@@ -1403,7 +1450,7 @@ export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
     region,
     repository: regionConfig.repository,
     syncedAt: new Date().toISOString(),
-    source: `${moesekaiMetadataPrimaryBase[region]} (metadata.pjsk.moe, local cache, and Team-Haruki compatibility fallbacks)`,
+    source: masterSourceSummary(region),
     songs: transformSongs(musics, musicDifficulties, musicMetas, musicBpms),
     cards: transformedCards,
     events: transformEvents(events, eventCards, eventStories, transformedCards),
@@ -1995,18 +2042,18 @@ export async function getMasterRegionStatus(region: RegionId) {
     formulaCapabilities,
     sourcePolicy: {
       realtimeRanking: {
-        primary: "https://rks-n.exmeaning.com/api/public/v2",
-        globalFallback: "https://rks-n.pjsk.moe/api/public/v2",
-        role: "public fast current ranking, top board and border snapshots"
+        primary: "Haruki toolbox",
+        fallback: "https://rks-n.exmeaning.com/api/public/v2 and https://rks-n.pjsk.moe/api/public/v2",
+        role: "Haruki toolbox first-screen top board and border snapshots; rks-n fills churn, tier-series, and World Link gaps"
       },
       assets: {
-        primary: "Sekai.best / storage.sekai.best",
-        fallback: "Uni/Haruki storage mirrors",
+        primary: config.harukiAssetBaseUrl ? "Haruki asset mirror" : "Sekai.best / storage.sekai.best",
+        fallback: "Sekai.best, Moesekai storage.pjsk.moe/storage.exmeaning.com, and the same-origin asset proxy",
         role: "public game assets and thumbnails"
       },
       formulaReferenceMaster: {
-        primary: "Moesekai metadata / metadata.exmeaning.com",
-        fallback: "metadata.pjsk.moe, then same-region Team-Haruki raw collections where applicable",
+        primary: harukiMasterConfigured() ? `${config.harukiMasterBaseUrl.replace(/\/+$/, "")}/v1/master/{region}` : "Moesekai metadata / metadata.exmeaning.com",
+        fallback: "Moesekai metadata, then same-region Team-Haruki GitHub raw collections",
         role: "formula reference collections and music metadata"
       },
       playerAssets: {
@@ -2014,7 +2061,11 @@ export async function getMasterRegionStatus(region: RegionId) {
         role: "public player asset import"
       },
       harukiToolbox: {
-        role: "player profile/detail and ranking fallback; not the first-screen ranking fast path"
+        role: "player profile/detail and primary first-screen ranking source; rks-n remains the structural fallback"
+      },
+      announcements: {
+        primary: "Moesekai information API and official JP/CN announcement CDNs",
+        role: "Haruki does not currently expose an announcement feed; existing official and mirror sources remain primary"
       },
       regionIsolation: "jp/en/tw/kr/cn are diagnosed independently; no ordinary cross-region fallback"
     },
@@ -2047,7 +2098,7 @@ export async function syncEventMasterRegion(region: RegionId) {
   const updated: MasterCache = {
     ...existing,
     syncedAt: new Date().toISOString(),
-    source: `${moesekaiMetadataPrimaryBase[region]} (metadata.pjsk.moe, local cache, and Team-Haruki compatibility fallbacks)`,
+    source: masterSourceSummary(region),
     events: transformEvents(events, eventCards, eventStories, existing.cards)
   };
   await writeMasterCache(region, updated);
@@ -2070,8 +2121,7 @@ export async function syncRankingAssetMasterRegion(region: RegionId): Promise<Ma
     const [cards, gameCharacters, skills, events, eventCards, eventStories] = await Promise.all([
       fetchMetadataFirst<RawCard[]>(region, "cards", regionConfig.repository, masterFiles.cards),
       fetchMetadataFirst<RawCharacter[]>(region, "gameCharacters", regionConfig.repository, masterFiles.gameCharacters),
-      fetchMoesekaiMaster<RawSkill[]>(region, "skills")
-        .catch(() => fetchFirstAvailableJson<RawSkill[]>(regionConfig.repository, masterFiles.skills, [])),
+      fetchMetadataFirstAvailableJson<RawSkill[]>(region, regionConfig.repository, masterFiles.skills, []),
       fetchMetadataFirst<RawEvent[]>(region, "events", regionConfig.repository, masterFiles.events),
       fetchMetadataFirst<RawEventCard[]>(region, "eventCards", regionConfig.repository, masterFiles.eventCards),
       fetchMetadataFirst<RawEventStory[]>(region, "eventStories", regionConfig.repository, masterFiles.eventStories)
@@ -2080,7 +2130,7 @@ export async function syncRankingAssetMasterRegion(region: RegionId): Promise<Ma
     const updated: MasterCache = {
       ...existing,
       syncedAt: new Date().toISOString(),
-      source: `${moesekaiMetadataPrimaryBase[region]} (metadata.pjsk.moe, local cache, and Team-Haruki compatibility fallbacks)`,
+      source: masterSourceSummary(region),
       cards: transformedCards,
       events: transformEvents(events, eventCards, eventStories, transformedCards)
     };

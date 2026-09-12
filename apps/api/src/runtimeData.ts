@@ -1,8 +1,8 @@
 ﻿import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config, type RegionId } from "./config.js";
-import { harukiClient } from "./harukiClient.js";
-import { fetchRealtimeChurn, fetchRealtimeLatest, fetchRealtimeTierSeries, fetchRealtimeWorldLinkLatest, selectRealtimeWorldLinkGroup, type RealtimeChurnSnapshot, type RealtimeRankingEntry } from "./realtimeRankingClient.js";
+import { harukiClient, type RankingBorderHourlyGrowth } from "./harukiClient.js";
+import { fetchRealtimeChurn, fetchRealtimeLatest, fetchRealtimeTierSeries, fetchRealtimeWorldLinkLatest, selectRealtimeWorldLinkGroup, type RealtimeChurnSnapshot, type RealtimeRankingEntry, type RealtimeTierLine } from "./realtimeRankingClient.js";
 import { getCharacterIconCandidates } from "./assets.js";
 import { getCards, getEventDetail, getMasterCollection, requestRankingAssetMasterSync } from "./masterData.js";
 import { store } from "./store.js";
@@ -281,6 +281,20 @@ export async function enrichRankingAssets<T extends RealtimeRankingEntry>(region
     });
 }
 
+export function attachRankingHourlyGrowth<T extends RealtimeRankingEntry>(entries: T[], churnEntries: RealtimeChurnSnapshot["entries"]): Array<T & { hourlyGrowth?: number }> {
+  const growthByUser = new Map<string, number>();
+  for (const entry of churnEntries) {
+    const growth = entry.growth1h;
+    if (entry.isTierLine || typeof growth !== "number" || !Number.isFinite(growth)) continue;
+    if (entry.userId) growthByUser.set(String(entry.userId), growth);
+  }
+  return entries.map((entry) => {
+    if (typeof entry.hourlyGrowth === "number" && Number.isFinite(entry.hourlyGrowth)) return entry;
+    const hourlyGrowth = entry.userId ? growthByUser.get(String(entry.userId)) : undefined;
+    return typeof hourlyGrowth === "number" ? { ...entry, hourlyGrowth } : entry;
+  });
+}
+
 async function normalizeTop100(region: RegionId, entries: RealtimeRankingEntry[]) {
   return enrichRankingAssets(region, entries.filter((entry) => entry.rank >= 1 && entry.rank <= 100).sort((a, b) => a.rank - b.rank));
 }
@@ -396,20 +410,56 @@ export async function getRankingPlayerDetail(
   };
 }
 
-function normalizeBorders(entries: RealtimeRankingEntry[]) {
-  const byRank = new Map(entries.map((entry) => [entry.rank, entry]));
-  return commonBorderRanks
-    .map((rank) => byRank.get(rank))
-    .filter((entry): entry is RealtimeRankingEntry => Boolean(entry))
-    .map((entry) => ({
-      rank: entry.rank,
-      userId: entry.userId,
-      score: entry.score,
-      region: entry.region,
-      eventId: entry.eventId,
-      updatedAt: entry.updatedAt,
-      source: entry.source
-    }));
+type RankingBorderLine = { rank: number; userId?: string; score: number; region: RegionId; eventId: string; updatedAt: string; source: string };
+
+function isConfiguredBorderRank(rank: number) {
+  return rank > 100 || commonBorderRanks.includes(rank);
+}
+
+function latestBorders(region: RegionId, eventId: string, entries: RealtimeRankingEntry[]): RankingBorderLine[] {
+  return entries
+    .filter((entry) => Number.isInteger(entry.rank) && entry.rank > 0 && Number.isFinite(entry.score) && isConfiguredBorderRank(entry.rank))
+    .map((entry) => ({ rank: entry.rank, userId: entry.userId, score: entry.score, region, eventId, updatedAt: entry.updatedAt, source: entry.source }));
+}
+
+export function attachRankingBorderHourlyGrowth<T extends RankingBorderLine>(
+  region: RegionId,
+  eventId: string,
+  lines: T[],
+  growths: RankingBorderHourlyGrowth[]
+): Array<T & { hourlyGrowth?: number; growthSampleSeconds?: number }> {
+  const byRank = new Map<number, RankingBorderHourlyGrowth>();
+  for (const growth of growths) {
+    if (growth.region !== region || growth.eventId !== eventId || !Number.isInteger(growth.rank) || growth.rank <= 100) continue;
+    if (!Number.isFinite(growth.hourlyGrowth) || !Number.isFinite(growth.sampleSpanSeconds) || growth.sampleSpanSeconds <= 0 || growth.sampleSpanSeconds > 3_600) continue;
+    byRank.set(growth.rank, growth);
+  }
+  return lines.map((line) => {
+    const growth = byRank.get(line.rank);
+    return growth ? { ...line, hourlyGrowth: growth.hourlyGrowth, growthSampleSeconds: growth.sampleSpanSeconds } : line;
+  });
+}
+
+export function mergeRealtimeBorderLines(
+  region: RegionId,
+  eventId: string,
+  latestEntries: RealtimeRankingEntry[],
+  tierLines: RealtimeTierLine[]
+): RankingBorderLine[] {
+  const byRank = new Map<number, RankingBorderLine>();
+  const add = (line: RankingBorderLine, source: "tier" | "latest") => {
+    if (!Number.isInteger(line.rank) || line.rank <= 0 || !Number.isFinite(line.score) || !isConfiguredBorderRank(line.rank)) return;
+    const current = byRank.get(line.rank);
+    const candidateTime = Date.parse(line.updatedAt);
+    const currentTime = Date.parse(current?.updatedAt ?? "");
+    const isNewer = Number.isFinite(candidateTime) && (!Number.isFinite(currentTime) || candidateTime > currentTime);
+    const isSameTimeLatest = source === "latest" && candidateTime === currentTime;
+    if (!current || isNewer || isSameTimeLatest) byRank.set(line.rank, line);
+  };
+
+  for (const line of tierLines) add({ rank: line.rank, score: line.score, region, eventId, updatedAt: line.updatedAt, source: line.sourceUrl }, "tier");
+  for (const line of latestBorders(region, eventId, latestEntries)) add(line, "latest");
+  return [...byRank.values()].sort((left, right) => left.rank - right.rank);
 }
 
 function staleLiveSnapshot(entry: CacheEntry<LiveRankingSnapshot>, errors: string[] = []): LiveRankingSnapshot {
@@ -450,7 +500,7 @@ function unavailableLiveSnapshot(
     updatedAt: new Date().toISOString(),
     sourceHealth: {
       status: eventId === "none" ? "no-active-event" : "source-unavailable",
-      primarySource: "rks-n",
+      primarySource: "haruki-toolbox / rks-n fallback",
       errors
     },
     boardType,
@@ -515,9 +565,18 @@ async function refreshLiveRanking(
       ? await fetchRealtimeWorldLinkLatest(region, 30_000)
       : undefined
   );
-  const latest = options.boardType === "worldlink"
+  let harukiPrimaryError: unknown;
+  let latest = options.boardType === "worldlink"
     ? selectRealtimeWorldLinkGroup(worldLinkResponse?.snapshot ?? null, options.gameCharacterId)
-    : (knownLatest ?? await fetchRealtimeLatest(region));
+    : knownLatest;
+  if (!latest && options.boardType !== "worldlink") {
+    try {
+      latest = await harukiClient.getRankingLatestSnapshot(region, eventId);
+    } catch (error) {
+      harukiPrimaryError = error;
+      latest = await fetchRealtimeLatest(region);
+    }
+  }
   if (!latest) throw new Error("World Link ranking unavailable");
   if (latest.eventId !== eventId) {
     throw new Error(`Realtime latest event mismatch: expected ${eventId}, got ${latest.eventId}`);
@@ -531,12 +590,24 @@ async function refreshLiveRanking(
       knownTierSeries ? Promise.resolve(knownTierSeries) : fetchRealtimeTierSeries(region, commonBorderRanks)
     ]);
   const matchingSnapshot = matchingWorldLinkSnapshot(worldLink, eventId);
-  const top100 = await normalizeTop100(region, latest.entries);
-  const borderLines = options.boardType === "worldlink"
-    ? normalizeBorders(latest.entries)
-    : tierSeries.lines.length
-    ? tierSeries.lines.map((line) => ({ rank: line.rank, score: line.score, region, eventId, updatedAt: line.updatedAt, source: line.sourceUrl }))
-    : normalizeBorders(latest.entries);
+  const churn = await getRankingChurnCached(region, eventId, {
+    boardType: options.boardType,
+    gameCharacterId: options.gameCharacterId,
+    top: 100
+  }).catch(() => null);
+  const churnMatchesCurrentBoard = churn?.eventId === eventId
+    && churn.boardType === options.boardType
+    && (options.boardType !== "worldlink" || churn.gameCharacterId === options.gameCharacterId);
+  const top100 = attachRankingHourlyGrowth(await normalizeTop100(region, latest.entries), churnMatchesCurrentBoard ? churn.entries : []);
+  const rawBorderLines = options.boardType === "worldlink"
+    ? latestBorders(region, eventId, latest.entries)
+    : mergeRealtimeBorderLines(region, eventId, latest.entries, tierSeries.lines);
+  const borderGrowths = options.boardType === "overall"
+    ? await harukiClient.getRankingBorderHourlyGrowths(region, eventId).catch(() => [])
+    : [];
+  const borderLines = options.boardType === "overall"
+    ? attachRankingBorderHourlyGrowth(region, eventId, rawBorderLines, borderGrowths)
+    : rawBorderLines;
   const sampledAt = latest.updatedAt;
   const snapshot: LiveRankingSnapshot = {
     region,
@@ -551,14 +622,22 @@ async function refreshLiveRanking(
       fallbackLine: latest.sourceLine === "global" ? "global" : undefined,
       latestUpdatedAt: latest.updatedAt,
       cacheUpdatedAt: new Date().toISOString(),
-      errors: [...(worldLink.errors ?? []), ...tierSeries.errors].slice(-6)
+      errors: [
+        ...(worldLink.errors ?? []),
+        ...tierSeries.errors,
+        ...(churn?.errors ?? []),
+        ...(harukiPrimaryError ? [`Haruki toolbox primary failed; using rks-n fallback: ${harukiPrimaryError instanceof Error ? harukiPrimaryError.message : String(harukiPrimaryError)}`] : [])
+      ].slice(-6)
     },
     boardType: options.boardType,
     gameCharacterId: options.gameCharacterId,
     worldLinkCharacters: await worldLinkCharacters(region, eventId, event, matchingSnapshot?.groups.map((group) => group.gameCharacterId) ?? []),
     worldLinkAvailable: Boolean(matchingSnapshot?.groups.length),
     staleRanks: [],
-    warnings: borderLines.length ? [] : ["Realtime ranking tier-series did not include configured border ranks"]
+    warnings: [
+      ...(harukiPrimaryError ? ["Haruki toolbox primary unavailable; using rks-n fallback"] : []),
+      ...(borderLines.length ? [] : ["Realtime ranking tier-series did not include configured border ranks"])
+    ]
   };
   cache.liveRankings[key] = { key, region, updatedAt: sampledAt, source: latest.sourceUrl, data: snapshot };
   cache.rankingTop100[key] = { key, region, updatedAt: sampledAt, source: latest.sourceUrl, data: top100 };
@@ -722,20 +801,22 @@ export async function getLatestLiveRankingCached(region: RegionId, event?: unkno
       });
     }
     (async () => {
-      const [latest, tierSeries] = await Promise.all([
-        fetchRealtimeLatest(region),
-        fetchRealtimeTierSeries(region, commonBorderRanks)
-      ]);
-      await refreshLiveRanking(region, latest.eventId, event, latest, tierSeries, noWorldLinkProbe);
+      const eventId = String((event as Record<string, unknown> | undefined)?.id ?? "");
+      const discovery = eventId ? undefined : await fetchRealtimeLatest(region);
+      const resolvedEventId = eventId || discovery?.eventId;
+      if (!resolvedEventId) return;
+      const tierSeries = await fetchRealtimeTierSeries(region, commonBorderRanks);
+      await refreshLiveRanking(region, resolvedEventId, event, undefined, tierSeries, noWorldLinkProbe);
     })().catch(() => undefined);
     return rehydrateLiveRankingSnapshot(region, staleLiveSnapshot(cached));
   }
   try {
-    const [latest, tierSeries] = await Promise.all([
-      fetchRealtimeLatest(region),
-      fetchRealtimeTierSeries(region, commonBorderRanks)
-    ]);
-    return refreshLiveRanking(region, latest.eventId, event, latest, tierSeries, noWorldLinkProbe);
+    const eventId = String((event as Record<string, unknown> | undefined)?.id ?? "");
+    const discovery = eventId ? undefined : await fetchRealtimeLatest(region);
+    const resolvedEventId = eventId || discovery?.eventId;
+    if (!resolvedEventId) return unavailableLiveSnapshot(region, "unknown", event, ["Realtime ranking event context unavailable"]);
+    const tierSeries = await fetchRealtimeTierSeries(region, commonBorderRanks);
+    return refreshLiveRanking(region, resolvedEventId, event, undefined, tierSeries, noWorldLinkProbe);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const stale = latestLiveRankingForRegion(await readRuntimeCache(), region);

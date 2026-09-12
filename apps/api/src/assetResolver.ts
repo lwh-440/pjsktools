@@ -33,7 +33,7 @@ export class AssetResolver {
   ) {}
 
   async resolve(urls: string[], candidateTimeoutMs = 4_000, overallTimeoutMs = 6_000): Promise<ResolvedAsset> {
-    const candidates = [...new Set(urls)].slice(0, 3);
+    const candidates = [...new Set(urls)].slice(0, 6);
     if (!candidates.length) throw new AssetResolveError(400, "No asset candidates supplied");
 
     const controllers = candidates.map(() => new AbortController());

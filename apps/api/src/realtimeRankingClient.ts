@@ -8,6 +8,7 @@ export type RealtimeRankingEntry = {
   name?: string;
   playerName?: string;
   score: number;
+  hourlyGrowth?: number;
   timestamp?: number;
   cardId?: number | string;
   leaderCardId?: number | string;
@@ -74,13 +75,13 @@ export type RealtimeChurnEntry = {
   name: string;
   isTierLine?: boolean;
   score: number;
-  growth1h: number;
+  growth1h?: number;
   churn1h: number;
   churn20min: number;
   churn48h: number;
   hourlyChurn: Array<{ hour: string; count: number }>;
   recentScoreChanges: Array<{ timestamp: number; delta: number }>;
-  parkingPeriods: Array<{ startTime?: number; sinceMs?: number; endTime?: number; durationSeconds?: number }>;
+  parkingPeriods: Array<{ startTime?: number; sinceMs?: number; endTime?: number; durationSeconds?: number; active?: boolean }>;
 };
 
 export type RealtimeChurnSnapshot = {
@@ -115,6 +116,31 @@ function numberOrUndefined(value: unknown) {
   return Number.isFinite(numeric) ? numeric : undefined;
 }
 
+export function normalizeHourlyGrowth(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function parkingNumber(value: unknown, allowZero = false) {
+  if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) return undefined;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0 || (!allowZero && numeric === 0)) return undefined;
+  return numeric;
+}
+
+export function normalizeParkingPeriods(value: unknown): RealtimeChurnEntry["parkingPeriods"] {
+  if (!Array.isArray(value)) return [];
+  return value.map((period: any) => ({
+    startTime: parkingNumber(period?.start_ms ?? period?.start_time),
+    sinceMs: parkingNumber(period?.since_ms),
+    endTime: parkingNumber(period?.end_ms ?? period?.end_time),
+    durationSeconds: parkingNumber(period?.duration_s, true),
+    active: period?.active === true
+  }));
+}
+
 async function fetchJsonWithTimeout(url: string, timeoutMs: number) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -145,6 +171,7 @@ function normalizeEntry(item: any, region: RegionId, eventId: string, updatedAt:
     name: name == null ? undefined : String(name),
     playerName: name == null ? undefined : String(name),
     score,
+    hourlyGrowth: normalizeHourlyGrowth(item?.growth_1h ?? item?.growth1h ?? item?.hourlyGrowth),
     timestamp: numberOrUndefined(item?.timestamp ?? item?.updated_at),
     cardId: userCard?.cardId ?? userCard?.card_id ?? item?.cardId,
     leaderCardId: userCard?.cardId ?? userCard?.card_id ?? item?.leaderCardId,
@@ -277,18 +304,13 @@ function normalizeChurnSnapshot(json: any, region: RegionId, boardType: "overall
       name: String(item?.name ?? (item?.isTierLine ? `T${rank}` : `Player ${item?.userId ?? rank}`)),
       isTierLine: Boolean(item?.isTierLine),
       score,
-      growth1h: numberOrUndefined(item?.growth_1h) ?? 0,
+      growth1h: normalizeHourlyGrowth(item?.growth_1h ?? item?.growth1h),
       churn1h: numberOrUndefined(item?.churn_1h) ?? 0,
       churn20min: numberOrUndefined(item?.churn_20min) ?? 0,
       churn48h: numberOrUndefined(item?.churn_48h) ?? 0,
       hourlyChurn: (Array.isArray(item?.hourly_churn) ? item.hourly_churn : []).map((hour: any) => ({ hour: String(hour?.hour ?? ""), count: numberOrUndefined(hour?.count) ?? 0 })).filter((hour: { hour: string }) => hour.hour),
       recentScoreChanges: (Array.isArray(item?.recent_score_changes) ? item.recent_score_changes : []).map((change: any) => ({ timestamp: numberOrUndefined(change?.t ?? change?.time) ?? 0, delta: numberOrUndefined(change?.delta) ?? 0 })).filter((change: { timestamp: number }) => change.timestamp > 0),
-      parkingPeriods: (Array.isArray(item?.parking_periods) ? item.parking_periods : []).map((period: any) => ({
-        startTime: numberOrUndefined(period?.start_time),
-        sinceMs: numberOrUndefined(period?.since_ms),
-        endTime: numberOrUndefined(period?.end_time),
-        durationSeconds: numberOrUndefined(period?.duration_s)
-      }))
+      parkingPeriods: normalizeParkingPeriods(item?.parking_periods)
     };
   }).filter((entry: RealtimeChurnEntry | null): entry is RealtimeChurnEntry => Boolean(entry));
   return { region, eventId, boardType, gameCharacterId, updatedAt, entries, sourceLine, sourceUrl };
