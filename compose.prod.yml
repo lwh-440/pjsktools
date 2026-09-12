@@ -39,6 +39,7 @@ services:
       APP_RUNTIME_ROLE: pjsktools_app
       AUTH_RUNTIME_ROLE: pjsktools_auth
       COMPLIANCE_RUNTIME_ROLE: pjsktools_compliance
+      HARUKI_RUNTIME_ROLE: pjsktools_haruki
     command: ["/usr/local/bin/bootstrap-pre-migration-roles.sh"]
     depends_on:
       postgres:

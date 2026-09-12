@@ -20,8 +20,13 @@ fi
 : "${APP_RUNTIME_ROLE:?APP_RUNTIME_ROLE is required}"
 : "${AUTH_RUNTIME_ROLE:?AUTH_RUNTIME_ROLE is required}"
 : "${COMPLIANCE_RUNTIME_ROLE:?COMPLIANCE_RUNTIME_ROLE is required}"
+: "${HARUKI_RUNTIME_ROLE:?HARUKI_RUNTIME_ROLE is required}"
 [[ "$DATABASE_MIGRATION_ROLE" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || {
   echo "invalid migration role name" >&2
+  exit 1
+}
+[[ "$HARUKI_RUNTIME_ROLE" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || {
+  echo "invalid Haruki runtime role name" >&2
   exit 1
 }
 trap 'unset POSTGRES_ADMIN_URL PGDATABASE_MIGRATION_ROLE PGDATABASE_MIGRATION_PASSWORD' EXIT
@@ -30,6 +35,7 @@ export PGDATABASE_MIGRATION_PASSWORD="$DATABASE_MIGRATION_PASSWORD"
 export PGAPP_RUNTIME_ROLE="$APP_RUNTIME_ROLE"
 export PGAUTH_RUNTIME_ROLE="$AUTH_RUNTIME_ROLE"
 export PGCOMPLIANCE_RUNTIME_ROLE="$COMPLIANCE_RUNTIME_ROLE"
+export PGHARUKI_RUNTIME_ROLE="$HARUKI_RUNTIME_ROLE"
 
 psql "$POSTGRES_ADMIN_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
 begin;
@@ -38,11 +44,13 @@ begin;
 \getenv app_runtime_role PGAPP_RUNTIME_ROLE
 \getenv auth_runtime_role PGAUTH_RUNTIME_ROLE
 \getenv compliance_runtime_role PGCOMPLIANCE_RUNTIME_ROLE
+\getenv haruki_runtime_role PGHARUKI_RUNTIME_ROLE
 select set_config('bootstrap.migration_role', :'migration_role', false);
 select set_config('bootstrap.migration_password', :'migration_password', false);
 select set_config('bootstrap.app_runtime_role', :'app_runtime_role', false);
 select set_config('bootstrap.auth_runtime_role', :'auth_runtime_role', false);
 select set_config('bootstrap.compliance_runtime_role', :'compliance_runtime_role', false);
+select set_config('bootstrap.haruki_runtime_role', :'haruki_runtime_role', false);
 do $bootstrap$
 declare
   role_name text;
@@ -191,8 +199,9 @@ begin
       and member_role <> compliance_role then
       raise exception 'compliance capability role % has unexpected member %', capability_role, member_role
         using errcode='42501';
-    elsif capability_role in ('pjsktools_haruki_user','pjsktools_haruki_worker') then
-      raise exception 'disabled Haruki capability role % has unexpected member %', capability_role, member_role
+    elsif capability_role in ('pjsktools_haruki_user','pjsktools_haruki_worker')
+      and member_role <> current_setting('bootstrap.haruki_runtime_role') then
+      raise exception 'Haruki capability role % has unexpected member %', capability_role, member_role
         using errcode='42501';
     end if;
   end loop;
