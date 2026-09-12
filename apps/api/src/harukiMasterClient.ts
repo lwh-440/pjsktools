@@ -41,6 +41,18 @@ function normalizedBaseUrl() {
   return config.harukiMasterBaseUrl.trim().replace(/\/+$/, "");
 }
 
+const harukiMasterRepositories: Record<RegionId, string> = {
+  jp: "haruki-sekai-master",
+  en: "haruki-sekai-en-master",
+  tw: "haruki-sekai-tc-master",
+  kr: "haruki-sekai-kr-master",
+  cn: "haruki-sekai-sc-master"
+};
+
+function rawHarukiUrl(region: RegionId, name: string) {
+  return `${normalizedBaseUrl()}/Team-Haruki/${harukiMasterRepositories[region]}/main/master/${encodeURIComponent(name)}`;
+}
+
 function requestTimeoutMs() {
   const configured = Number(process.env.HARUKI_MASTER_TIMEOUT_MS ?? 15_000);
   return Number.isFinite(configured) && configured > 0 ? configured : 15_000;
@@ -105,7 +117,9 @@ export function isHarukiMusicMetasName(name: string) {
 export function harukiMasterFileUrl(region: RegionId, name: string) {
   const base = normalizedBaseUrl();
   if (!base) throw new HarukiMasterError("not-configured", "HARUKI_MASTER_BASE_URL is not configured");
-  return `${base}/v1/master/${region}/files/${encodeURIComponent(name)}`;
+  return base === "https://raw.githubusercontent.com"
+    ? rawHarukiUrl(region, name)
+    : `${base}/v1/master/${region}/files/${encodeURIComponent(name)}`;
 }
 
 export function harukiMasterBlobUrl(region: RegionId, sha256: string) {
@@ -117,7 +131,9 @@ export function harukiMasterBlobUrl(region: RegionId, sha256: string) {
 export function harukiMusicMetasUrl(region: RegionId) {
   const base = normalizedBaseUrl();
   if (!base) throw new HarukiMasterError("not-configured", "HARUKI_MASTER_BASE_URL is not configured");
-  return `${base}/v1/metas/${region}/music_metas.json`;
+  return base === "https://raw.githubusercontent.com"
+    ? rawHarukiUrl(region, "music_metas.json")
+    : `${base}/v1/metas/${region}/music_metas.json`;
 }
 
 export function harukiMasterConfigured() {
