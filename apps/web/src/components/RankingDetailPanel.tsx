@@ -12,12 +12,34 @@ export type RankingPlayerDetail = RankingEntry & {
   rankHourlyGrowth?: number; playerTrace?: RankingTracePoint[]; rankTrace?: RankingTracePoint[]; next?: RankingEntry;
   churnSource?: string; churnStatus?: string; churn1h?: number; churn20min?: number; churn48h?: number; growth1h?: number;
   hourlyChurn?: Array<{ hour: string; count: number }>; recentScoreChanges?: Array<{ timestamp: number; delta: number }>;
-  parkingPeriods?: Array<{ startTime?: number; sinceMs?: number; endTime?: number; durationSeconds?: number }>;
+  parkingPeriods?: Array<{ startTime?: number; sinceMs?: number; endTime?: number; durationSeconds?: number; active?: boolean }>;
   churnUpdatedAt?: string; observedPtUpdates?: number;
 };
 
 function formatNumber(value?: number | null) {
   return typeof value === "number" && Number.isFinite(value) ? new Intl.NumberFormat("zh-CN").format(value) : "-";
+}
+
+export function formatCompactScore(value?: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return value >= 10000 ? `${(value / 10000).toFixed(value >= 100000 ? 0 : 1)}万` : new Intl.NumberFormat("zh-CN").format(value);
+}
+
+export function formatParkingPeriod(period: { startTime?: number; sinceMs?: number; endTime?: number; durationSeconds?: number; active?: boolean }) {
+  const start = formatTime(period.startTime ?? period.sinceMs);
+  const end = period.active && !period.endTime ? "至今" : period.endTime ? formatTime(period.endTime) : "结束时间未知";
+  const minutes = typeof period.durationSeconds === "number" && Number.isFinite(period.durationSeconds) && period.durationSeconds >= 0 ? `${Math.round(period.durationSeconds / 60)} min` : "时长未知";
+  return `${start} — ${end} · ${minutes}`;
+}
+
+export function buildHourlyChurnTable(points: Array<{ hour: string; count: number }>) {
+  const valid = points.map((p) => new Date(p.hour).getTime()).filter(Number.isFinite);
+  const anchor = valid.length ? Math.max(...valid) : Date.now();
+  const d = new Date(anchor); const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours());
+  const start = new Date(end.getTime() - 47 * 3600_000);
+  const map = new Map(points.map((p) => [new Date(p.hour).setMinutes(0, 0, 0), p]));
+  const cells = Array.from({ length: 48 }, (_, i) => { const t = new Date(start.getTime() + i * 3600_000); return map.get(t.getTime()); });
+  return { rows: [{ cells: cells.slice(0, 24) }, { cells: cells.slice(24) }], maxCount: Math.max(0, ...points.filter((p) => new Date(p.hour).getTime() >= start.getTime()).map((p) => p.count)) };
 }
 
 function formatTime(value?: number | string) {

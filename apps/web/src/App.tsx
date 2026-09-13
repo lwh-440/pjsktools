@@ -20,6 +20,8 @@
   Play,
   Plus,
   RefreshCw,
+  Monitor,
+  Smartphone,
   Search,
   Share2,
   Shirt,
@@ -561,6 +563,8 @@ export function App() {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<SectionId>("home");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<"workbench" | "clean">(() => (window.localStorage.getItem("pjsktools-layout-mode") as "workbench" | "clean") || "workbench");
+  function toggleLayoutMode() { setLayoutMode((current) => { const next = current === "workbench" ? "clean" : "workbench"; window.localStorage.setItem("pjsktools-layout-mode", next); return next; }); }
   const [regions, setRegions] = useState<Region[]>([]);
   const [region, setRegion] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get("region");
@@ -580,6 +584,7 @@ export function App() {
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
   const [borders, setBorders] = useState<RankingBorder[]>([]);
   const [forecast, setForecast] = useState<Forecast | null>(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
   const [forecastWindow, setForecastWindow] = useState<"all" | "1" | "3" | "6">("all");
   const [rankingHistorySummary, setRankingHistorySummary] = useState<RankingHistorySummary | null>(null);
   const [rankingHistory, setRankingHistory] = useState<RankingHistoryResponse | null>(null);
@@ -601,6 +606,7 @@ export function App() {
   const toolSongsRegion = useRef("");
   const toolCardsRegion = useRef("");
   const rankingRequests = useRef(new Map<string, AbortController>());
+  const forecastRequestId = useRef(0);
   const rankingDetailRequest = useRef(0);
   const rankingBoardRef = useRef<RankingBoardType>("overall");
   const worldLinkCharacterRef = useRef<number | null>(null);
@@ -917,6 +923,7 @@ export function App() {
     setRanking([]);
     setBorders([]);
     setForecast(null);
+    setForecastLoading(false);
     setRankingHistorySummary(null);
     setRankingHistory(null);
     setRankingSourceHealth(null);
@@ -1052,7 +1059,12 @@ export function App() {
   }
 
   async function loadRankingExtras(eventId: string, nextRegion = region) {
-    if (!eventId || eventId === "none") return;
+    const requestId = ++forecastRequestId.current;
+    if (!eventId || eventId === "none") {
+      setForecastLoading(false);
+      return;
+    }
+    setForecastLoading(true);
     const windowParam = forecastWindow === "all" ? "" : `?windowHours=${forecastWindow}`;
     const historyQuery = `sampleType=border&limit=5000${forecastWindow === "all" ? "" : `&windowHours=${forecastWindow}`}`;
     const [nextForecast, nextHistorySummary, nextHistory] = await Promise.all([
@@ -1060,10 +1072,11 @@ export function App() {
       apiGet<RankingHistorySummary>(`/api/events/${nextRegion}/${eventId}/ranking-history/summary?sampleType=border${forecastWindow === "all" ? "" : `&windowHours=${forecastWindow}`}`).catch(() => null),
       apiGet<RankingHistoryResponse>(`/api/events/${nextRegion}/${eventId}/ranking-history?${historyQuery}`).catch(() => null)
     ]);
-    if (regionRef.current !== nextRegion) return;
+    if (regionRef.current !== nextRegion || requestId !== forecastRequestId.current) return;
     setForecast(nextForecast);
     setRankingHistorySummary(nextHistorySummary);
     setRankingHistory(nextHistory);
+    setForecastLoading(false);
   }
 
   function resetRankingBoardContent() {
@@ -1830,7 +1843,8 @@ export function App() {
               {["songs", "cards", "gachas", "tools", "deckCompare", "mysekai"].map((id) => {
                 const item = navItems.find((entry) => entry.id === id)!;
                 const Icon = item.icon;
-                return <button key={item.id} type="button" className="tool-card" onClick={() => goSection(item.id)}><span className="tool-icon"><Icon size={20} /></span><strong>{item.label}</strong><small>打开模块</small></button>;
+                const shortcutArt: Record<string, string> = { songs: "/assets/home-shortcuts/songs-ichika-note.webp", cards: "/assets/home-shortcuts/cards-shizuku-art.webp", gachas: "/assets/home-shortcuts/gachas-toya-gacha.webp", tools: "/assets/home-shortcuts/tools-nene-calculator.webp", deckCompare: "/assets/home-shortcuts/deck-compare-mafuyu-cards.webp", mysekai: "/assets/home-shortcuts/mysekai-miku-home.webp" };
+                return <button key={item.id} type="button" className="tool-card" onClick={() => goSection(item.id)}><span className="tool-card-art"><img src={shortcutArt[item.id]} alt="" loading="lazy" /></span><span className="tool-icon"><Icon size={20} /></span><strong>{item.label}</strong><small>打开模块</small></button>;
               })}
             </div>
           </article>
@@ -2001,13 +2015,13 @@ export function App() {
     const forecastDiagnostics = unique([retentionRecommendation, rankingHistorySummary?.unavailableReason, rankingHistory?.unavailableReason, ...(rankingHistorySummary?.lines ?? []).map((line) => line.confidenceReason), ...activeLines.map((line) => line.unavailableReason ?? line.confidenceReason)]);
     return (
       <section className="rank-page forecast-page">
-        <div className="rank-hero forecast-hero"><div><span className="home-kicker">实验性预测</span><h2>{event?.name ? `${event.name} 预测线` : "预测线"}</h2><div className="rank-meta"><span>基于真实采样</span><span>样本 {formatNumber(forecast?.sampleCount ?? rankingHistory?.sampleCount)}</span><span>与当前分数线分开显示</span></div></div><button type="button" className="secondary" onClick={() => goSection("currentEvent")}>返回分数线</button></div>
-        <div className="button-row">
-          {(["all", "1", "3", "6"] as const).map((window) => <button key={window} type="button" className={forecastWindow === window ? "" : "secondary"} onClick={() => setForecastWindow(window)}>{window === "all" ? "全部样本" : `近 ${window}h`}</button>)}
+        <header className="rank-hero forecast-hero"><div className="forecast-hero-copy"><span className="home-kicker">实验性预测</span><h2>{event?.name ? `${event.name} 预测线` : "预测线"}</h2><p className="forecast-hero-lede">只根据已采集的档线样本估算趋势，帮助你判断目标和节奏。</p><div className="rank-meta"><span>基于真实采样</span><span>样本 {formatNumber(forecast?.sampleCount ?? rankingHistory?.sampleCount)}</span><span>与当前分数线分开显示</span></div></div><div className="forecast-hero-actions"><span className="forecast-live-mark" aria-hidden="true" /> <button type="button" className="secondary" onClick={() => goSection("currentEvent")}>返回分数线</button></div></header>
+        <div className="button-row forecast-window-switcher" role="tablist" aria-label="预测时间窗口">
+          {(["all", "1", "3", "6"] as const).map((window) => <button key={window} type="button" role="tab" aria-selected={forecastWindow === window} className={forecastWindow === window ? "forecast-window-active" : "secondary"} onClick={() => setForecastWindow(window)}>{window === "all" ? "全部样本" : `近 ${window}h`}</button>)}
         </div>
         {warnings.length > 0 && <p className="warning-text">{warnings.slice(0, 3).join(" / ")}</p>}
         <section className="forecast-layout">
-          <article className="panel">
+          <article className="panel forecast-summary-panel">
             <div className="panel-heading"><div><h2>窗口健康</h2><p>采样仅用于趋势估算；维护策略和原始依据可在技术信息中查看。</p></div></div>
             <div className="summary-grid compact-summary">
               <div><span>窗口</span><strong>{forecastWindow === "all" ? "全部" : `${forecastWindow}h`}</strong></div>
@@ -2016,7 +2030,7 @@ export function App() {
               <div><span>可信度</span><strong>{forecastConfidenceLabel(windowSummary?.confidence)}</strong></div>
             </div>
           </article>
-          <article className="panel">
+          <article className="panel forecast-planner-panel">
             <h2>目标规划</h2>
             <div className="two-col">
               <select value={forecastPlanForm.targetRank} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, targetRank: event.target.value })}>
@@ -2037,17 +2051,18 @@ export function App() {
           </article>
         </section>
         {forecastDiagnostics.length > 0 && <details className="calculation-details forecast-diagnostics"><summary>查看采样技术信息</summary>{forecastDiagnostics.map((item) => <p key={item}>{item}</p>)}</details>}
-        <article className="panel wide">
+        <article className="panel wide forecast-trend-panel">
           <div className="panel-heading"><div><h2>档线趋势图</h2><p>{rankingHistory?.unavailableReason ? forecastSamplingReason(rankingHistory.unavailableReason) : "折线只使用真实持久化样本，不插值、不补假点。"}</p></div></div>
           <HistoryTrendChart samples={rankingHistory?.items ?? []} lines={activeLines} />
         </article>
-        <article className="panel wide">
+        <article className="panel wide forecast-history-panel">
           <div className="panel-heading"><div><h2>历史样本摘要</h2><p>{rankingHistorySummary?.unavailableReason ? forecastSamplingReason(rankingHistorySummary.unavailableReason) : "持久化历史用于计算近期速度和预测可信度。"}</p></div></div>
-          <div className="forecast-grid">{(rankingHistorySummary?.lines ?? []).slice(0, 12).map((line) => <div key={`${line.sampleType}-${line.rank}`} className="forecast-card"><span>T{line.rank}</span><strong>{formatNumber(line.latestScore)} pt</strong><small>样本 {formatNumber(line.sampleCount)} / {forecastConfidenceLabel(line.confidence ?? line.predictability)}</small><small>跨度: {formatNumber(line.sampleSpanHours)}h</small><small>速度: {formatNumber(line.speedPerHour)} pt/h</small><em>{line.confidenceReason ? forecastSamplingReason(line.confidenceReason) : formatDate(line.latestSampledAt ?? undefined)}</em></div>)}</div>
+          <div className="forecast-grid">{(rankingHistorySummary?.lines ?? []).slice(0, 12).map((line) => <div key={`${line.sampleType}-${line.rank}`} className="forecast-card forecast-history-card"><span>T{line.rank}</span><strong>{formatNumber(line.latestScore)} pt</strong><small>样本 {formatNumber(line.sampleCount)} / {forecastConfidenceLabel(line.confidence ?? line.predictability)}</small><small>跨度: {formatNumber(line.sampleSpanHours)}h</small><small>速度: {formatNumber(line.speedPerHour)} pt/h</small><em>{line.confidenceReason ? forecastSamplingReason(line.confidenceReason) : formatDate(line.latestSampledAt ?? undefined)}</em></div>)}</div>
           {(!rankingHistorySummary || rankingHistorySummary.lines.length === 0) && <p className="empty-state">暂无持久化历史样本。刷新分数线后会逐步积累。</p>}
         </article>
-        <div className="forecast-grid">{activeLines.map((line) => <div key={line.rank} className="forecast-card"><span>T{line.rank}</span><strong>{formatNumber(line.currentScore)} pt</strong><small>速度: {formatNumber(line.speedPerHour ?? line.hourlyGrowth)} pt/h</small><small>1h: {formatNumber(line.forecast1h)} pt / 3h: {formatNumber(line.forecast3h)} pt</small><small>样本 {formatNumber(line.sampleCount)} / 跨度 {formatNumber(line.sampleSpanHours ?? line.sampleHours)}h</small><em>{line.unavailableReason || line.confidenceReason ? forecastSamplingReason(line.unavailableReason ?? line.confidenceReason) : "实验性预测"}</em></div>)}</div>
-        {(!forecast || activeLines.length === 0) && <p className="empty-state">暂无可预测数据。</p>}
+        <section className="forecast-grid forecast-prediction-grid" aria-label="预测档线">{activeLines.map((line) => <div key={line.rank} className="forecast-card forecast-prediction-card"><span>T{line.rank}</span><strong>{formatNumber(line.currentScore)} pt</strong><small>速度: {formatNumber(line.speedPerHour ?? line.hourlyGrowth)} pt/h</small><small>1h: {formatNumber(line.forecast1h)} pt / 3h: {formatNumber(line.forecast3h)} pt</small><small>样本 {formatNumber(line.sampleCount)} / 跨度 {formatNumber(line.sampleSpanHours ?? line.sampleHours)}h</small><em>{line.unavailableReason || line.confidenceReason ? forecastSamplingReason(line.unavailableReason ?? line.confidenceReason) : "实验性预测"}</em></div>)}</section>
+        {forecastLoading && <p className="empty-state forecast-loading-state" role="status">正在读取当前区服的预测样本…</p>}
+        {!forecastLoading && (!forecast || activeLines.length === 0) && <p className="empty-state">暂无可预测数据。</p>}
       </section>
     );
   }
@@ -2364,9 +2379,9 @@ export function App() {
         : <div key={item.areaItemId ?? index}><b>#{index + 1}</b><strong>{item.name ?? item.areaItem?.name ?? item.areaItemId}</strong><span>Lv.{formatNumber(item.fromLevel)} → Lv.{formatNumber(item.toLevel)} · 综合力 +{formatNumber(item.powerGain)} · 金币 {formatNumber(item.cost?.coin)} · {item.affordable === true ? "材料足够" : item.affordable === false ? "材料不足" : "成本未知"}</span></div>)}</div>;
     }
     return (
-      <section className="tool-workspace">
+      <section className="tool-workspace tools-page">
         <article className="panel wide tools-intro"><div><span className="home-kicker">按游戏结算页填写</span><h2>活动计算工具</h2><p>字段下方会说明数值从哪里获取。可留空的项目会由绑定资产或公式默认值估算，并在结果中明确标记。</p></div><div className="boost-reference"><strong>火量倍率表</strong><div>{boostRates.map((rate, fires) => <span key={fires} className={Number(normalPlanForm.boost) === fires ? "active" : ""}><b>{fires} 火</b>x{rate}</span>)}</div><small>火量是开始 Live 前选择的消耗量；这里显示的是活动 PT 倍率。</small></div></article>
-        <article className="panel wide">
+        <article className="panel wide tools-account-panel">
           <div className="panel-heading">
             <div>
               <h2>登录态资产联动</h2>
@@ -2384,7 +2399,7 @@ export function App() {
           {binding && !bindingRegionMatches && <p className="warning-text">当前页面区服 {region.toUpperCase()} 与绑定区服 {binding.region.toUpperCase()} 不一致，请先切换区服。</p>}
           <BoundToolResultView />
         </article>
-        <article className="panel wide normal-plan-panel">
+        <article className="panel wide normal-plan-panel tools-primary-panel">
           <div className="panel-heading compact-heading"><div><h2>普通活动规划</h2><p>一次计算推荐卡组、单局 PT、到目标所需局数、歌曲效率和区域道具建议。</p></div><span className="status-pill">当前区服 {region.toUpperCase()}</span></div>
           {toolDataLoading && <div className="tool-data-state"><RefreshCw size={16} className="spin" /><span>正在加载完整歌曲与卡牌数据…</span></div>}
           {toolSongsStatus === "error" && <div className="tool-data-state error"><span>歌曲列表加载失败：{playerErrorMessage(toolSongsError || toolDataError)}</span><button type="button" className="secondary" onClick={() => ensureFullToolData(true).catch((error) => setMessage(playerErrorMessage(error)))}>重试加载</button></div>}
@@ -2409,28 +2424,28 @@ export function App() {
           {toolSongsStatus === "ready" && songs.length > 0 && !normalPlanForm.musicId && <p className="warning-text">请先明确选择一首歌曲，规划和活动 PT 按钮才会启用。</p>}
         </article>
         <PlanResultView result={plan} />
-        <article className="panel tool-card-panel"><div className="panel-heading compact-heading"><div><h2>周回 / 控分</h2><p>已有可靠的单局 PT 时，计算还需局数和每小时进度要求。</p></div></div><div className="tool-form-grid compact">
+        <article className="panel tool-card-panel tools-control-panel"><div className="panel-heading compact-heading"><div><h2>周回 / 控分</h2><p>已有可靠的单局 PT 时，计算还需局数和每小时进度要求。</p></div></div><div className="tool-form-grid compact">
           <ToolField label="当前活动 PT" unit="pt" help="活动页面当前累计 PT。"><input type="number" min="0" value={controlForm.currentPt} onChange={(event) => setControlForm({ ...controlForm, currentPt: event.target.value })} /></ToolField>
           <ToolField label="目标活动 PT" unit="pt" help="希望最终达到的累计 PT。"><input type="number" min="0" value={controlForm.targetPt} onChange={(event) => setControlForm({ ...controlForm, targetPt: event.target.value })} /></ToolField>
           <ToolField label="剩余时间" unit="分钟" help="例如 3 小时填 180。"><input type="number" min="0" value={controlForm.remainingMinutes} onChange={(event) => setControlForm({ ...controlForm, remainingMinutes: event.target.value })} /></ToolField>
           <ToolField label="单局活动 PT" unit="pt/局" help="填一局结算画面的活动 PT；不确定时先用上方规划估算。"><input type="number" min="0" value={controlForm.ptPerRun} onChange={(event) => setControlForm({ ...controlForm, ptPerRun: event.target.value })} placeholder="例如 55875" /></ToolField>
           <ToolField label="最多可打局数" unit="局" help="按体力、时间或预算估算的局数上限。"><input type="number" min="0" value={controlForm.availableRuns} onChange={(event) => setControlForm({ ...controlForm, availableRuns: event.target.value })} /></ToolField>
         </div><button type="button" onClick={calculateControl}><Check size={16} />计算目标路径</button>{controlResult && <><div className="tool-result-metrics"><div><span>还差 PT</span><strong>{formatNumber(controlResult.remainingPt)}</strong></div><div><span>所需局数</span><strong>{formatNumber(controlResult.requiredRuns)} 局</strong></div><div><span>每小时需打</span><strong>{typeof controlResult.requiredRunsPerHour === "number" ? controlResult.requiredRunsPerHour.toFixed(1) : "-"} 局</strong></div><div><span>计划状态</span><strong>{controlResult.feasible ? "可行" : "需调整"}</strong></div></div><ToolResultWarnings result={controlResult} /><ToolJsonDetails value={controlResult} /></>}</article>
-        <article className="panel tool-card-panel">
+        <article className="panel tool-card-panel tools-deck-panel">
           <div className="panel-heading compact-heading"><div><h2>组卡推荐</h2><p>卡牌 ID 可在卡牌图鉴详情中查看，公开模式只使用手动填写的持有卡。</p></div></div>
           <ToolField label="持有卡牌 ID" help="以逗号或空格分隔，只填写真正持有的卡。"><textarea value={deckOwnedIds} onChange={(event) => setDeckOwnedIds(event.target.value)} placeholder="例如 1, 2, 109, 325" /></ToolField>
           <button type="button" onClick={calculateDeck} disabled={deckLoading}><Wand2 size={16} />{deckLoading ? "正在推荐…" : "推荐卡组"}</button>
           {deckError && <div className="catalog-feedback error" role="alert"><strong>组卡推荐失败</strong><span>{playerErrorMessage(deckError)}</span><button type="button" className="secondary" onClick={calculateDeck}>重试</button></div>}
           {deckResult && <><DeckRecommendationPreview result={deckResult} /><ToolResultWarnings result={deckResult} /><ToolJsonDetails value={deckResult} /></>}
         </article>
-        <article className="panel wide tool-card-panel"><div className="panel-heading compact-heading"><div><h2>周回歌曲推荐</h2><p>按共享活动 PT 公式计算候选歌曲，再按每分钟 PT 排序。</p></div></div><div className="tool-form-grid">
+        <article className="panel wide tool-card-panel tools-music-panel"><div className="panel-heading compact-heading"><div><h2>周回歌曲推荐</h2><p>按共享活动 PT 公式计算候选歌曲，再按每分钟 PT 排序。</p></div></div><div className="tool-form-grid">
           <ToolField label="目标 / 当前 PT" help="用于估算每首歌到目标还需多少局。"><div className="inline-pair"><input type="number" min="0" value={musicRecommendForm.targetPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, targetPt: event.target.value })} placeholder="目标 PT" /><input type="number" min="0" value={musicRecommendForm.currentPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, currentPt: event.target.value })} placeholder="当前 PT" /></div></ToolField>
           <ToolField label="活动加成" unit="%" help="编成页面显示 621% 就填 621。"><input type="number" min="0" value={musicRecommendForm.eventBonusPercent} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, eventBonusPercent: event.target.value })} /></ToolField>
           <ToolField label="预计结算分数" unit="分" help="填最近同队伍、同模式的结算分数；可留空。"><input type="number" min="0" value={musicRecommendForm.baseScore} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, baseScore: event.target.value })} /></ToolField>
           <ToolField label="Live 类型 / 火量" help="火量按页面上方倍率表计算。"><div className="inline-pair"><select value={musicRecommendForm.liveType} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, liveType: event.target.value })}>{liveTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select value={musicRecommendForm.boost} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, boost: event.target.value })}>{boostRates.map((rate, fires) => <option key={fires} value={fires}>{fires} 火（x{rate}）</option>)}</select></div></ToolField>
           <ToolField label="难度 / 最长时长" help="只比较指定难度且不超过该时长的谱面。"><div className="inline-pair"><select value={musicRecommendForm.preferredDifficulty} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, preferredDifficulty: event.target.value })}>{difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty.toUpperCase()}</option>)}</select><input type="number" min="1" value={musicRecommendForm.maxDurationSeconds} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, maxDurationSeconds: event.target.value })} placeholder="最长秒数" /></div></ToolField>
         </div><button type="button" onClick={calculateMusicRecommend}><Music size={16} />计算歌曲效率</button>{musicRecommendResult && <><RecommendationList items={musicRecommendResult.recommendations} type="music" /><ToolResultWarnings result={musicRecommendResult} /><ToolJsonDetails value={musicRecommendResult} /></>}</article>
-        <article className="panel wide tool-card-panel"><div className="panel-heading compact-heading"><div><h2>区域道具升级建议</h2><p>对照 Moesekai 区域道具公式，比较目标卡组升级前后的综合力变化；成本数据缺失时明确标记。</p></div></div><div className="tool-form-grid"><ToolField label="目标卡组 ID" help="填写正在使用的 1–5 张卡牌 ID；绑定资产可结合当前区域道具等级与素材。"><textarea value={areaRecommendForm.cardIds} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, cardIds: event.target.value })} placeholder="例如 101, 205, 309, 410, 512" /></ToolField><ToolField label="排序方式" help="选择更看重金币效率、绝对综合力提升或当前材料是否足够。"><select value={areaRecommendForm.sortBy} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, sortBy: event.target.value })}><option value="coin-efficiency">金币效率优先</option><option value="power-gain">综合力提升优先</option><option value="affordable">当前可升级优先</option></select></ToolField><label className="tool-check-field"><input type="checkbox" checked={areaRecommendForm.includeUnaffordable} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, includeUnaffordable: event.target.checked })} /><span><strong>显示材料不足的项目</strong><small>材料数据缺失时仍会保留候选并标明成本未知。</small></span></label></div><div className="button-row"><button type="button" onClick={calculateAreaRecommend}><Package size={16} />用手动卡组生成建议</button><button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("area")}>使用绑定 UID 资产</button></div>{areaRecommendResult && <><RecommendationList items={areaRecommendResult.recommendations} type="area" /><ToolResultWarnings result={areaRecommendResult} /><ToolJsonDetails value={areaRecommendResult} /></>}</article>
+        <article className="panel wide tool-card-panel tools-area-panel"><div className="panel-heading compact-heading"><div><h2>区域道具升级建议</h2><p>对照 Moesekai 区域道具公式，比较目标卡组升级前后的综合力变化；成本数据缺失时明确标记。</p></div></div><div className="tool-form-grid"><ToolField label="目标卡组 ID" help="填写正在使用的 1–5 张卡牌 ID；绑定资产可结合当前区域道具等级与素材。"><textarea value={areaRecommendForm.cardIds} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, cardIds: event.target.value })} placeholder="例如 101, 205, 309, 410, 512" /></ToolField><ToolField label="排序方式" help="选择更看重金币效率、绝对综合力提升或当前材料是否足够。"><select value={areaRecommendForm.sortBy} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, sortBy: event.target.value })}><option value="coin-efficiency">金币效率优先</option><option value="power-gain">综合力提升优先</option><option value="affordable">当前可升级优先</option></select></ToolField><label className="tool-check-field"><input type="checkbox" checked={areaRecommendForm.includeUnaffordable} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, includeUnaffordable: event.target.checked })} /><span><strong>显示材料不足的项目</strong><small>材料数据缺失时仍会保留候选并标明成本未知。</small></span></label></div><div className="button-row"><button type="button" onClick={calculateAreaRecommend}><Package size={16} />用手动卡组生成建议</button><button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("area")}>使用绑定 UID 资产</button></div>{areaRecommendResult && <><RecommendationList items={areaRecommendResult.recommendations} type="area" /><ToolResultWarnings result={areaRecommendResult} /><ToolJsonDetails value={areaRecommendResult} /></>}</article>
       </section>
     );
   }
@@ -3195,7 +3210,7 @@ export function App() {
   }
 
   return (
-    <main className="shell">
+    <main className={`shell layout-${layoutMode}`}>
       <aside className="sidebar">
         <Link className="brand" to="/">Project Sekai 工具台</Link>
         <div className="mobile-nav-bar">
@@ -3233,7 +3248,7 @@ export function App() {
       <section className="content">
         <header className="topbar">
           <div className="topbar-status" aria-live="polite">{(location.pathname.startsWith("/me") ? auth.message : (message === "准备就绪" || message === "基础数据已就绪，图鉴将在打开时加载" ? "" : message)) && <p>{location.pathname.startsWith("/me") ? auth.message : message}</p>}</div>
-          <div className="top-actions"><select value={region} onChange={(event) => changeRegion(event.target.value)}>{regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" onClick={() => void refreshBaseAndCatalog()} disabled={baseRefreshing}><RefreshCw size={16} />{baseRefreshing ? "刷新中" : "刷新"}</button></div>
+          <div className="top-actions"><button type="button" className="layout-switch" onClick={toggleLayoutMode} title={layoutMode === "workbench" ? "切换到清爽版" : "切换到工作台版"} aria-label={layoutMode === "workbench" ? "切换到清爽版" : "切换到工作台版"}>{layoutMode === "workbench" ? <Smartphone size={18} /> : <Monitor size={18} />}<span>{layoutMode === "workbench" ? "清爽版" : "工作台"}</span></button><select value={region} onChange={(event) => changeRegion(event.target.value)}>{regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{activeSection !== "forecast" && <button type="button" onClick={() => void refreshBaseAndCatalog()} disabled={baseRefreshing}><RefreshCw size={16} />{baseRefreshing ? "刷新中" : "刷新"}</button>}</div>
         </header>
 
         <div className="route-content">
