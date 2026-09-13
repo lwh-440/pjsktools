@@ -929,12 +929,13 @@ export async function getCurrentEvent(region: RegionId): Promise<EventInfo & { r
     const end = Date.parse(event.endAt);
     return Number.isFinite(start) && Number.isFinite(end) && start <= now && now <= end;
   });
-  return { ...(active ?? noCurrentEvent), region };
+  const event = active ?? noCurrentEvent;
+  return { ...event, region, assets: getEventAssetDetail(region, event) };
 }
 
 export async function getEventDetail(region: RegionId, eventId: string): Promise<(EventInfo & { region: RegionId }) | null> {
   const event = (await getEvents(region)).find((item) => item.id === eventId);
-  return event ? { ...event, region } : null;
+  return event ? { ...event, region, assets: getEventAssetDetail(region, event) } : null;
 }
 
 export async function getMasterCollection(region: RegionId, type: string): Promise<MasterCollection> {

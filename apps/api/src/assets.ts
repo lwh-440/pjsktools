@@ -18,6 +18,9 @@ const regionAssetDir: Record<RegionId, string> = {
   kr: "kr-assets",
   cn: "cn-assets"
 };
+const legacyRegionAssetDir: Record<RegionId, string> = {
+  jp: "sekai-jp-assets", en: "sekai-en-assets", tw: "sekai-tw-assets", kr: "sekai-kr-assets", cn: "sekai-cn-assets"
+};
 
 function harukiPath(assetPath: string) {
   const path = assetPath.replace(/^\/+/, "");
@@ -25,6 +28,8 @@ function harukiPath(assetPath: string) {
   if (card) return `startapp/thumbnail/chara/${card[1]}_${card[2]}.png`;
   const thumbnail = path.match(/^thumbnail\/chara\/([^/]+)_(normal|after_training)\.webp$/);
   if (thumbnail) return `startapp/thumbnail/chara/${thumbnail[1]}_${thumbnail[2]}.png`;
+  const event = path.match(/^home\/banner\/([^/]+)\/[^/]+\.webp$/);
+  if (event) return `ondemand/event_story/${event[1]}/screen_image/banner_event_story.png`;
   return path;
 }
 
@@ -80,7 +85,7 @@ function costumeRepresentativePart(raw: Record<string, unknown>) {
 }
 
 function sekaiBestAssetUrl(region: RegionId, assetPath: string) {
-  return `${sekaiBestAssetBase}/${regionAssetDir[region]}/${assetPath.replace(/^\/+/, "")}`;
+  return `${sekaiBestAssetBase}/${legacyRegionAssetDir[region]}/${assetPath.replace(/^\/+/, "")}`;
 }
 
 function harukiAssetCandidates(region: RegionId, assetPath: string) {
@@ -258,11 +263,17 @@ export function getCardAssetDetail(region: RegionId, card: Card) {
 
 export function getEventBannerUrl(region: RegionId, event: EventInfo) {
   if (!event.assetbundleName) return "";
-  return assetUrl(region, `home/banner/${event.assetbundleName}/${event.assetbundleName}.webp`);
+  return assetUrl(region, `ondemand/event_story/${event.assetbundleName}/screen_image/banner_event_story.png`);
 }
 
 export function getEventAssetDetail(region: RegionId, event: EventInfo) {
-  const imageCandidates = event.assetbundleName ? getAssetCandidates(region, `home/banner/${event.assetbundleName}/${event.assetbundleName}.webp`) : [];
+  const imageCandidates = event.assetbundleName
+    ? uniqueStrings([
+      ...getAssetCandidates(region, `ondemand/event_story/${event.assetbundleName}/screen_image/banner_event_story.png`),
+      // A small set of early events used the pre-event-story banner layout.
+      ...getAssetCandidates(region, `ondemand/event/${event.assetbundleName}/screen/banner.png`)
+    ])
+    : [];
   return {
     region,
     eventId: event.id,
