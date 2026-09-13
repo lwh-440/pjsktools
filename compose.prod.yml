@@ -173,7 +173,7 @@ services:
       dockerfile: deploy/Dockerfile.web
       args:
         VITE_API_BASE_URL: ${PUBLIC_API_BASE_URL}
-        VITE_HARUKI_FEATURE_ENABLED: ${VITE_HARUKI_FEATURE_ENABLED:-false}
+        VITE_HARUKI_FEATURE_ENABLED: ${VITE_HARUKI_FEATURE_ENABLED:-true}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
     environment:
