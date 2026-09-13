@@ -921,7 +921,7 @@ export async function getEvents(region: RegionId): Promise<EventInfo[]> {
   return (await getFreshMaster(region))?.events ?? [];
 }
 
-export async function getCurrentEvent(region: RegionId): Promise<EventInfo & { region: RegionId }> {
+export async function getCurrentEvent(region: RegionId): Promise<EventInfo & { region: RegionId; assets: ReturnType<typeof getEventAssetDetail> }> {
   const events = await getEvents(region);
   const now = Date.now();
   const active = events.find((event) => {
@@ -933,7 +933,7 @@ export async function getCurrentEvent(region: RegionId): Promise<EventInfo & { r
   return { ...event, region, assets: getEventAssetDetail(region, event) };
 }
 
-export async function getEventDetail(region: RegionId, eventId: string): Promise<(EventInfo & { region: RegionId }) | null> {
+export async function getEventDetail(region: RegionId, eventId: string): Promise<(EventInfo & { region: RegionId; assets: ReturnType<typeof getEventAssetDetail> }) | null> {
   const event = (await getEvents(region)).find((item) => item.id === eventId);
   return event ? { ...event, region, assets: getEventAssetDetail(region, event) } : null;
 }
