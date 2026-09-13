@@ -28,8 +28,12 @@ function harukiPath(assetPath: string) {
   if (card) return `startapp/thumbnail/chara/${card[1]}_${card[2]}.png`;
   const thumbnail = path.match(/^thumbnail\/chara\/([^/]+)_(normal|after_training)\.webp$/);
   if (thumbnail) return `startapp/thumbnail/chara/${thumbnail[1]}_${thumbnail[2]}.png`;
-  const event = path.match(/^home\/banner\/([^/]+)\/[^/]+\.webp$/);
-  if (event) return `ondemand/event_story/${event[1]}/screen_image/banner_event_story.png`;
+  const music = path.match(/^music\/jacket\/([^/]+)\/[^/]+\.webp$/);
+  if (music) return `startapp/thumbnail/music_jacket/${music[1]}.png`;
+  const honor = path.match(/^honor\/([^/]+)\/degree_(main|sub)\.webp$/);
+  if (honor) return `startapp/honor/${honor[1]}/degree_${honor[2]}.png`;
+  const costume = path.match(/^thumbnail\/costume\/([^/]+)\.webp$/);
+  if (costume) return `startapp/thumbnail/costume/${costume[1]}.png`;
   return path;
 }
 
