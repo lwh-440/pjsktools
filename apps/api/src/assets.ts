@@ -111,11 +111,11 @@ function assetUrl(region: RegionId, assetPath: string) {
 }
 
 function moeAssetUrl(region: RegionId, assetPath: string) {
-  return `${moeAssetBase}/${regionAssetDir[region]}/${assetPath.replace(/^\/+/, "")}`;
+  return `${moeAssetBase}/${legacyRegionAssetDir[region]}/${assetPath.replace(/^\/+/, "")}`;
 }
 
 function moeOverseasAssetUrl(region: RegionId, assetPath: string) {
-  return `${moeOverseasAssetBase}/${regionAssetDir[region]}/${assetPath.replace(/^\/+/, "")}`;
+  return `${moeOverseasAssetBase}/${legacyRegionAssetDir[region]}/${assetPath.replace(/^\/+/, "")}`;
 }
 
 function moeAssetUrlPair(region: RegionId, assetPath: string) {
@@ -274,6 +274,8 @@ export function getEventAssetDetail(region: RegionId, event: EventInfo) {
   const imageCandidates = event.assetbundleName
     ? uniqueStrings([
       ...getAssetCandidates(region, `ondemand/event_story/${event.assetbundleName}/screen_image/banner_event_story.png`),
+      `${sekaiBestAssetBase}/${legacyRegionAssetDir[region]}/event_story/${event.assetbundleName}/screen_image/banner_event_story.webp`,
+      `${moeAssetBase}/${legacyRegionAssetDir[region]}/event_story/${event.assetbundleName}/screen_image/banner_event_story.webp`,
       // A small set of early events used the pre-event-story banner layout.
       ...getAssetCandidates(region, `ondemand/event/${event.assetbundleName}/screen/banner.png`)
     ])
