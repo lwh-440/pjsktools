@@ -311,8 +311,8 @@ export function getChartAssetDetail(region: RegionId, song: Song, difficulty: st
     durationSeconds: song.durationSeconds,
     bpm: song.bpm,
     jacketUrl,
-    chartSvgUrl: `${moeChartBase}/${song.id}/${normalizedDifficulty}.svg`,
-    chartPngUrl: `${sekaiBestAssetBase}/sekai-music-charts/${region}/${paddedId}/${normalizedDifficulty}.png`,
+    chartSvgUrl: `${moeChartBase}/${paddedId}/${normalizedDifficulty}.svg`,
+    chartPngUrl: `${sekaiBestAssetBase}/sekai-music-charts/${region === "tw" ? "tc" : region}/${paddedId}/${normalizedDifficulty}.png`,
     sekaiViewerChartSvgUrl: `${sekaiBestAssetBase}/sekai-music-charts/${region}/${paddedId}/${normalizedDifficulty}.svg`,
     susUrl: `${moeAssetBase}/${regionAssetDir[region]}/music/music_score/${paddedId}_01/${normalizedDifficulty}.txt`,
     source: {
