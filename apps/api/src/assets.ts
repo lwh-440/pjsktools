@@ -389,7 +389,7 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
         return representativeAsset ? getAssetCandidates(region, `thumbnail/costume/${representativeAsset}.webp`) : [];
       }
     case "stamps":
-      return assetbundleName ? [assetUrl(region, `stamp/${assetbundleName}/${assetbundleName}.png`), assetUrl(region, `stamp/${assetbundleName}/${assetbundleName}.webp`)] : [];
+      return assetbundleName ? getAssetCandidates(region, `stamp/${assetbundleName}/${assetbundleName}.png`) : [];
     case "comics":
       return uniqueStrings(assetbundleName ? [
         harukiAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
