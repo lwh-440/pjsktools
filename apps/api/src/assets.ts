@@ -372,6 +372,7 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
     }
     case "materials":
       return uniqueStrings([
+        ...(numericId ? [moeAssetUrl(region, `thumbnail/material/material${numericId}.webp`), moeOverseasAssetUrl(region, `thumbnail/material/material${numericId}.webp`)] : []),
         numericId ? assetUrl(region, `thumbnail/material/material${numericId}.webp`) : undefined,
         numericId ? moeAssetUrl(region, `thumbnail/material/material${numericId}.webp`) : undefined,
         numericId ? moeOverseasAssetUrl(region, `thumbnail/material/material${numericId}.webp`) : undefined,
@@ -389,7 +390,12 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
         return representativeAsset ? getAssetCandidates(region, `thumbnail/costume/${representativeAsset}.webp`) : [];
       }
     case "stamps":
-      return assetbundleName ? getAssetCandidates(region, `stamp/${assetbundleName}/${assetbundleName}.png`) : [];
+      return assetbundleName ? uniqueStrings([
+        moeAssetUrl(region, `stamp/${assetbundleName}/${assetbundleName}.png`),
+        moeOverseasAssetUrl(region, `stamp/${assetbundleName}/${assetbundleName}.png`),
+        sekaiBestAssetUrl(region, `stamp/${assetbundleName}/${assetbundleName}.png`),
+        ...getAssetCandidates(region, `stamp/${assetbundleName}/${assetbundleName}.png`)
+      ]) : [];
     case "comics":
       return uniqueStrings(assetbundleName ? [
         harukiAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
