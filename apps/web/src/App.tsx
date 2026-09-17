@@ -1,4 +1,4 @@
-﻿import {
+import {
   Activity,
   BadgePlus,
   Bell,
@@ -34,7 +34,7 @@
   Wand2,
   Zap
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router";
 import { apiGet, apiGetWithSignal, apiPost, apiResourceUrl } from "./api";
 import { loadCachedCatalog } from "./catalogCache";
@@ -44,6 +44,7 @@ import { finiteNumber } from "./numberValue";
 import { useAuth } from "./AuthContext";
 import type { DeckConfig, PlayerBinding } from "./accountTypes";
 import { ArtImage, DetailDrawer, ModalDialog, Pagination, SearchBox } from "./components/ui";
+import { RegionSelect } from "./components/RegionSelect";
 import { CatalogFilterPanel, type CatalogFilterMeta } from "./components/CatalogFilterPanel";
 import { FavoriteButton } from "./components/FavoriteButton";
 import { SiteFooter } from "./components/SiteFooter";
@@ -300,6 +301,25 @@ function imageCandidates(assets: AssetInfo | undefined, preferDetail = false) {
     ? ["screenUrl", "imageUrl", "thumbnailUrl", "bannerUrl", "logoUrl", "degreeMainUrl", "model3Url", "scenarioUrl"]
     : ["imageUrl", "thumbnailUrl", "bannerUrl", "logoUrl", "degreeMainUrl"];
   return unique([...keys.map((key) => stringAsset(assets, key)), ...stringAssetList(assets, "imageCandidates")]);
+}
+
+function eventBannerCandidates(event: EventInfo | null | undefined) {
+  return unique([
+    stringAsset(event?.assets, "bannerUrl"),
+    stringAsset(event?.assets, "screenUrl"),
+    ...imageCandidates(event?.assets, true)
+  ]);
+}
+
+function mergeCurrentEventDetails(current: EventInfo | null, incoming: EventInfo): EventInfo {
+  if (!current || current.id !== incoming.id) return incoming;
+  const assets = { ...(current.assets ?? {}), ...(incoming.assets ?? {}) };
+  return {
+    ...current,
+    ...incoming,
+    storyOutline: incoming.storyOutline ?? current.storyOutline,
+    assets: Object.keys(assets).length ? assets : undefined
+  };
 }
 
 function collectionImageCandidates(type: string, assets: AssetInfo | undefined, preferDetail = false) {
@@ -563,8 +583,19 @@ export function App() {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<SectionId>("home");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [layoutMode, setLayoutMode] = useState<"workbench" | "clean">(() => (window.localStorage.getItem("pjsktools-layout-mode") as "workbench" | "clean") || "workbench");
-  function toggleLayoutMode() { setLayoutMode((current) => { const next = current === "workbench" ? "clean" : "workbench"; window.localStorage.setItem("pjsktools-layout-mode", next); return next; }); }
+  const [uiStyle, setUiStyle] = useState<"workbench" | "magazine">(() => {
+    try {
+      const saved = window.localStorage.getItem("pjsktools:ui-style");
+      if (saved === "workbench" || saved === "magazine") return saved;
+    } catch { /* use viewport default */ }
+    return window.matchMedia("(max-width: 760px)").matches ? "magazine" : "workbench";
+  });
+  const [magazineCategory, setMagazineCategory] = useState(() => navGroups[0]?.title ?? "");
+  const magazinePrimaryNavRef = useRef<HTMLElement | null>(null);
+  const magazineQuickNavRef = useRef<HTMLElement | null>(null);
+  const [magazineNavOverflow, setMagazineNavOverflow] = useState({ primary: { left: false, right: false }, quick: { left: false, right: false } });
+  const quickNavDragRef = useRef({ pointerId: -1, startX: 0, startScrollLeft: 0, dragging: false });
+  const suppressQuickNavClickRef = useRef(false);
   const [regions, setRegions] = useState<Region[]>([]);
   const [region, setRegion] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get("region");
@@ -801,6 +832,22 @@ export function App() {
   }, [location.pathname]);
 
   useEffect(() => {
+    const activeGroup = navGroups.find((group) => group.items.some((item) => item.id === activeSection));
+    if (activeGroup) setMagazineCategory(activeGroup.title);
+  }, [activeSection]);
+
+  useLayoutEffect(() => {
+    if (uiStyle !== "magazine") return;
+    const frame = window.requestAnimationFrame(updateMagazineNavOverflow);
+    const sync = () => updateMagazineNavOverflow();
+    window.addEventListener("resize", sync);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", sync);
+    };
+  }, [uiStyle, magazineCategory]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedFilter(filter), 250);
     return () => window.clearTimeout(timer);
   }, [filter]);
@@ -951,7 +998,7 @@ export function App() {
       ]);
       if (controller.signal.aborted || baseRequest.current?.id !== requestId || regionRef.current !== nextRegion) return;
       setRegions(nextRegions);
-      if (currentEvent) setEvent((current) => current ?? currentEvent);
+      if (currentEvent) setEvent((current) => mergeCurrentEventDetails(current, currentEvent));
       setCatalogTotals({ songs: songPage?.total ?? null, cards: cardPage?.total ?? null });
       setHistoryEventId("");
       setMessage("基础数据已就绪，图鉴将在打开时加载");
@@ -1079,6 +1126,16 @@ export function App() {
     setForecastLoading(false);
   }
 
+  function AppearanceSwitch() {
+    const next = uiStyle === "workbench" ? "magazine" : "workbench";
+    const Icon = next === "workbench" ? Monitor : Smartphone;
+    return <button type="button" className="appearance-switch" aria-label={next === "workbench" ? "切换到电脑布局" : "切换到手机布局"} title={next === "workbench" ? "切换到电脑布局" : "切换到手机布局"} onClick={() => { setUiStyle(next); try { window.localStorage.setItem("pjsktools:ui-style", next); } catch {} }}><Icon size={18} aria-hidden="true" /></button>;
+  }
+  function updateMagazineNavOverflow() { const measure = (el: HTMLElement | null) => { if (!el) return { left: false, right: false }; const max = Math.max(0, el.scrollWidth - el.clientWidth); return { left: el.scrollLeft > 1, right: el.scrollLeft < max - 1 }; }; setMagazineNavOverflow({ primary: measure(magazinePrimaryNavRef.current), quick: measure(magazineQuickNavRef.current) }); }
+  function scrollMagazineNavigation(kind: "primary" | "quick", direction: -1 | 1) { const el = kind === "primary" ? magazinePrimaryNavRef.current : magazineQuickNavRef.current; if (el) el.scrollBy({ left: direction * Math.max(140, Math.round(el.clientWidth * .7)), behavior: "smooth" }); }
+  function quickNavDragProps() { return { onPointerDown: (e: ReactPointerEvent<HTMLElement>) => { if (e.pointerType === "touch" || e.button !== 0) return; quickNavDragRef.current = { pointerId: e.pointerId, startX: e.clientX, startScrollLeft: e.currentTarget.scrollLeft, dragging: false }; }, onPointerMove: (e: ReactPointerEvent<HTMLElement>) => { const d=quickNavDragRef.current; if(d.pointerId!==e.pointerId)return; const dist=e.clientX-d.startX; if(!d.dragging && Math.abs(dist)<=6)return; if(!d.dragging){d.dragging=true;suppressQuickNavClickRef.current=true;e.currentTarget.setPointerCapture(e.pointerId);} e.currentTarget.scrollLeft=d.startScrollLeft-dist;e.preventDefault(); }, onPointerUp: (e: ReactPointerEvent<HTMLElement>) => { const d=quickNavDragRef.current; if(d.pointerId===e.pointerId){if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId); quickNavDragRef.current={pointerId:-1,startX:0,startScrollLeft:0,dragging:false}; window.setTimeout(()=>{suppressQuickNavClickRef.current=false;},0);} } }; }
+  function handleMagazineLinkClick(e: ReactMouseEvent<HTMLAnchorElement>) { if (suppressQuickNavClickRef.current) { e.preventDefault(); e.stopPropagation(); } else { setMobileNavOpen(false); } }
+
   function resetRankingBoardContent() {
     rankingRequests.current.forEach((controller) => controller.abort());
     rankingRequests.current.clear();
@@ -1147,7 +1204,7 @@ export function App() {
           || rankingBoardRef.current !== nextBoard
           || worldLinkCharacterRef.current !== nextCharacterId) return;
         if (confirmedEvent.eventType !== "world_bloom" || eventChanged) {
-          setEvent(confirmedEvent);
+          setEvent((current) => mergeCurrentEventDetails(current, confirmedEvent));
           rankingBoardRef.current = "overall";
           worldLinkCharacterRef.current = null;
           setRankingBoard("overall");
@@ -1178,7 +1235,7 @@ export function App() {
           || rankingBoardRef.current !== nextBoard
           || (nextBoard === "worldlink" && worldLinkCharacterRef.current !== nextCharacterId)) return;
         const resolvedEvent = currentEvent ?? (liveHasDetails ? live.currentEvent : null);
-        if (resolvedEvent) setEvent(resolvedEvent);
+        if (resolvedEvent) setEvent((current) => mergeCurrentEventDetails(current, resolvedEvent));
       }
       setRanking(live.top100 ?? []);
       setBorders(live.borderLines ?? []);
@@ -1809,44 +1866,70 @@ export function App() {
   }
 
   function HomePage() {
-    const topRanks = ranking.slice(0, 3);
+    const eventArt = eventBannerCandidates(event);
+    const shortcutArt: Record<string, string> = {
+      songs: "/assets/home-shortcuts/songs-ichika-note.webp",
+      cards: "/assets/home-shortcuts/cards-shizuku-art.webp",
+      gachas: "/assets/home-shortcuts/gachas-toya-gacha.webp",
+      tools: "/assets/home-shortcuts/tools-nene-calculator.webp",
+      deckCompare: "/assets/home-shortcuts/deck-compare-mafuyu-cards.webp",
+      mysekai: "/assets/home-shortcuts/mysekai-miku-home.webp"
+    };
+    const subtitles: Record<string, string> = {
+      songs: "曲目与谱面",
+      cards: "角色与技能",
+      gachas: "招募卡池",
+      tools: "活动与分数计算",
+      deckCompare: "对比卡组方案",
+      mysekai: "MySekai 资料"
+    };
+    const shortcuts = ["songs", "cards", "gachas", "tools", "deckCompare", "mysekai"];
+
     return (
-      <section className="workspace">
-        <div className="dashboard-hero">
+      <section className="workspace home-page">
+        <div className="dashboard-hero home-hero">
           <div>
             <span className="home-kicker">连接每一次 Live 与成长</span>
             <h2>Project Sekai 工具台</h2>
             <p>快速查看活动、图鉴与个人资料，在清晰顺手的工作台里完成计算和比较。</p>
           </div>
-          <div className="hero-metrics">
+          <div className="hero-metrics" aria-label="基础资料统计">
             <div><span>歌曲</span><strong>{catalogTotals.songs === null ? "-" : formatNumber(catalogTotals.songs)}</strong></div>
             <div><span>卡牌</span><strong>{catalogTotals.cards === null ? "-" : formatNumber(catalogTotals.cards)}</strong></div>
           </div>
         </div>
-        <div className="dashboard-grid">
-          <article className="panel status-panel">
-            <div className="panel-heading"><div><h2>当前活动</h2><p>{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</p></div><button type="button" onClick={() => goSection("currentEvent")}>查看分数线</button></div>
-            <strong className="feature-title">{event?.name ?? "正在加载活动"}</strong>
-            <div className="mini-rank-list">{topRanks.map((entry) => <div key={entry.rank}><span>#{entry.rank}</span><strong>{entry.playerName ?? entry.name}</strong><small>{formatNumber(entry.score)} pt</small></div>)}{topRanks.length === 0 && <p className="empty-state">等待分数线数据。</p>}</div>
-          </article>
-          <article className="panel status-panel">
-            <div className="panel-heading"><div><h2>账号状态</h2><p>{auth.isAuthenticated ? (HARUKI_FEATURE_ENABLED ? "可使用玩家绑定与跨端快照" : "可同步收藏、成绩、卡组与账号设置") : "登录后同步账号设置"}</p></div></div>
+
+        <article className="panel home-event-panel">
+          <div className="home-event-content">
+            <ArtImage src={eventArt[0]} srcCandidates={eventArt.slice(1)} label={event?.name ?? "当前活动"} variant="event" fallback={<span>活动封面</span>} />
+            <div className="home-event-copy">
+              <span className="home-event-label">当前活动</span>
+              <h2 className="feature-title">{event?.name ?? "正在加载活动"}</h2>
+              <p className="home-event-date">{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</p>
+              <p className="event-description">{event?.storyOutline ?? "查看当前活动封面、简介与实时分数线。"}</p>
+              <div className="home-event-actions"><button type="button" className="secondary" disabled={!event?.id || event.id === "none"} onClick={() => event?.id && void openEvent(event.id, event.name)}>查看活动详情</button><button type="button" onClick={() => goSection("currentEvent")}>查看分数线</button></div>
+            </div>
+          </div>
+        </article>
+
+        <article className="panel home-shortcuts-panel">
+          <div className="panel-heading"><div><h2>常用入口</h2><p>从资料浏览到活动计算，直接进入当前任务。</p></div></div>
+          <div className="tool-grid compact-tools">
+            {shortcuts.map((id) => {
+              const item = navItems.find((entry) => entry.id === id)!;
+              return <button key={item.id} type="button" className="tool-card" onClick={() => goSection(item.id)}><span className="tool-card-art"><img src={shortcutArt[item.id]} alt="" loading="lazy" /></span><strong>{item.label}</strong><small>{subtitles[item.id]}</small></button>;
+            })}
+          </div>
+        </article>
+
+        <div className="home-support-grid">
+          <article className="panel home-support-panel">
+            <div className="home-support-copy"><span className="tool-icon"><UserRound size={21} /></span><div><h2>账号状态</h2><p>{auth.isAuthenticated ? (HARUKI_FEATURE_ENABLED ? "可使用玩家绑定与跨端快照" : "可同步收藏、成绩、卡组与账号设置") : "登录后同步账号设置"}</p></div></div>
             <Link className="feature-link" to={auth.isAuthenticated ? "/me" : "/login"}>{auth.isAuthenticated ? "进入个人信息管理" : "登录 / 注册"}</Link>
           </article>
-          <article className="panel android-download-panel">
-            <div className="android-download-copy"><span className="tool-icon"><Download size={22} /></span><div><h2>Android 客户端</h2><p>在手机上使用图鉴、活动与玩家工具。</p></div></div>
-            <a className="feature-link android-download-link" href="/download/pjsktools-android-0.1.0.apk" download>下载 APK</a>
-          </article>
-          <article className="panel wide">
-            <div className="panel-heading"><div><h2>常用入口</h2><p>按工作流分组，减少来回切换。</p></div></div>
-            <div className="tool-grid compact-tools">
-              {["songs", "cards", "gachas", "tools", "deckCompare", "mysekai"].map((id) => {
-                const item = navItems.find((entry) => entry.id === id)!;
-                const Icon = item.icon;
-                const shortcutArt: Record<string, string> = { songs: "/assets/home-shortcuts/songs-ichika-note.webp", cards: "/assets/home-shortcuts/cards-shizuku-art.webp", gachas: "/assets/home-shortcuts/gachas-toya-gacha.webp", tools: "/assets/home-shortcuts/tools-nene-calculator.webp", deckCompare: "/assets/home-shortcuts/deck-compare-mafuyu-cards.webp", mysekai: "/assets/home-shortcuts/mysekai-miku-home.webp" };
-                return <button key={item.id} type="button" className="tool-card" onClick={() => goSection(item.id)}><span className="tool-card-art"><img src={shortcutArt[item.id]} alt="" loading="lazy" /></span><span className="tool-icon"><Icon size={20} /></span><strong>{item.label}</strong><small>打开模块</small></button>;
-              })}
-            </div>
+          <article className="panel home-support-panel">
+            <div className="home-support-copy"><span className="tool-icon"><Download size={21} /></span><div><h2>Android 客户端</h2><p>在手机上使用图鉴、活动与玩家工具。</p></div></div>
+            <a className="feature-link" href="/download/pjsktools-android-0.1.0.apk" download>下载 APK</a>
           </article>
         </div>
       </section>
@@ -3209,14 +3292,17 @@ export function App() {
     return HomePage();
   }
 
+  const selectedMagazineGroup = navGroups.find((group) => group.title === magazineCategory) ?? navGroups[0];
+
   return (
-    <main className={`shell layout-${layoutMode}`}>
+    <main className={`shell theme-${uiStyle}`}>
       <aside className="sidebar">
         <Link className="brand" to="/">Project Sekai 工具台</Link>
         <div className="mobile-nav-bar">
           <button type="button" className="secondary mobile-nav-toggle" aria-expanded={mobileNavOpen} aria-controls="main-navigation" onClick={() => setMobileNavOpen((open) => !open)}>菜单</button>
           <strong className="mobile-current-page">{sectionTitle()}</strong>
-          <select aria-label="选择区服" value={region} onChange={(event) => changeRegion(event.target.value)}>{regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          {uiStyle === "workbench" && <AppearanceSwitch />}
+          <RegionSelect className="navigation-region-select" value={region} options={regions} onChange={changeRegion} />
         </div>
         <nav id="main-navigation" className={mobileNavOpen ? "mobile-open" : ""}>
           {navGroups.map((group) => (
@@ -3246,9 +3332,35 @@ export function App() {
       </aside>
 
       <section className="content">
-        <header className="topbar">
-          <div className="topbar-status" aria-live="polite">{(location.pathname.startsWith("/me") ? auth.message : (message === "准备就绪" || message === "基础数据已就绪，图鉴将在打开时加载" ? "" : message)) && <p>{location.pathname.startsWith("/me") ? auth.message : message}</p>}</div>
-          <div className="top-actions"><button type="button" className="layout-switch" onClick={toggleLayoutMode} title={layoutMode === "workbench" ? "切换到清爽版" : "切换到工作台版"} aria-label={layoutMode === "workbench" ? "切换到清爽版" : "切换到工作台版"}>{layoutMode === "workbench" ? <Smartphone size={18} /> : <Monitor size={18} />}<span>{layoutMode === "workbench" ? "清爽版" : "工作台"}</span></button><select value={region} onChange={(event) => changeRegion(event.target.value)}>{regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{activeSection !== "forecast" && <button type="button" onClick={() => void refreshBaseAndCatalog()} disabled={baseRefreshing}><RefreshCw size={16} />{baseRefreshing ? "刷新中" : "刷新"}</button>}</div>
+        {uiStyle === "magazine" && <div className="magazine-navigation">
+          <div className="magazine-primary-row">
+            <Link className="magazine-brand" to="/">Project Sekai 工具台</Link>
+            <div className="magazine-nav-scroll-shell magazine-primary-scroll-shell">
+              <button type="button" className="magazine-scroll-button magazine-scroll-button-left" hidden={!magazineNavOverflow.primary.left} aria-label="向左滚动分类" onClick={() => scrollMagazineNavigation("primary", -1)}>‹</button>
+              <nav ref={magazinePrimaryNavRef} className="magazine-primary-nav nav-scroll-drag" aria-label="功能分类" onScroll={updateMagazineNavOverflow} {...quickNavDragProps()}>
+                {navGroups.map((group) => <button key={group.title} type="button" className={`magazine-primary-link ${selectedMagazineGroup?.title === group.title ? "active" : ""}`} aria-pressed={selectedMagazineGroup?.title === group.title} onClick={() => setMagazineCategory(group.title)}>{group.title}</button>)}
+              </nav>
+              <button type="button" className="magazine-scroll-button magazine-scroll-button-right" hidden={!magazineNavOverflow.primary.right} aria-label="向右滚动分类" onClick={() => scrollMagazineNavigation("primary", 1)}>›</button>
+            </div>
+            <div className="magazine-primary-actions">
+              <AppearanceSwitch />
+              <RegionSelect className="navigation-region-select" value={region} options={regions} onChange={changeRegion} />
+              <Link className="magazine-account-link" to={auth.isAuthenticated ? "/me" : "/login"}>{auth.isAuthenticated ? "我的账号" : "登录"}</Link>
+            </div>
+          </div>
+          <div className="magazine-secondary-row">
+            <div className="magazine-nav-scroll-shell magazine-quick-scroll-shell">
+              <button type="button" className="magazine-scroll-button magazine-scroll-button-left" hidden={!magazineNavOverflow.quick.left} aria-label="向左滚动功能" onClick={() => scrollMagazineNavigation("quick", -1)}>‹</button>
+              <nav ref={magazineQuickNavRef} className="magazine-quick-nav nav-scroll-drag" aria-label={`${selectedMagazineGroup?.title ?? "功能"}入口`} onScroll={updateMagazineNavOverflow} {...quickNavDragProps()}>
+                {selectedMagazineGroup?.items.map((item) => <NavLink key={item.id} end={item.id === "home"} to={item.id === "home" ? "/" : `/section/${item.id}`} onClick={handleMagazineLinkClick} className={({ isActive }) => `magazine-quick-nav-item ${isActive || activeSection === item.id ? "active" : ""}`}>{item.label}</NavLink>)}
+              </nav>
+              <button type="button" className="magazine-scroll-button magazine-scroll-button-right" hidden={!magazineNavOverflow.quick.right} aria-label="向右滚动功能" onClick={() => scrollMagazineNavigation("quick", 1)}>›</button>
+            </div>
+          </div>
+        </div>}
+        <header className={activeSection === "home" && location.pathname === "/" ? "topbar home-topbar" : "topbar"}>
+          <div className="topbar-status" aria-live="polite">{uiStyle === "workbench" && <AppearanceSwitch />}{(location.pathname.startsWith("/me") ? auth.message : (message === "准备就绪" || message === "基础数据已就绪，图鉴将在打开时加载" ? "" : message)) && <p>{location.pathname.startsWith("/me") ? auth.message : message}</p>}</div>
+          <div className="top-actions"><RegionSelect className="navigation-region-select" value={region} options={regions} onChange={changeRegion} />{activeSection !== "forecast" && activeSection !== "home" && <button type="button" onClick={() => void refreshBaseAndCatalog()} disabled={baseRefreshing}><RefreshCw size={16} />{baseRefreshing ? "刷新中" : "刷新"}</button>}</div>
         </header>
 
         <div className="route-content">
