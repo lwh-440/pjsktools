@@ -117,6 +117,8 @@ describe("Haruki asset mappings", () => {
     expect(gacha.bannerUrl).toBe(`${harukiJp}/startapp/home/banner/banner_gacha281/banner_gacha281.png`);
     expect(gacha).not.toHaveProperty("logoUrl");
     expect(gacha).not.toHaveProperty("screenUrl");
+    const enTicket = getCollectionItemAssetDetail("en", "gachas", { id: "1171", assetbundleName: "ab_gacha_2", raw: { id: 1171, assetbundleName: "ab_gacha_2" } });
+    expect(enTicket.imageCandidates).toContain("https://sekai-assets.haruki.seiunx.com/en-assets/ondemand/gacha/ab_gacha_2/logo/logo.png");
     expect(comic.imageCandidates[0]).toBe(`${harukiJp}/startapp/comic/one_frame/comic_0001.png`);
     expect(rankMatch.rankMainUrl).toBe(`${harukiJp}/startapp/rank_live/honor/common/tier_25/main.png`);
   });

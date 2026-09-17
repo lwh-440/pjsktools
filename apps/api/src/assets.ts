@@ -336,11 +336,18 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
 
   switch (type) {
     case "gachas":
-      // Haruki has confirmed only the banner export for this collection; do not advertise guessed logo/screen paths.
+      // A banner is not exported for every region-specific ticket or gift gacha. Haruki's documented ondemand bundle logo is the real fallback.
       return uniqueStrings([
         gachaId ? harukiAssetUrl(region, `startapp/home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.png`) : undefined,
+        gachaFallbackId ? harukiAssetUrl(region, `startapp/home/banner/banner_gacha${gachaFallbackId}/banner_gacha${gachaFallbackId}.png`) : undefined,
+        assetbundleName ? harukiAssetUrl(region, `ondemand/gacha/${assetbundleName}/logo/logo.png`) : undefined,
+        gachaFallbackAssetbundleName ? harukiAssetUrl(region, `ondemand/gacha/${gachaFallbackAssetbundleName}/logo/logo.png`) : undefined,
         ...(gachaId ? moeAssetUrlPair(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : []),
-        gachaId ? assetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined
+        ...(gachaFallbackId ? moeAssetUrlPair(region, `home/banner/banner_gacha${gachaFallbackId}/banner_gacha${gachaFallbackId}.webp`) : []),
+        ...(assetbundleName ? moeAssetUrlPair(region, `gacha/${assetbundleName}/logo/logo.webp`) : []),
+        ...(gachaFallbackAssetbundleName ? moeAssetUrlPair(region, `gacha/${gachaFallbackAssetbundleName}/logo/logo.webp`) : []),
+        gachaId ? assetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined,
+        assetbundleName ? assetUrl(region, `gacha/${assetbundleName}/logo/logo.webp`) : undefined
       ]);
 
     case "honors": {
