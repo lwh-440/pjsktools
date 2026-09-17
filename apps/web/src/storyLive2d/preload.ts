@@ -34,7 +34,7 @@ function video(url: string, signal: AbortSignal) {
 
 function audio(url: string, signal: AbortSignal) {
   return new Promise<Howl>((resolve, reject) => {
-    const value = new Howl({ src: [url], html5: false, preload: true, onload: () => resolve(value), onloaderror: () => reject(new Error(`Audio failed: ${url}`)) });
+    const value = new Howl({ src: [url], format: ["mp3"], html5: false, preload: true, onload: () => resolve(value), onloaderror: () => reject(new Error(`Audio failed: ${url}`)) });
     signal.addEventListener("abort", () => { value.unload(); reject(new DOMException("Cancelled", "AbortError")); }, { once: true });
   });
 }

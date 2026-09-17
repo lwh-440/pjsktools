@@ -157,9 +157,9 @@ class ContentRepository(
             model = live2dItem(body.obj("model") ?: JSONObject().put("id", id)),
             playbackStatus = body.text("playbackStatus"), unavailableReason = body.text("unavailableReason"),
             model3Url = assets.text("rewrittenModel3JsonUrl") ?: assets.text("proxiedModel3JsonUrl"),
-            textureUrls = assets.strings("proxiedTextureFiles"),
-            motionUrls = assets.strings("proxiedMotionFiles"),
-            expressionUrls = assets.strings("proxiedExpressionFiles"),
+            textureUrls = assets.assetUrls("proxiedTextureFiles"),
+            motionUrls = assets.assetUrls("proxiedMotionFiles"),
+            expressionUrls = assets.assetUrls("proxiedExpressionFiles"),
             runtimeRequirements = body.strings("runtimeRequired")
         )
     }
@@ -379,4 +379,12 @@ private fun JSONObject.long(key: String): Long? = if (!has(key) || isNull(key)) 
 private fun JSONObject.double(key: String): Double? = if (!has(key) || isNull(key)) null else runCatching { getDouble(key) }.getOrNull()
 private fun JSONObject.bool(key: String): Boolean? = if (!has(key) || isNull(key)) null else runCatching { getBoolean(key) }.getOrNull()
 private fun JSONObject.strings(key: String): List<String> = array(key).let { array -> List(array.length()) { array.opt(it)?.toString().orEmpty() }.filter { it.isNotBlank() && it != "null" } }
+private fun JSONObject.assetUrls(key: String): List<String> = array(key).let { array ->
+    List(array.length()) { index ->
+        when (val entry = array.opt(index)) {
+            is JSONObject -> entry.text("url")
+            else -> entry?.toString()
+        }
+    }.filterNotNull().filter { it.isNotBlank() && it != "null" }.distinct()
+}
 private fun JSONArray.objects(): List<JSONObject> = List(length()) { optJSONObject(it) ?: JSONObject() }

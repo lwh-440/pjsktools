@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPublicCostumeItem, model3FromHarukiBuildModelData } from "./externalData.js";
+import { isPublicCostumeItem, model3FromHarukiBuildModelData, normalizeScenarioData } from "./externalData.js";
 
 describe("Haruki Live2D BuildModelData adapter", () => {
   it("creates a Cubism model3 document from the exported MOC3, textures, and physics", () => {
@@ -43,5 +43,32 @@ describe("CN costume catalog", () => {
     expect(isPublicCostumeItem("cn", { costumeNumber: 300001, name: "音你必胜" })).toBe(true);
     expect(isPublicCostumeItem("cn", { costumeNumber: 300002, name: "必胜音弦" })).toBe(true);
     expect(isPublicCostumeItem("jp", { costumeNumber: 270411, name: "占位" })).toBe(true);
+  });
+});
+
+describe("Story Live2D costume coverage", () => {
+  it("keeps distinct costumes for one character when actions switch outfits", () => {
+    const result = normalizeScenarioData("jp", { scenarioId: "story-test" } as any, {
+      ScenarioId: "story-test",
+      AppearCharacters: [
+        { Character2dId: 2, CostumeType: "02saki_pajamas" },
+        { Character2dId: 2, CostumeType: "02saki_normal" }
+      ],
+      FirstLayout: [{ Character2dId: 2, CostumeType: "02saki_pajamas" }],
+      Snippets: [
+        { Action: 4, ReferenceIndex: 0, Delay: 0 },
+        { Action: 4, ReferenceIndex: 1, Delay: 0 }
+      ],
+      LayoutData: [
+        { Character2dId: 2, CostumeType: "02saki_pajamas", MotionName: "pajamas_motion" },
+        { Character2dId: 2, CostumeType: "02saki_normal", MotionName: "normal_motion" }
+      ]
+    }, [
+      { id: "pajamas", modelPath: "v1/main/02_saki/02saki_pajamas" },
+      { id: "normal", modelPath: "v1/main/02_saki/02saki_normal" }
+    ] as any);
+
+    expect(result.live2dModels.map((model) => model.costumeType)).toEqual(["02saki_pajamas", "02saki_normal"]);
+    expect(result.modelQueue.at(-1)).toEqual(["02saki_pajamas", "02saki_normal"]);
   });
 });

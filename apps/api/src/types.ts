@@ -449,6 +449,8 @@ export interface Card {
   specialTrainingPower3BonusFixed?: number;
   specialTrainingSkillId?: string;
   specialTrainingSkill?: CardSkill;
+  effectiveSpecialTrainingSkill?: CardSkill;
+  specialTrainingSkillOverridesNormal?: boolean;
   cardParameters?: Array<{
     cardLevel: number;
     cardParameterType: string;

@@ -291,6 +291,73 @@
         }
       }
     },
+    "/api/assets/charts/{region}/{musicId}/{difficulty}": {
+      "get": {
+        "operationId": "get_api_assets_charts_region_musicId_difficulty",
+        "tags": [
+          "System"
+        ],
+        "parameters": [
+          {
+            "name": "region",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/RegionId"
+            }
+          },
+          {
+            "name": "musicId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "difficulty",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/api/master/{region}/songs": {
       "get": {
         "operationId": "get_api_master_region_songs",
@@ -12659,6 +12726,19 @@
                     "type": "null"
                   }
                 ]
+              },
+              "effectiveSpecialTrainingSkill": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CardSkill"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "specialTrainingSkillOverridesNormal": {
+                "type": "boolean"
               }
             }
           }

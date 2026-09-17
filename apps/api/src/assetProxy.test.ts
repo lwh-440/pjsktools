@@ -4,6 +4,43 @@ import { buildApp, createTimedAssetProxyStream } from "./app.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("asset proxy streaming", () => {
+  it("infers a PNG content type when Haruki omits it", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), { status: 200 })));
+    const app = await buildApp({ assetProxyTimeoutMs: 100 });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/assets/proxy?url=${encodeURIComponent("https://storage.sekai.best/haruki/live2d/texture_00.png")}`
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toBe("image/png");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("replaces a generic PNG content type with the inferred image type", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), {
+      status: 200,
+      headers: { "content-type": "application/octet-stream" }
+    })));
+    const app = await buildApp({ assetProxyTimeoutMs: 100 });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/assets/proxy?url=${encodeURIComponent("https://storage.sekai.best/haruki/live2d/texture_00.png")}`
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toBe("image/png");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("fails the real route when the response body stalls and caches that failure", async () => {
     let signal: AbortSignal | undefined;
     const upstream = vi.fn(async (_url: unknown, options: RequestInit) => {

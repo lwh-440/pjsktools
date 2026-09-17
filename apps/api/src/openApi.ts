@@ -193,7 +193,10 @@ const schemas: Record<string, Schema> = {
     }
   },
   Card: {
-    allOf: [ref("CardSummary"), { type: "object", properties: { skill: nullable(ref("CardSkill")), specialTrainingSkill: nullable(ref("CardSkill")) } }]
+    allOf: [ref("CardSummary"), { type: "object", properties: {
+      skill: nullable(ref("CardSkill")), specialTrainingSkill: nullable(ref("CardSkill")),
+      effectiveSpecialTrainingSkill: nullable(ref("CardSkill")), specialTrainingSkillOverridesNormal: { type: "boolean" }
+    } }]
   },
   CardDetail: {
     type: "object", required: ["region", "card", "assets"],

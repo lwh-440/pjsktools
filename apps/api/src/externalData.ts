@@ -839,36 +839,31 @@ export function normalizeScenarioData(region: RegionId, info: ScenarioInfo, scen
     }
   }
 
-  const appearByCharacter = new Map(appearCharacters.map((character) => [Number(character.Character2dId), character]));
-  const referencedCharacterIds = new Set<number>();
-  for (const action of actions) {
-    if (action.character2dId != null) referencedCharacterIds.add(Number(action.character2dId));
-    if (Array.isArray(action.motions)) {
-      for (const motion of action.motions as Record<string, unknown>[]) {
-        if (motion.Character2dId != null) referencedCharacterIds.add(Number(motion.Character2dId));
-      }
-    }
+  const appearancesByCharacter = new Map<number, Record<string, unknown>[]>();
+  for (const character of appearCharacters) {
+    const character2dId = Number(character.Character2dId);
+    if (!Number.isFinite(character2dId)) continue;
+    const entries = appearancesByCharacter.get(character2dId) ?? [];
+    entries.push(character);
+    appearancesByCharacter.set(character2dId, entries);
   }
-  const referencedCharacters = referencedCharacterIds.size
-    ? [...referencedCharacterIds].map((id) => appearByCharacter.get(id)).filter((item): item is Record<string, unknown> => Boolean(item))
-    : appearCharacters.slice(0, 6);
-  const live2dModels = referencedCharacters.map((character) => {
-    const costumeType = String(character.CostumeType ?? "");
-    const matched = modelList.find((model) => model.modelPath === costumeType || model.id === costumeType || model.modelPath?.endsWith(`/${costumeType}`));
-    if (!matched && costumeType) warnings.push(`Live2D model not found for costume ${costumeType}`);
-    if (matched) rememberLive2dReference(region, matched, info);
-    return {
-      character2dId: character.Character2dId,
-      costumeType,
-      modelId: matched?.id,
-      modelPath: matched?.modelPath,
-      model3JsonUrl: matched?.model3JsonUrl,
-      rewrittenModel3JsonUrl: matched ? `/api/master/${region}/live2d/models/${encodeURIComponent(matched.id)}/model3-proxy` : undefined,
-      raw: character
-    };
-  });
-
-  const currentCostume = new Map(referencedCharacters.map((character) => [Number(character.Character2dId), String(character.CostumeType ?? "")]));
+  const defaultCostumeByCharacter = new Map<number, string>();
+  for (const [character2dId, appearances] of appearancesByCharacter) {
+    const costumeType = appearances.map((character) => String(character.CostumeType ?? "")).find(Boolean);
+    if (costumeType) defaultCostumeByCharacter.set(character2dId, costumeType);
+  }
+  const live2dReferences = new Map<string, { character2dId: number; costumeType: string; raw: Record<string, unknown> }>();
+  const rememberModelReference = (character2dId: number, costumeType: string) => {
+    if (!costumeType) return;
+    const key = `${character2dId}:${costumeType}`;
+    if (live2dReferences.has(key)) return;
+    const appearances = appearancesByCharacter.get(character2dId) ?? [];
+    const raw = appearances.find((character) => String(character.CostumeType ?? "") === costumeType)
+      ?? appearances[0]
+      ?? { Character2dId: character2dId, CostumeType: costumeType };
+    live2dReferences.set(key, { character2dId, costumeType, raw });
+  };
+  const currentCostume = new Map<number, string>();
   const modelQueue: string[][] = [];
   const recent: string[] = [];
   const pushQueue = (costumes: string[]) => {
@@ -882,12 +877,39 @@ export function normalizeScenarioData(region: RegionId, info: ScenarioInfo, scen
   };
   for (const action of actions) {
     if ((action.type === "CharacterLayout" || action.type === "CharacterMotion") && action.character2dId != null) {
-      const cid = Number(action.character2dId);
-      const costume = String(action.costumeType ?? currentCostume.get(cid) ?? "");
-      if (costume) currentCostume.set(cid, costume);
+      const character2dId = Number(action.character2dId);
+      const costumeType = String(action.costumeType ?? currentCostume.get(character2dId) ?? defaultCostumeByCharacter.get(character2dId) ?? "");
+      if (costumeType) {
+        currentCostume.set(character2dId, costumeType);
+        rememberModelReference(character2dId, costumeType);
+      }
+    }
+    if (action.type === "Talk" && Array.isArray(action.motions)) {
+      for (const motion of action.motions as Record<string, unknown>[]) {
+        const character2dId = Number(motion.Character2dId);
+        const costumeType = currentCostume.get(character2dId) ?? defaultCostumeByCharacter.get(character2dId) ?? "";
+        if (costumeType) rememberModelReference(character2dId, costumeType);
+      }
     }
     pushQueue([...currentCostume.values()]);
   }
+  if (!live2dReferences.size) {
+    for (const [character2dId, costumeType] of defaultCostumeByCharacter) rememberModelReference(character2dId, costumeType);
+  }
+  const live2dModels = [...live2dReferences.values()].map((reference) => {
+    const matched = modelList.find((model) => model.modelPath === reference.costumeType || model.id === reference.costumeType || model.modelPath?.endsWith(`/${reference.costumeType}`));
+    if (!matched) warnings.push(`Live2D model not found for costume ${reference.costumeType}`);
+    if (matched) rememberLive2dReference(region, matched, info);
+    return {
+      character2dId: reference.character2dId,
+      costumeType: reference.costumeType,
+      modelId: matched?.id,
+      modelPath: matched?.modelPath,
+      model3JsonUrl: matched?.model3JsonUrl,
+      rewrittenModel3JsonUrl: matched ? `/api/master/${region}/live2d/models/${encodeURIComponent(matched.id)}/model3-proxy` : undefined,
+      raw: reference.raw
+    };
+  });
 
   const requiredMotions = new Map<string, Set<string>>();
   const requiredExpressions = new Map<string, Set<string>>();
@@ -896,7 +918,7 @@ export function normalizeScenarioData(region: RegionId, info: ScenarioInfo, scen
     if (motion) (requiredMotions.get(costume) ?? requiredMotions.set(costume, new Set()).get(costume))?.add(String(motion).replaceAll(" ", ""));
     if (expression) (requiredExpressions.get(costume) ?? requiredExpressions.set(costume, new Set()).get(costume))?.add(String(expression).replaceAll(" ", ""));
   };
-  const costumeByCharacter = new Map(referencedCharacters.map((character) => [Number(character.Character2dId), String(character.CostumeType ?? "")]));
+  const costumeByCharacter = new Map(defaultCostumeByCharacter);
   for (const action of actions) {
     if (action.type === "CharacterLayout" || action.type === "CharacterMotion") {
       const costume = String(action.costumeType ?? costumeByCharacter.get(Number(action.character2dId)) ?? "");
@@ -1319,9 +1341,19 @@ export async function getLive2dModelDetail(region: RegionId, modelId: string) {
   } else {
     unavailableReason = "Haruki BuildModelData URL is unavailable";
   }
+  const assetCounts = {
+    motions: parsedModel3?.motionFiles.length ?? 0,
+    expressions: parsedModel3?.expressionFiles.length ?? 0,
+    textures: parsedModel3?.textureFiles.length ?? 0
+  };
+  const playbackStatus = unavailableReason
+    ? "missing-resource"
+    : assetCounts.textures === 0
+      ? "missing-resource"
+      : "partial";
   return {
     region,
-    model,
+    model: { ...model, assetCounts, playbackStatus },
     assets: {
       model3JsonUrl: undefined,
       proxiedModel3JsonUrl: undefined,
@@ -1359,16 +1391,8 @@ export async function getLive2dModelDetail(region: RegionId, modelId: string) {
         `${model.modelBaseUrl ?? ""}motions/`
       ].filter(Boolean) : []
     },
-    playbackStatus: unavailableReason
-      ? "missing-resource"
-      : (parsedModel3?.textureFiles.length ?? 0) === 0
-        ? "missing-resource"
-        : "partial",
-    assetCounts: {
-      motions: parsedModel3?.motionFiles.length ?? 0,
-      expressions: parsedModel3?.expressionFiles.length ?? 0,
-      textures: parsedModel3?.textureFiles.length ?? 0
-    },
+    playbackStatus,
+    assetCounts,
     sourceMetadata: list.sourceMetadata,
     runtimeRequired: ["pixi.js@7", "@sekai-world/pixi-live2d-display-mulmotion", "Cubism runtime"],
     unavailableReason,

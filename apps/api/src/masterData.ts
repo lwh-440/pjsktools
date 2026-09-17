@@ -9,7 +9,8 @@ import {
   getDisplayCollectionItem,
   getEventAssetDetail,
   getMusicAssetDetail,
-  proxiedAssetUrl
+  proxiedAssetUrl,
+  supportsCardSpecialTraining
 } from "./assets.js";
 import { config, regions, type RegionId } from "./config.js";
 import { fetchHarukiMasterJson, harukiMasterConfigured, type HarukiMasterFetchResult } from "./harukiMasterClient.js";
@@ -1128,10 +1129,17 @@ export async function getCardFullDetail(region: RegionId, cardId: string) {
   const referenceById = new Map(referenceSkills.map((skill) => [String(skill.id), skill]));
   const skill = fillSkillEffectIds(card.skill, card.skill ? referenceById.get(card.skill.id) : undefined);
   const specialTrainingSkill = fillSkillEffectIds(card.specialTrainingSkill, card.specialTrainingSkill ? referenceById.get(card.specialTrainingSkill.id) : undefined);
+  const formattedSkill = withFormattedSkill(skill, card);
+  const formattedSpecialTrainingSkill = withFormattedSkill(specialTrainingSkill, card);
+  const specialTrainingSkillOverridesNormal = supportsCardSpecialTraining(card) && card.specialTrainingSkillId != null;
   const displayCard = {
     ...card,
-    skill: withFormattedSkill(skill, card),
-    specialTrainingSkill: withFormattedSkill(specialTrainingSkill, card)
+    skill: formattedSkill,
+    specialTrainingSkill: formattedSpecialTrainingSkill,
+    effectiveSpecialTrainingSkill: supportsCardSpecialTraining(card)
+      ? (specialTrainingSkillOverridesNormal ? formattedSpecialTrainingSkill : formattedSkill)
+      : undefined,
+    specialTrainingSkillOverridesNormal
   };
   return {
     region,

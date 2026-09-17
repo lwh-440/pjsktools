@@ -492,6 +492,27 @@ function sanitizeInformationDocument(source: string, sourceUrl: string, language
 const assetProxyFailures = new Map<string, number>();
 const assetResolver = new AssetResolver();
 const defaultAssetProxyTimeoutMs = 30_000;
+const assetMimeTypes: Record<string, string> = {
+  ".gif": "image/gif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".mp3": "audio/mpeg",
+  ".mp4": "video/mp4",
+  ".ogg": "audio/ogg",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".wav": "audio/wav",
+  ".webm": "video/webm",
+  ".webp": "image/webp"
+};
+
+function inferAssetContentType(url: string, upstreamContentType: string | null) {
+  const normalized = upstreamContentType?.trim();
+  if (normalized && !/^application\/octet-stream(?:\s*;|$)/i.test(normalized)) return normalized;
+  const pathname = new URL(url).pathname.toLowerCase();
+  const extension = pathname.slice(pathname.lastIndexOf("."));
+  return assetMimeTypes[extension] ?? normalized ?? "application/octet-stream";
+}
 
 export function createTimedAssetProxyStream(body: ReadableStream<Uint8Array>, controller: AbortController, timeoutMs: number) {
   const stream = Readable.fromWeb(body as any);
@@ -1448,7 +1469,7 @@ export async function buildApp(options: {
         reply.header("cache-control", "no-store");
         return reply.code(upstream.status).send(`Upstream asset unavailable: ${upstream.status}`);
       }
-      const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
+      const contentType = inferAssetContentType(query.url, upstream.headers.get("content-type"));
       const contentRange = upstream.headers.get("content-range");
       const acceptRanges = upstream.headers.get("accept-ranges");
       const etag = upstream.headers.get("etag");

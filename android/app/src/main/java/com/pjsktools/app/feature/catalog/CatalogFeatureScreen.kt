@@ -506,7 +506,9 @@ private fun DetailContent(
                 RemoteCatalogImage(baseUrl, detail.afterTrainingImageCandidates, "${detail.item.title} ${if (detail.showsOnlyTrainedArt) "初始已特训" else "特训后"}", aspectRatio = 2338f / 1440f)
             }
             SkillBlock("技能", detail.skill)
-            SkillBlock("特训后技能", detail.specialTrainingSkill)
+            if (detail.specialTrainingAvailable) {
+                SkillBlock(if (detail.specialTrainingSkillOverridesNormal) "特训后技能" else "特训后技能（与普通技能相同）", detail.effectiveSpecialTrainingSkill)
+            }
             RelatedItems("相关活动", detail.relatedEvents, onNavigateRelated)
             RelatedItems("相关卡池", detail.relatedGachas, onNavigateRelated)
         }

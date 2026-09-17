@@ -169,6 +169,9 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
         val item = parseCatalogItem(CatalogType.CARDS, card).withFallback(fallback)
         val relations = body.optJSONObject("relations") ?: JSONObject()
         val assets = body.optJSONObject("assets")
+        val specialTrainingAvailable = assets?.optBoolean("specialTrainingAvailable", false) == true || !card.text("specialTrainingSkillId").isNullOrBlank()
+        val skill = parseSkill(card.optJSONObject("skill"))
+        val specialTrainingSkill = parseSkill(card.optJSONObject("specialTrainingSkill"))
         return CardCatalogDetail(
             item = item,
             assetUrls = (assetUrls(assets) + item.assetUrls).distinct(),
@@ -177,10 +180,13 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
             attribute = card.text("attribute"),
             normalImageCandidates = assetValues(assets, "normalUrl", "normalImageCandidates", "normalThumbnailUrl", "normalThumbnailCandidates"),
             afterTrainingImageCandidates = assetValues(assets, "afterTrainingUrl", "afterTrainingImageCandidates", "afterTrainingThumbnailUrl", "afterTrainingThumbnailCandidates"),
-            specialTrainingAvailable = assets?.optBoolean("specialTrainingAvailable", false) == true || !card.text("specialTrainingSkillId").isNullOrBlank(),
+            specialTrainingAvailable = specialTrainingAvailable,
             showsOnlyTrainedArt = assets?.optBoolean("showsOnlyTrainedArt", false) == true,
-            skill = parseSkill(card.optJSONObject("skill")),
-            specialTrainingSkill = parseSkill(card.optJSONObject("specialTrainingSkill")),
+            skill = skill,
+            specialTrainingSkill = specialTrainingSkill,
+            effectiveSpecialTrainingSkill = parseSkill(card.optJSONObject("effectiveSpecialTrainingSkill"))
+                ?: if (specialTrainingAvailable && card.text("specialTrainingSkillId").isNullOrBlank()) skill else specialTrainingSkill,
+            specialTrainingSkillOverridesNormal = card.optBoolean("specialTrainingSkillOverridesNormal", !card.text("specialTrainingSkillId").isNullOrBlank()),
             relatedEvents = relatedItems(relations.optJSONArray("relatedEvents"), RelatedKind.EVENT),
             relatedGachas = relatedItems(relations.optJSONArray("relatedGachas"), RelatedKind.GACHA)
         )

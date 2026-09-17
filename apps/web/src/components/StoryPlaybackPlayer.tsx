@@ -53,7 +53,13 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
     try {
       player = new StoryLive2DPlayer(hostRef.current);
       const background = playback.essentialAssets?.find((asset) => asset.kind === "background");
-      if (background?.proxiedUrl || background?.url) await player.setBackground(apiResourceUrl(background.proxiedUrl ?? background.url));
+      if (background?.proxiedUrl || background?.url) {
+        try {
+          await player.setBackground(apiResourceUrl(background.proxiedUrl ?? background.url));
+        } catch (error) {
+          setWarnings((current) => [...new Set([...current, `Background unavailable: ${error instanceof Error ? error.message : String(error)}`])]);
+        }
+      }
       if (abort.signal.aborted) return player.destroy();
       const initialCostumes = new Set((playback.modelQueue ?? []).slice(0, 2).flat());
       const initialModels = (playback.live2dModels ?? []).filter((model) => !initialCostumes.size || initialCostumes.has(model.costumeType)).slice(0, 3);

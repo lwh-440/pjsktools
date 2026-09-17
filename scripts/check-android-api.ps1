@@ -8,7 +8,7 @@ $generated = Join-Path $temp "generated"
 function Normalize-GeneratedKotlin([string]$path) {
     $utf8 = [System.Text.UTF8Encoding]::new($false)
     Get-ChildItem -LiteralPath $path -File -Recurse -Filter "*.kt" |
-        Where-Object { $_.Name -like "Haruki*.kt" -or $_.Name -in @("AndroidApi.kt", "PlayerBinding.kt", "QqWebHandoffRequest.kt", "AuthResponse.kt", "LoginRequest.kt", "RegisterRequest.kt", "AccountDeletionConfirmRequest.kt", "AccountDeletionIntentRequest.kt", "AccountDeletionIntentResponse.kt", "LegalAcceptanceRequest.kt", "QqAccountDeletionExchangeRequest.kt", "QqAccountDeletionStartResponse.kt", "WebAuthResponse.kt") } |
+        Where-Object { $_.Name -like "Haruki*.kt" -or $_.Name -in @("AndroidApi.kt", "Card.kt", "PlayerBinding.kt", "QqWebHandoffRequest.kt", "AuthResponse.kt", "LoginRequest.kt", "RegisterRequest.kt", "AccountDeletionConfirmRequest.kt", "AccountDeletionIntentRequest.kt", "AccountDeletionIntentResponse.kt", "LegalAcceptanceRequest.kt", "QqAccountDeletionExchangeRequest.kt", "QqAccountDeletionStartResponse.kt", "WebAuthResponse.kt") } |
         ForEach-Object {
         $content = [System.IO.File]::ReadAllText($_.FullName)
         $normalized = [System.Text.RegularExpressions.Regex]::Replace(

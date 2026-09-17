@@ -52,7 +52,11 @@ export class StoryLive2DController {
     if (!action) return;
     this.step = index;
     this.onStep(index);
-    this.player.setModelQueue(this.playback.modelQueue?.[index] ?? []);
+    const queuedCostumes = this.playback.modelQueue?.[index] ?? [];
+    const queuedModels = (this.playback.live2dModels ?? []).filter((model) => queuedCostumes.includes(model.costumeType));
+    const loadFailures = await this.player.loadModels(queuedModels);
+    for (const failure of loadFailures) this.onWarning(`Live2D model unavailable: ${failure}`);
+    this.player.setModelQueue(queuedCostumes);
     await wait(Number(action.delay ?? 0) * 1000 / this.settings.fastForward, this.abortController.signal);
     await this.executeAction(action);
   }
@@ -99,7 +103,7 @@ export class StoryLive2DController {
     if (!url) return;
     const speakerId = Number((action.motions?.[0] as any)?.Character2dId ?? 0);
     const voice = new Howl({
-      src: [url], volume: this.settings.voiceVolume, html5: false,
+      src: [url], format: ["mp3"], volume: this.settings.voiceVolume, html5: false,
       onplay: () => this.startLipSync(speakerId),
       onend: () => this.stopLipSync(speakerId),
       onloaderror: () => this.onWarning(`Voice unavailable: ${action.voice?.identifier}`)
@@ -121,7 +125,7 @@ export class StoryLive2DController {
     if (action.bgm) {
       const url = mediaUrl(action.bgm);
       if (url) {
-        const next = new Howl({ src: [url], loop: true, volume: 0, html5: false, onloaderror: () => this.onWarning(`BGM unavailable: ${action.bgm?.identifier}`) });
+        const next = new Howl({ src: [url], format: ["mp3"], loop: true, volume: 0, html5: false, onloaderror: () => this.onWarning(`BGM unavailable: ${action.bgm?.identifier}`) });
         next.play();
         next.fade(0, this.settings.bgmVolume * Number(action.volume ?? 1), duration || 100);
         this.bgm?.fade(this.bgm.volume(), 0, duration || 100);
@@ -131,7 +135,7 @@ export class StoryLive2DController {
     if (action.se) {
       const url = mediaUrl(action.se);
       if (url) {
-        const se = new Howl({ src: [url], loop: Number(action.playMode) === 2, volume: this.settings.seVolume * Number(action.volume ?? 1), onloaderror: () => this.onWarning(`SE unavailable: ${action.se?.identifier}`) });
+        const se = new Howl({ src: [url], format: ["mp3"], loop: Number(action.playMode) === 2, volume: this.settings.seVolume * Number(action.volume ?? 1), onloaderror: () => this.onWarning(`SE unavailable: ${action.se?.identifier}`) });
         se.play();
         this.sounds.set(`se:${action.se.identifier}`, se);
       }
@@ -158,7 +162,13 @@ export class StoryLive2DController {
     const name = String(action.effectName ?? "");
     const raw = action.raw ?? {};
     const duration = Math.max(80, Number(raw.Duration ?? action.duration ?? 0.35) * 1000 / this.settings.fastForward);
-    if (name === "ChangeBackground" || name === "ChangeBackgroundStill" || name === "ChangeCardStill") await this.player.setBackground(mediaUrl(action.resource));
+    if (name === "ChangeBackground" || name === "ChangeBackgroundStill" || name === "ChangeCardStill") {
+      try {
+        await this.player.setBackground(mediaUrl(action.resource));
+      } catch (error) {
+        this.onWarning(`Background unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     else if (name === "ChangeCameraPosition") {
       const values = String(raw.StringVal ?? "0,0").split(",").map(Number);
       this.player.setCamera(values[0] || 0, values[1] || 0, this.player.camera.zoom);

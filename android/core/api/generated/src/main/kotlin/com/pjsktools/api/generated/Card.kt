@@ -24,21 +24,23 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param id 
- * @param title 
- * @param character 
- * @param rarity 
- * @param attribute 
- * @param characterId 
- * @param characterUnit 
- * @param supportUnit 
- * @param assetbundleName 
- * @param assets 
- * @param facets 
- * @param skill 
- * @param specialTrainingSkill 
+ *
+ * @param id
+ * @param title
+ * @param character
+ * @param rarity
+ * @param attribute
+ * @param characterId
+ * @param characterUnit
+ * @param supportUnit
+ * @param assetbundleName
+ * @param assets
+ * @param facets
+ * @param skill
+ * @param specialTrainingSkill
+ * @param effectiveSpecialTrainingSkill
+ * @param specialTrainingSkillOverridesNormal
  */
 @Serializable
 
@@ -81,7 +83,13 @@ data class Card (
     val skill: CardSkill? = null,
 
     @SerialName(value = "specialTrainingSkill")
-    val specialTrainingSkill: CardSkill? = null
+    val specialTrainingSkill: CardSkill? = null,
+
+    @SerialName(value = "effectiveSpecialTrainingSkill")
+    val effectiveSpecialTrainingSkill: CardSkill? = null,
+
+    @SerialName(value = "specialTrainingSkillOverridesNormal")
+    val specialTrainingSkillOverridesNormal: kotlin.Boolean? = null
 
 ) {
 

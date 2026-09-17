@@ -59,8 +59,17 @@ export class StoryLive2DPlayer {
     const failures: string[] = [];
     for (const definition of definitions) {
       if (!definition.rewrittenModel3JsonUrl || !definition.costumeType) continue;
+      if (this.models.has(definition.costumeType)) {
+        completed += 1;
+        onProgress?.(completed, definitions.length, definition.costumeType);
+        continue;
+      }
       try {
-        const model = await Live2DModel.from(apiResourceUrl(definition.rewrittenModel3JsonUrl), { autoInteract: false });
+        const model = await Live2DModel.from(apiResourceUrl(definition.rewrittenModel3JsonUrl), {
+          ticker: this.app.ticker,
+          autoHitTest: false,
+          autoFocus: false
+        });
         model.anchor?.set?.(0.5, 0.5);
         model.visible = false;
         model.eventMode = "none";
@@ -88,7 +97,8 @@ export class StoryLive2DPlayer {
 
   findModel(cid?: number, costume?: string) {
     if (costume && this.models.has(costume)) return this.models.get(costume);
-    return [...this.models.values()].find((entry) => entry.cid === Number(cid));
+    const matches = [...this.models.values()].filter((entry) => entry.cid === Number(cid));
+    return matches.find((entry) => !entry.hidden) ?? matches[0];
   }
 
   private layoutModel(entry: ModelEntry, xPercent: number, yPercent: number, layoutMode: number) {
