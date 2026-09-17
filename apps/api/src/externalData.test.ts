@@ -91,4 +91,18 @@ describe("Story Live2D costume coverage", () => {
     expect(result.live2dModels.map((model) => model.costumeType)).toEqual(["02saki_pajamas", "02saki_normal"]);
     expect(result.modelQueue.at(-1)).toEqual(["02saki_pajamas", "02saki_normal"]);
   });
+
+  it("uses the verified master directory for Parallel Paaaarty special-story voices", () => {
+    const result = normalizeScenarioData("jp", {
+      storyType: "specialStories", storyId: "69", scenarioId: "story_connect_live_parallelpaaaarty_01"
+    } as any, {
+      ScenarioId: "story_connect_live_Parallel_Paaaarty_01",
+      Snippets: [{ Action: 1, ReferenceIndex: 0, Delay: 0 }],
+      TalkData: [{ Voices: [{ VoiceId: "connectlive_12_beforestory_01_21_piapro" }] }]
+    });
+
+    expect((result.actions[0] as any).voice.url).toMatch(
+      /\/startapp\/sound\/scenario\/voice\/story_connect_live_parallelpaaaarty_01\/connectlive_12_beforestory_01_21_piapro\.mp3$/
+    );
+  });
 });

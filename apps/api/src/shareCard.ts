@@ -22,6 +22,7 @@ const typeLabels: Record<ShareCardData["type"], string> = {
 const pngSignature = Buffer.from("89504e470d0a1a0a", "hex");
 const sourceImageMaxBytes = 8 * 1024 * 1024;
 const sourceImageMaxRedirects = 3;
+const sourceImageFetchTimeoutMs = 12_000;
 const trustedImageHosts = ["sekai-assets.haruki.seiunx.com", "storage.sekai.best", "storage.exmeaning.com", "storage.pjsk.moe", "q.qlogo.cn", "thirdqq.qlogo.cn"];
 const inferredImageExtensions = new Set([".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"]);
 
@@ -62,7 +63,8 @@ export async function fetchSourceImage(url: string | undefined, fetchImpl: typeo
   let currentUrl = trustedImageUrl(url);
   if (!currentUrl) return undefined;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
+  // The image body can be several megabytes when a trusted CDN has a cold edge.
+  const timeout = setTimeout(() => controller.abort(), sourceImageFetchTimeoutMs);
   const visited = new Set<string>();
   try {
     for (let redirectCount = 0; redirectCount <= sourceImageMaxRedirects; redirectCount += 1) {

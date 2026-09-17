@@ -7,6 +7,8 @@ import type { PreloadProgress, ScenarioAction, StoryOverlayState, StoryPlaybackC
 
 export type { StoryPlaybackContext } from "../storyLive2d/types";
 const initialProgress: PreloadProgress = { stage: "idle", completed: 0, total: 0, status: "idle" };
+const runtimePauseEvent = "pjsktools-story-runtime-pause";
+const runtimeResumeEvent = "pjsktools-story-runtime-resume";
 
 function textOverlay(action?: ScenarioAction): StoryOverlayState {
   if (!action) return {};
@@ -23,6 +25,7 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
   const loadAbortRef = useRef<AbortController | null>(null);
   const playingRef = useRef(false);
   const playbackTaskRef = useRef<Promise<void> | null>(null);
+  const resumeAfterRuntimePauseRef = useRef(false);
   const actions = useMemo(() => [...(playback?.actions ?? [])].sort((a, b) => a.index - b.index), [playback]);
   const firstReadableIndex = Math.max(0, actions.findIndex((action) => action.type === "Talk"));
   const [step, setStep] = useState(firstReadableIndex);
@@ -38,6 +41,32 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
   useEffect(() => { playingRef.current = playing; }, [playing]);
   useEffect(() => { controllerRef.current?.setSettings(settings); }, [settings]);
   useEffect(() => { void initialize(); return dispose; }, [playback]);
+  useEffect(() => {
+    const pauseRuntime = () => {
+      const controller = controllerRef.current;
+      if (!controller || !playingRef.current || textMode) return;
+      resumeAfterRuntimePauseRef.current = true;
+      playingRef.current = false;
+      setPlaying(false);
+      controller?.pause();
+    };
+    const resumeRuntime = () => {
+      if (!resumeAfterRuntimePauseRef.current) return;
+      const controller = controllerRef.current;
+      if (!controller || textMode) return;
+      resumeAfterRuntimePauseRef.current = false;
+      playingRef.current = true;
+      setPlaying(true);
+      controller.resume();
+    };
+    window.addEventListener(runtimePauseEvent, pauseRuntime);
+    window.addEventListener(runtimeResumeEvent, resumeRuntime);
+    return () => {
+      window.removeEventListener(runtimePauseEvent, pauseRuntime);
+      window.removeEventListener(runtimeResumeEvent, resumeRuntime);
+      resumeAfterRuntimePauseRef.current = false;
+    };
+  }, [textMode]);
 
   async function initialize() {
     dispose();
@@ -88,6 +117,7 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
   function dispose() {
     playingRef.current = false;
     playbackTaskRef.current = null;
+    resumeAfterRuntimePauseRef.current = false;
     loadAbortRef.current?.abort(); loadAbortRef.current = null;
     controllerRef.current?.destroy(); controllerRef.current = null;
   }
@@ -96,6 +126,7 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
     const safe = Math.min(Math.max(0, nextStep), Math.max(0, actions.length - 1));
     if (!controllerRef.current && !textMode) return;
     setPlaying(false); playingRef.current = false;
+    resumeAfterRuntimePauseRef.current = false;
     if (controllerRef.current && !textMode) {
       controllerRef.current.reset();
       playbackTaskRef.current = null;
@@ -107,6 +138,7 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
   async function togglePlay() {
     if (playing) {
       setPlaying(false); playingRef.current = false;
+      resumeAfterRuntimePauseRef.current = false;
       if (!textMode) controllerRef.current?.pause();
       return;
     }
@@ -140,8 +172,19 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
   async function reset() {
     setPlaying(false); playingRef.current = false;
     playbackTaskRef.current = null;
+    resumeAfterRuntimePauseRef.current = false;
     if (controllerRef.current && !textMode) { controllerRef.current.reset(); await controllerRef.current.execute(0); }
     else if (textMode) { setStep(firstReadableIndex); setOverlay(textOverlay(actions[firstReadableIndex])); }
+  }
+
+  function toggleTextMode() {
+    resumeAfterRuntimePauseRef.current = false;
+    if (playingRef.current && !textMode) {
+      playingRef.current = false;
+      setPlaying(false);
+      controllerRef.current?.pause();
+    }
+    setTextMode((value) => !value);
   }
 
   const current = actions[step];
@@ -158,7 +201,7 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
       {textMode && <div className="story-text-mode-badge">文本模式</div>}
     </article>
     <article className="story-player-controls">
-      <div className="story-player-title"><div><strong>{playback?.scenarioInfo?.episodeTitle ?? playback?.scenarioInfo?.scenarioId ?? "故事播放器"}</strong><small>{runtimeStatus} · {step + 1}/{actions.length}</small></div><button type="button" className="secondary" onClick={() => setTextMode((value) => !value)}>{textMode ? <Eye size={16} /> : <EyeOff size={16} />}{textMode ? "显示舞台" : "文本模式"}</button></div>
+      <div className="story-player-title"><div><strong>{playback?.scenarioInfo?.episodeTitle ?? playback?.scenarioInfo?.scenarioId ?? "故事播放器"}</strong><small>{runtimeStatus} · {step + 1}/{actions.length}</small></div><button type="button" className="secondary" onClick={toggleTextMode}>{textMode ? <Eye size={16} /> : <EyeOff size={16} />}{textMode ? "显示舞台" : "文本模式"}</button></div>
       <progress className="story-action-progress" value={progressValue} max="100" />
       <div className="story-primary-controls"><button type="button" onClick={() => void jump(step - 1)} disabled={stageControlsDisabled}><SkipBack size={17} />上一句</button><button type="button" onClick={() => void togglePlay()} disabled={stageControlsDisabled}>{playing ? <Pause size={18} /> : <Play size={18} />}{playing ? "暂停" : "播放"}</button><button type="button" onClick={() => void jump(step + 1)} disabled={stageControlsDisabled}><SkipForward size={17} />下一句</button><button type="button" className="secondary" onClick={() => void reset()} disabled={stageControlsDisabled}><RotateCcw size={16} />重置</button><button type="button" className="secondary" onClick={() => void initialize()}><RefreshCw size={16} />重试舞台</button></div>
       <div className="story-settings-row"><label className="check-row"><input type="checkbox" checked={autoPlay} onChange={(event) => setAutoPlay(event.target.checked)} />自动连续</label><label><span><Zap size={15} />{settings.fastForward}x</span><input type="range" min="1" max="4" step="1" value={settings.fastForward} onChange={(event) => setSettings((current) => ({ ...current, fastForward: Number(event.target.value) }))} /></label>{(["bgmVolume", "seVolume", "voiceVolume"] as const).map((key) => <label key={key}><span><Volume2 size={15} />{key === "bgmVolume" ? "BGM" : key === "seVolume" ? "SE" : "语音"}</span><input type="range" min="0" max="1" step="0.05" value={settings[key]} onChange={(event) => setSettings((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}</div>

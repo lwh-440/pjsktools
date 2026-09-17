@@ -134,6 +134,7 @@ export class StoryLive2DController {
       if (!entry) return;
       await this.player.applyModel(motion.Character2dId, entry.costume, entry.model.x / Math.max(this.player.app.renderer.width, 1) * 100, entry.model.y / Math.max(this.player.app.renderer.height, 1) * 100, true, motion.MotionName, motion.FacialName, this.layoutMode);
     }));
+    await this.waitUntilResumed(generation);
     this.assertActive(generation);
     const url = mediaUrl(action.voice);
     if (!url) return;

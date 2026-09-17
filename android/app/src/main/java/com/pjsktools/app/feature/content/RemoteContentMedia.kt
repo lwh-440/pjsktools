@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.content.Context
 import android.content.ContextWrapper
 import android.media.MediaPlayer
+import android.view.MotionEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebResourceError
@@ -233,10 +234,11 @@ internal fun WebParityRuntime(
                 Lifecycle.Event.ON_START, Lifecycle.Event.ON_RESUME -> if (!mainFrameFailed) {
                     webView?.onResume()
                     webView?.resumeTimers()
+                    webView?.evaluateJavascript("window.dispatchEvent(new Event('pjsktools-story-runtime-resume'));", null)
                 }
                 Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
                     webView?.evaluateJavascript(
-                        "document.querySelectorAll('audio,video').forEach(function(media){media.pause();});",
+                        "document.querySelectorAll('audio,video').forEach(function(media){media.pause();}); window.dispatchEvent(new Event('pjsktools-story-runtime-pause'));",
                         null
                     )
                     webView?.onPause()
@@ -276,7 +278,7 @@ internal fun WebParityRuntime(
             AndroidView(
                 modifier = Modifier.fillMaxWidth().height(620.dp),
                 factory = { context ->
-                    WebView(context).apply {
+                    NestedScrollWebView(context).apply {
                         webView = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
@@ -326,6 +328,17 @@ internal fun WebParityRuntime(
             }) { Text("重新加载交互运行时") }
         }
         Text("允许运行时来源：${runtime.origin}", style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+/** Keeps the embedded story page's own scroll gestures from being intercepted by LazyColumn. */
+private class NestedScrollWebView(context: Context) : WebView(context) {
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> parent?.requestDisallowInterceptTouchEvent(true)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> parent?.requestDisallowInterceptTouchEvent(false)
+        }
+        return super.onTouchEvent(event)
     }
 }
 

@@ -332,6 +332,18 @@ function scenarioIdToAssetbundleName(scenarioId: string) {
   return map[result] || result;
 }
 
+const specialStoryStartappVoiceScenarioIds = new Set(["story_connect_live_parallelpaaaarty_01"]);
+
+function scenarioVoicePath(info: ScenarioInfo, scenarioId: string, voiceId: string) {
+  const masterScenarioId = scenarioIdToAssetbundleName(String(info.scenarioId ?? ""));
+  const useVerifiedStartappVoice = info.storyType === "specialStories"
+    && info.storyId === "69"
+    && specialStoryStartappVoiceScenarioIds.has(masterScenarioId);
+  const voiceScenarioId = useVerifiedStartappVoice ? masterScenarioId : scenarioId;
+  const family = info.isCardStory ? "card_scenario" : info.isActionSet ? "actionset" : "scenario";
+  return `${useVerifiedStartappVoice ? "startapp/" : ""}sound/${family}/voice/${voiceScenarioId}/${voiceId}.mp3`;
+}
+
 function mediaAsset(kind: string, identifier: string, url?: string) {
   return url ? { kind, identifier, url, proxiedUrl: proxyUrl(url) } : undefined;
 }
@@ -812,7 +824,7 @@ export function normalizeScenarioData(region: RegionId, info: ScenarioInfo, scen
       const detail = talkData[referenceIndex] ?? {};
       const voices = Array.isArray(detail.Voices) ? detail.Voices as Record<string, unknown>[] : [];
       const voiceId = voices.length ? String(voices[0].VoiceId ?? "") : "";
-      const voicePath = voiceId ? `sound/${info.isCardStory ? "card_" : ""}${info.isActionSet ? "actionset" : "scenario"}/voice/${scenarioId}/${voiceId}.mp3` : "";
+      const voicePath = voiceId ? scenarioVoicePath(info, scenarioId, voiceId) : "";
       const voice = voicePath ? addMedia(mediaAsset("voice", voiceId, regionAssetUrl(region, voicePath))) : undefined;
       const talkCharacters = Array.isArray(detail.TalkCharacters) ? detail.TalkCharacters : [];
       actions.push({

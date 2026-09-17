@@ -85,7 +85,7 @@ class ShellRepository(
         )
     }
 
-    suspend fun shareCard(region: String, type: String, id: String): ShareCard {
+    suspend fun shareCard(region: String, type: String, id: String, generation: Long = System.currentTimeMillis()): ShareCard {
         requireRegion(region)
         require(type in setOf("profile", "score", "event")) { "不支持的分享卡类型" }
         require(id.isNotBlank()) { "请输入分享对象 ID" }
@@ -100,7 +100,8 @@ class ShellRepository(
             ?: error("服务端未返回分享卡图片地址")
         return ShareCard(
             type = json.optString("type", type), id = json.optString("id", id.trim()),
-            title = json.optString("title", "分享卡"), summary = json.stringOrNull("summary"), imageUrl = imageUrl
+            title = json.optString("title", "分享卡"), summary = json.stringOrNull("summary"),
+            imageUrl = refreshedShareImageUrl(imageUrl, generation)
         )
     }
 
@@ -217,6 +218,11 @@ class ShellRepository(
         }
         return response.body
     }
+}
+
+internal fun refreshedShareImageUrl(imageUrl: String, generation: Long): String {
+    val separator = if ('?' in imageUrl) '&' else '?'
+    return "$imageUrl${separator}refresh=$generation"
 }
 
 fun clearShellHttpCaches(cacheDir: File, region: String?): CacheClearResult =
