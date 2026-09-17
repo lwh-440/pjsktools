@@ -177,6 +177,7 @@ class CatalogRepository(baseUrl: String, private val client: OkHttpClient = OkHt
             attribute = card.text("attribute"),
             normalImageCandidates = assetValues(assets, "normalUrl", "normalThumbnailUrl", "normalThumbnailCandidates", "imageCandidates"),
             afterTrainingImageCandidates = assetValues(assets, "afterTrainingUrl", "afterTrainingImageCandidates", "afterTrainingThumbnailUrl", "afterTrainingThumbnailCandidates"),
+            specialTrainingAvailable = assets?.optBoolean("specialTrainingAvailable", false) == true || !card.text("specialTrainingSkillId").isNullOrBlank(),
             skill = parseSkill(card.optJSONObject("skill")),
             specialTrainingSkill = parseSkill(card.optJSONObject("specialTrainingSkill")),
             relatedEvents = relatedItems(relations.optJSONArray("relatedEvents"), RelatedKind.EVENT),

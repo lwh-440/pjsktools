@@ -499,7 +499,7 @@ private fun DetailContent(
             RemoteCatalogImage(baseUrl, detail.normalImageCandidates, "${detail.item.title} 特训前", aspectRatio = 2338f / 1440f)
             CatalogItemMetadata(detail.item, character = detail.character, attribute = detail.attribute, rarity = detail.rarity?.toString())
             DetailDescription(detail.item)
-            if ((detail.rarity ?: 0) >= 3) {
+            if (detail.specialTrainingAvailable && detail.afterTrainingImageCandidates.isNotEmpty()) {
                 SectionTitle("特训后")
                 RemoteCatalogImage(baseUrl, detail.afterTrainingImageCandidates, "${detail.item.title} 特训后", aspectRatio = 2338f / 1440f)
             }

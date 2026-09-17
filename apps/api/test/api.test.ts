@@ -70,8 +70,8 @@ describe("pjsktools api", () => {
     expect(response.statusCode).toBe(200);
     const payload = response.json();
     expect(payload.realDataRequired).toBe(true);
-    expect(payload.chartSvgUrl).toBe("https://charts-new.unipjsk.com/moe/svg/1/easy.svg");
-    expect(payload.susUrl).toContain("/music/music_score/0001_01/easy.txt");
+    expect(payload.chartSvgUrl).toBe("/api/assets/charts/jp/1/easy?format=svg");
+    expect(payload.susUrl).toBe("https://sekai-assets.haruki.seiunx.com/jp-assets/startapp/music/music_score/0001_01/easy.txt?v=2");
   }, 20_000);
 
   it("registers, reads me, refreshes and logs out", async () => {

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-chart-renderer-assets.mjs",
     "start": "node dist/server.js",
     "sync:master": "tsx src/syncMasterData.ts",
     "db:migrate": "tsx src/db/migrate.ts",

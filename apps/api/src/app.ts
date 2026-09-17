@@ -10,6 +10,7 @@ import { decryptHarukiSecret, encryptHarukiSecret } from "./authCrypto.js";
 import { getCardImportManifest } from "./cardImportManifest.js";
 import { getAssetConfig, getCardAssetDetail, getChartAssetDetail, getEventAssetDetail, getMusicAssetDetail } from "./assets.js";
 import { AssetResolveError, AssetResolver } from "./assetResolver.js";
+import { ChartRenderError, ChartRenderer } from "./chartRenderer.js";
 import { config, isRegion, regions, type RegionId } from "./config.js";
 import { estimateEventPoint, getCalculationContext, getCalculationSchema, getDeckRecommendSchema, getEventBonusConfig } from "./calcData.js";
 import { sendVerificationEmail, smtpConfigured } from "./emailService.js";
@@ -1488,6 +1489,31 @@ export async function buildApp(options: {
       reply.header("cache-control", "no-store");
       const status = error instanceof AssetResolveError && error.status >= 400 && error.status < 500 ? error.status : 503;
       return reply.code(status).send(error instanceof Error ? error.message : "Asset resolution failed");
+    }
+  });
+
+  const chartRenderer = new ChartRenderer();
+  app.get("/api/assets/charts/:region/:musicId/:difficulty", async (request, reply) => {
+    const { region, musicId, difficulty } = request.params as { region: string; musicId: string; difficulty: string };
+    const format = (request.query as { format?: string }).format;
+    if (!isRegion(region)) return reply.badRequest("Unsupported region");
+    if (format !== "png" && format !== "svg") return reply.badRequest("Unsupported chart format");
+    const song = await getSongDetail(region, musicId);
+    if (!song) return reply.notFound("Music not found");
+    try {
+      const chart = await chartRenderer.render(region, musicId, difficulty, { title: song.title });
+      const body = format === "svg" ? chart.svg : chart.png;
+      const etag = `"${chart.cacheKey}-${format}"`;
+      reply.header("content-type", format === "svg" ? "image/svg+xml; charset=utf-8" : "image/png");
+      reply.header("content-length", String(body.byteLength));
+      reply.header("cache-control", "public, max-age=3600, stale-while-revalidate=86400");
+      reply.header("etag", etag);
+      if (request.headers["if-none-match"] === etag) return reply.code(304).send();
+      return reply.send(body);
+    } catch (error) {
+      reply.header("cache-control", "no-store");
+      const status = error instanceof ChartRenderError ? error.status : 503;
+      return reply.code(status).send(error instanceof Error ? error.message : "Chart rendering failed");
     }
   });
 

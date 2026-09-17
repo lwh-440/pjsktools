@@ -1,4 +1,5 @@
 import { config, type RegionId } from "./config.js";
+import { harukiAssetPath } from "./harukiAssetPaths.js";
 import type { MasterCollection, MasterCollectionItem } from "./types.js";
 
 export type CollectionSourceType = "team-haruki" | "metadata" | "information-api" | "asset-list" | "live2d-assets";
@@ -283,19 +284,10 @@ function regionAssetBase(region: RegionId) {
 }
 
 function harukiRegionAssetCandidates(region: RegionId, path: string) {
-  const normalized = path.replace(/^\/+/, "");
+  const normalized = harukiAssetPath(path);
   const base = config.harukiAssetBaseUrl.replace(/\/+$/, "");
   if (!base) return [];
-  return [
-    `${base}/${region}-assets/${normalized}`,
-    `${base}/${regionAssetDir[region]}/${normalized}`
-  ];
-}
-
-function harukiGlobalAssetCandidates(path: string) {
-  const normalized = path.replace(/^\/+/, "");
-  const base = config.harukiAssetBaseUrl.replace(/\/+$/, "");
-  return base ? [`${base}/${normalized}`] : [];
+  return [`${base}/${region}-assets/${normalized}`];
 }
 
 function regionAssetUrl(region: RegionId, path: string) {
@@ -1027,8 +1019,8 @@ function staticComicItems(region: RegionId) {
     title: `Comic ${index + 1}`,
     assetbundleName,
     imageCandidates: [
-      ...harukiGlobalAssetCandidates(`comic/one_frame/${assetbundleName}.webp`),
-      ...harukiGlobalAssetCandidates(`comic/${assetbundleName}/${assetbundleName}.webp`),
+      ...harukiRegionAssetCandidates(region, `comic/one_frame/${assetbundleName}.webp`),
+      ...harukiRegionAssetCandidates(region, `comic/${assetbundleName}/${assetbundleName}.webp`),
       `${comicsAssetBase}/comic/one_frame/${assetbundleName}.webp`,
       `${moeAssetBase}/${regionAssetDir[region]}/comic/one_frame/${assetbundleName}.webp`,
       `${moeOverseasAssetBase}/${regionAssetDir[region]}/comic/one_frame/${assetbundleName}.webp`,
@@ -1193,9 +1185,7 @@ export async function getLive2dModels(region: RegionId, options: Live2dCatalogOp
       const raw = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const modelPath = String(raw.modelPath ?? raw.path ?? raw.modelBase ?? "");
       const modelFile = String(raw.modelFile ?? raw.file ?? "model.model3.json");
-      const modelBaseUrl = modelPath
-        ? (harukiGlobalAssetCandidates(`live2d/model/${modelPath}/`)[0] ?? `${live2dAssetBase}/live2d/model/${modelPath}/`)
-        : undefined;
+      const modelBaseUrl = modelPath ? `${live2dAssetBase}/live2d/model/${modelPath}/` : undefined;
       const id = String(raw.id ?? raw.modelId ?? raw.name ?? modelPath ?? index + 1);
       const referencedStories = [...(references.get(id)?.values() ?? [])];
       return {
@@ -1205,9 +1195,7 @@ export async function getLive2dModels(region: RegionId, options: Live2dCatalogOp
         modelFile,
         model3JsonUrl: modelPath ? `${modelBaseUrl}${modelFile}` : undefined,
         modelBaseUrl,
-        motionBaseUrl: modelPath
-          ? (harukiGlobalAssetCandidates(`live2d/motion/${modelPath}/`)[0] ?? `${live2dAssetBase}/live2d/motion/${modelPath}/`)
-          : undefined,
+        motionBaseUrl: modelPath ? `${live2dAssetBase}/live2d/motion/${modelPath}/` : undefined,
         characterId: live2dCharacterId(modelPath),
         costumeType: modelPath.split("/").filter(Boolean).at(-1) ?? modelPath,
         scope: "global-shared-model-asset",

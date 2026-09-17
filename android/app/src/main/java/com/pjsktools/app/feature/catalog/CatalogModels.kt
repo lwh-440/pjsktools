@@ -67,7 +67,7 @@ data class CardCatalogDetail(
     override val item: CatalogItem,
     override val assetUrls: List<String>,
     val character: String?, val rarity: Int?, val attribute: String?,
-    val normalImageCandidates: List<String>, val afterTrainingImageCandidates: List<String>,
+    val normalImageCandidates: List<String>, val afterTrainingImageCandidates: List<String>, val specialTrainingAvailable: Boolean,
     val skill: SkillDetail?, val specialTrainingSkill: SkillDetail?,
     val relatedEvents: List<RelatedItem>, val relatedGachas: List<RelatedItem>
 ) : CatalogDetail

@@ -71,7 +71,7 @@ type Region = { id: string; name: string };
 type DifficultyDetail = { difficulty: string; playLevel: number; totalNoteCount: number };
 type AssetInfo = Record<string, string | string[] | undefined>;
 type Song = { id: string; title: string; unit: string; difficultyDetails?: DifficultyDetail[]; assets?: { jacketUrl?: string; imageCandidates?: string[] }; durationSeconds?: number; categories?: string[]; bpm?: number };
-type Card = { id: string; characterId?: string; character: string; title: string; rarity: number; attribute: string; assets?: { normalUrl?: string; normalThumbnailUrl?: string; imageCandidates?: string[]; normalThumbnailCandidates?: string[] } };
+type Card = { id: string; characterId?: string; character: string; title: string; rarity: number; attribute: string; specialTrainingSkillId?: string; assets?: { normalUrl?: string; normalThumbnailUrl?: string; imageCandidates?: string[]; normalThumbnailCandidates?: string[] } };
 type EventInfo = { id: string; name: string; eventType?: string; eventUnit?: string; bonusCharacterIds?: string[]; bonusAttributes?: string[]; bannerCharacterId?: string; startAt: string; endAt: string; storyOutline?: string; assets?: AssetInfo };
 type CollectionItem = { id: string; type: string; name: string; title?: string; category?: string; rarity?: string; description?: string; startAt?: string; endAt?: string; assets?: AssetInfo; sourceMetadata?: unknown; designer?: string; gender?: string; source?: string; partTypes?: string[]; characterIds?: number[]; parts?: Record<string, Array<{ colorId?: number; colorName?: string; assetbundleName?: string }>>; extraParts?: Array<{ characterId?: number; partType?: string; variants?: Array<{ colorId?: number; colorName?: string; assetbundleName?: string }> }>; shopInfo?: unknown; assetStatus?: string };
 type FullSong = { music: Song; assets: AssetInfo; relations: Record<string, any> };
@@ -3415,9 +3415,9 @@ export function App() {
           <section className="card-art-grid">
             <article>
               <h3>特训前</h3>
-              <ArtImage src={stringAsset(selectedCard.assets, "normalUrl")} srcCandidates={unique([stringAsset(selectedCard.assets, "normalThumbnailUrl"), ...stringAssetList(selectedCard.assets, "normalImageCandidates"), ...stringAssetList(selectedCard.assets, "normalThumbnailCandidates")])} label={`${selectedCard.card.title} 特训前`} variant="card" />
+              <ArtImage src={stringAsset(selectedCard.assets, "normalUrl")} srcCandidates={unique([...stringAssetList(selectedCard.assets, "normalImageCandidates"), stringAsset(selectedCard.assets, "normalThumbnailUrl"), ...stringAssetList(selectedCard.assets, "normalThumbnailCandidates")])} label={`${selectedCard.card.title} 特训前`} variant="card" />
             </article>
-            {selectedCard.card.rarity >= 3 && (
+            {Boolean(selectedCard.card.specialTrainingSkillId) && (
               <article>
                 <h3>特训后</h3>
                 <ArtImage src={stringAsset(selectedCard.assets, "afterTrainingUrl")} srcCandidates={unique([stringAsset(selectedCard.assets, "afterTrainingThumbnailUrl"), ...stringAssetList(selectedCard.assets, "afterTrainingImageCandidates"), ...stringAssetList(selectedCard.assets, "afterTrainingThumbnailCandidates")])} label={`${selectedCard.card.title} 特训后`} variant="card" />
