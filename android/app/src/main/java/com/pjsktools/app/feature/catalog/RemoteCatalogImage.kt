@@ -44,6 +44,7 @@ import okhttp3.Request
 import okhttp3.Response
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
 
 private sealed interface RemoteImageState {
@@ -52,7 +53,12 @@ private sealed interface RemoteImageState {
     data class Failed(val reason: String) : RemoteImageState
 }
 
-private val catalogImageClient = OkHttpClient()
+// The API may render a chart PNG on first request; allow that bounded server-side work to finish.
+private val catalogImageClient = OkHttpClient.Builder()
+    .connectTimeout(15, TimeUnit.SECONDS)
+    .readTimeout(90, TimeUnit.SECONDS)
+    .callTimeout(100, TimeUnit.SECONDS)
+    .build()
 private const val maxImageBytes = 12 * 1024 * 1024
 private const val maxDecodedDimension = 1200
 private val catalogBitmapCache = object : LruCache<String, Bitmap>(32 * 1024) {

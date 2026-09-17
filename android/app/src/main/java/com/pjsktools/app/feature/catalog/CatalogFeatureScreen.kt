@@ -496,12 +496,14 @@ private fun DetailContent(
             RelatedItems("演唱版本", detail.vocals, onNavigateRelated)
         }
         is CardCatalogDetail -> {
-            RemoteCatalogImage(baseUrl, detail.normalImageCandidates, "${detail.item.title} 特训前", aspectRatio = 2338f / 1440f)
+            if (detail.normalImageCandidates.isNotEmpty()) {
+                RemoteCatalogImage(baseUrl, detail.normalImageCandidates, "${detail.item.title} 特训前", aspectRatio = 2338f / 1440f)
+            }
             CatalogItemMetadata(detail.item, character = detail.character, attribute = detail.attribute, rarity = detail.rarity?.toString())
             DetailDescription(detail.item)
             if (detail.specialTrainingAvailable && detail.afterTrainingImageCandidates.isNotEmpty()) {
-                SectionTitle("特训后")
-                RemoteCatalogImage(baseUrl, detail.afterTrainingImageCandidates, "${detail.item.title} 特训后", aspectRatio = 2338f / 1440f)
+                SectionTitle(if (detail.showsOnlyTrainedArt) "初始已特训" else "特训后")
+                RemoteCatalogImage(baseUrl, detail.afterTrainingImageCandidates, "${detail.item.title} ${if (detail.showsOnlyTrainedArt) "初始已特训" else "特训后"}", aspectRatio = 2338f / 1440f)
             }
             SkillBlock("技能", detail.skill)
             SkillBlock("特训后技能", detail.specialTrainingSkill)

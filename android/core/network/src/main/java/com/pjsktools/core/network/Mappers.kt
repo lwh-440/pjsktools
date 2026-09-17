@@ -187,7 +187,7 @@ internal fun SongDetailDto.domain(baseUrl: String) = SongDetail(
     lyricist = music.lyricist, composer = music.composer, arranger = music.arranger, bpm = music.bpm,
     difficulties = music.difficultyDetails.map { Difficulty(it.id, it.difficulty, it.playLevel, it.totalNoteCount) },
     charts = charts.map { chart ->
-        val resolved = resolveAssetUrl(baseUrl, listOf(chart.chartSvgUrl, chart.sekaiViewerChartSvgUrl, chart.chartPngUrl))
+        val resolved = resolveAssetUrl(baseUrl, listOf(chart.chartPngUrl, chart.chartSvgUrl, chart.sekaiViewerChartSvgUrl))
         ChartPreview(chart.difficulty, chart.playLevel, chart.totalNoteCount, resolved, null, null)
     }
 )
