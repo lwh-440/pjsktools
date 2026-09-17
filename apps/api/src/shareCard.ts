@@ -22,7 +22,8 @@ const typeLabels: Record<ShareCardData["type"], string> = {
 const pngSignature = Buffer.from("89504e470d0a1a0a", "hex");
 const sourceImageMaxBytes = 8 * 1024 * 1024;
 const sourceImageMaxRedirects = 3;
-const trustedImageHosts = ["storage.sekai.best", "storage.exmeaning.com", "storage.pjsk.moe", "q.qlogo.cn", "thirdqq.qlogo.cn"];
+const trustedImageHosts = ["sekai-assets.haruki.seiunx.com", "storage.sekai.best", "storage.exmeaning.com", "storage.pjsk.moe", "q.qlogo.cn", "thirdqq.qlogo.cn"];
+const inferredImageExtensions = new Set([".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"]);
 
 function escapeXml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&apos;");
@@ -49,6 +50,14 @@ function isRedirect(response: Response) {
   return [301, 302, 303, 307, 308].includes(response.status);
 }
 
+function acceptsImageContentType(contentType: string | null, url: URL) {
+  const normalized = contentType?.split(";", 1)[0].trim().toLowerCase();
+  if (normalized?.startsWith("image/")) return true;
+  if (normalized && normalized !== "application/octet-stream") return false;
+  const pathname = url.pathname.toLowerCase();
+  return inferredImageExtensions.has(pathname.slice(pathname.lastIndexOf(".")));
+}
+
 export async function fetchSourceImage(url: string | undefined, fetchImpl: typeof fetch = fetch) {
   let currentUrl = trustedImageUrl(url);
   if (!currentUrl) return undefined;
@@ -72,8 +81,7 @@ export async function fetchSourceImage(url: string | undefined, fetchImpl: typeo
       }
 
       if (!response.ok) return undefined;
-      const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
-      if (!contentType?.startsWith("image/")) return undefined;
+      if (!acceptsImageContentType(response.headers.get("content-type"), currentUrl)) return undefined;
       const contentLength = response.headers.get("content-length");
       if (contentLength != null) {
         const declaredLength = Number(contentLength);

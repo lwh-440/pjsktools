@@ -124,6 +124,23 @@ describe("share-card source image redirects", () => {
     expect(fetchMock.mock.calls.every((call) => call[1]?.redirect === "manual")).toBe(true);
   });
 
+  it("accepts Haruki images that omit or use a generic content type", async () => {
+    const missingType = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(image, { status: 200 }));
+    const genericType = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(image, {
+      status: 200,
+      headers: { "content-type": "application/octet-stream" }
+    }));
+    const url = "https://sekai-assets.haruki.seiunx.com/jp-assets/startapp/character/member/res023_no059/card_normal.png";
+
+    await expect(fetchSourceImage(url, missingType)).resolves.toEqual(image);
+    await expect(fetchSourceImage(url, genericType)).resolves.toEqual(image);
+  });
+
+  it("does not infer an image type for a non-image extension", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(image, { status: 200 }));
+    await expect(fetchSourceImage("https://sekai-assets.haruki.seiunx.com/jp-assets/master-data.json", fetchMock)).resolves.toBeUndefined();
+  });
+
   it("rejects a redirect to a non-trusted or downgraded host before requesting it", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data" } }));
