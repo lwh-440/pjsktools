@@ -3403,7 +3403,7 @@ export function App() {
       {selectedSong && (
         <DetailDrawer title={selectedSong.music.title} onClose={() => setSelectedSong(null)} elevated={Boolean(selectedEvent || selectedCollection)}>
           <FavoriteButton type="song" region={region} targetId={selectedSong.music.id} label={selectedSong.music.title} />
-          <div className="detail-hero"><ArtImage src={stringAsset(selectedSong.assets, "jacketUrl")} label={selectedSong.music.title} /><div><strong>{selectedSong.music.title}</strong><span>ID {selectedSong.music.id}</span><p>{selectedSong.music.categories?.join(" / ") || selectedSong.music.unit}</p><small>时长 {formatSeconds(selectedSong.music.durationSeconds)} / BPM {formatNumber(selectedSong.music.bpm)}</small></div></div>
+          <div className="detail-hero"><ArtImage src={stringAsset(selectedSong.assets, "jacketUrl")} srcCandidates={stringAssetList(selectedSong.assets, "imageCandidates")} label={selectedSong.music.title} /><div><strong>{selectedSong.music.title}</strong><span>ID {selectedSong.music.id}</span><p>{selectedSong.music.categories?.join(" / ") || selectedSong.music.unit}</p><small>时长 {formatSeconds(selectedSong.music.durationSeconds)} / BPM {formatNumber(selectedSong.music.bpm)}</small></div></div>
           <h3>谱面</h3><div className="difficulty-grid">{(selectedSong.music.difficultyDetails ?? []).map((detail) => <button key={detail.difficulty} type="button" className="difficulty-card" onClick={() => setSelectedChart({ musicId: selectedSong.music.id, title: selectedSong.music.title, detail })}><span>{detail.difficulty}</span><strong>Lv.{detail.playLevel}</strong><small>{formatNumber(detail.totalNoteCount)} notes</small></button>)}</div>
         </DetailDrawer>
       )}
@@ -3415,12 +3415,12 @@ export function App() {
           <section className="card-art-grid">
             <article>
               <h3>特训前</h3>
-              <ArtImage src={stringAsset(selectedCard.assets, "normalUrl")} srcCandidates={[stringAsset(selectedCard.assets, "normalThumbnailUrl"), ...stringAssetList(selectedCard.assets, "imageCandidates")]} label={`${selectedCard.card.title} 特训前`} variant="card" />
+              <ArtImage src={stringAsset(selectedCard.assets, "normalUrl")} srcCandidates={unique([stringAsset(selectedCard.assets, "normalThumbnailUrl"), ...stringAssetList(selectedCard.assets, "normalImageCandidates"), ...stringAssetList(selectedCard.assets, "normalThumbnailCandidates")])} label={`${selectedCard.card.title} 特训前`} variant="card" />
             </article>
             {selectedCard.card.rarity >= 3 && (
               <article>
                 <h3>特训后</h3>
-                <ArtImage src={stringAsset(selectedCard.assets, "afterTrainingUrl")} srcCandidates={[stringAsset(selectedCard.assets, "afterTrainingThumbnailUrl"), ...stringAssetList(selectedCard.assets, "imageCandidates")]} label={`${selectedCard.card.title} 特训后`} variant="card" />
+                <ArtImage src={stringAsset(selectedCard.assets, "afterTrainingUrl")} srcCandidates={unique([stringAsset(selectedCard.assets, "afterTrainingThumbnailUrl"), ...stringAssetList(selectedCard.assets, "afterTrainingImageCandidates"), ...stringAssetList(selectedCard.assets, "afterTrainingThumbnailCandidates")])} label={`${selectedCard.card.title} 特训后`} variant="card" />
               </article>
             )}
           </section>
@@ -3430,7 +3430,7 @@ export function App() {
       {selectedEvent && (
         <DetailDrawer title={selectedEvent.event.name} onClose={() => setSelectedEvent(null)}>
           <FavoriteButton type="event" region={region} targetId={selectedEvent.event.id} label={selectedEvent.event.name} />
-          <div className="detail-hero"><ArtImage src={stringAsset(selectedEvent.assets, "bannerUrl")} label={selectedEvent.event.name} variant="event" /><div><strong>{selectedEvent.event.name}</strong><span>{formatDate(selectedEvent.event.startAt)} - {formatDate(selectedEvent.event.endAt)}</span><p>{selectedEvent.event.storyOutline ?? "真实剧情简介暂不可用。"}</p></div></div>
+          <div className="detail-hero"><ArtImage src={stringAsset(selectedEvent.assets, "bannerUrl")} srcCandidates={imageCandidates(selectedEvent.assets, true)} label={selectedEvent.event.name} variant="event" /><div><strong>{selectedEvent.event.name}</strong><span>{formatDate(selectedEvent.event.startAt)} - {formatDate(selectedEvent.event.endAt)}</span><p>{selectedEvent.event.storyOutline ?? "真实剧情简介暂不可用。"}</p></div></div>
           <section className="compact-list"><h3>相关歌曲</h3>{selectedEvent.relations.relatedSongs.map((song) => <div key={song.id}><span>{song.title}</span><button type="button" onClick={() => openSong(song.id, song.title, true)}>歌曲详情</button></div>)}</section>
           <section className="related-card-grid">{selectedEvent.relations.relatedCards.map((card) => renderRelatedCardTile(card, `${region}:event-card:${card.id}`))}</section>
         </DetailDrawer>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiGet } from "./api";
+import { apiGet, apiResourceUrl } from "./api";
 
 export type ChartAssetDetail = {
   region: string;
@@ -43,6 +43,7 @@ export function RealChartPreview({
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [imageSourceIndex, setImageSourceIndex] = useState(0);
+  const [loadedImageUrl, setLoadedImageUrl] = useState("");
   const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
@@ -70,9 +71,16 @@ export function RealChartPreview({
 
   const imageSources = useMemo(() => {
     if (!detail) return [];
-    return [detail.chartSvgUrl, detail.sekaiViewerChartSvgUrl, detail.chartPngUrl].filter(Boolean);
+    return [...new Set([detail.chartSvgUrl, detail.sekaiViewerChartSvgUrl, detail.chartPngUrl]
+      .filter(Boolean)
+      .map(apiResourceUrl))];
   }, [detail]);
   const imageUrl = imageSources[imageSourceIndex] ?? "";
+  const imageLoaded = Boolean(imageUrl) && loadedImageUrl === imageUrl;
+
+  useEffect(() => {
+    setLoadedImageUrl("");
+  }, [imageUrl]);
 
   return (
     <section className="real-chart-panel">
@@ -117,9 +125,15 @@ export function RealChartPreview({
             src={imageUrl}
             alt={`${detail?.title ?? fallbackTitle} ${detail?.difficulty ?? difficulty} 真实谱面图`}
             style={{ transform: `scale(${zoom})` }}
+            onLoad={() => setLoadedImageUrl(imageUrl)}
             onError={() => {
-              if (imageSourceIndex < imageSources.length - 1) setImageSourceIndex((value) => value + 1);
-              else setMessage("真实谱面图暂不可用，未使用伪造谱面图替代。");
+              setLoadedImageUrl("");
+              if (imageSourceIndex < imageSources.length - 1) {
+                setMessage("");
+                setImageSourceIndex((value) => value + 1);
+              } else {
+                setMessage("真实谱面图暂不可用，未使用伪造谱面图替代。");
+              }
             }}
           />
         )}
@@ -128,7 +142,7 @@ export function RealChartPreview({
 
       <div className="chart-preview-meta">
         <span>谱面 ID {detail?.difficultyId ?? "-"}</span>
-        <span>{imageUrl ? "谱面已加载" : "谱面等待加载"}</span>
+        <span>{imageLoaded ? "谱面已加载" : imageUrl ? "谱面正在加载" : "谱面等待加载"}</span>
         {typeof detail?.durationSeconds === "number" && <span>时长 {detail.durationSeconds} 秒</span>}
         {typeof detail?.bpm === "number" && <span>BPM {detail.bpm}</span>}
       </div>

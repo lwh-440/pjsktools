@@ -480,6 +480,20 @@ function sanitizeInformationDocument(source: string, sourceUrl: string, language
 
 const assetProxyFailures = new Map<string, number>();
 const assetResolver = new AssetResolver();
+const defaultAssetProxyTimeoutMs = 30_000;
+
+export function createTimedAssetProxyStream(body: ReadableStream<Uint8Array>, controller: AbortController, timeoutMs: number) {
+  const stream = Readable.fromWeb(body as any);
+  const timeout = setTimeout(() => {
+    controller.abort();
+    stream.destroy(new Error("Asset proxy stream timed out"));
+  }, timeoutMs);
+  const clear = () => clearTimeout(timeout);
+  stream.once("end", clear);
+  stream.once("close", clear);
+  stream.once("error", clear);
+  return stream;
+}
 
 const multiLiveFields = {
   teammates: z.array(z.object({ power: z.number().positive(), effectiveness: z.number().nonnegative(), label: z.string().optional() })).length(4).optional(),
@@ -1281,6 +1295,7 @@ export async function buildApp(options: {
   authStore?: AuthStore;
   playerDisplayBlocker?: PlayerDisplayBlocker;
   accountDeletionExternalCleanup?: (userId: string) => Promise<void>;
+  assetProxyTimeoutMs?: number;
 } = {}) {
   if (config.nodeEnv === "production" && config.databaseUrl && (config.deletionTombstoneKey.length < 32 || config.securityEventHmacKey.length < 32)) {
     throw new Error("Independent high-entropy deletion and security-event HMAC keys are required in production");
@@ -1288,6 +1303,7 @@ export async function buildApp(options: {
   if (config.harukiFeatureEnabled) validateHarukiEndpointConfiguration();
   const playerDisplayBlocked = options.playerDisplayBlocker ?? loadPlayerDisplayBlocker(config.playerDisplayDenylistFile);
   const accountDeletionExternalCleanup = options.accountDeletionExternalCleanup ?? bestEffortDeleteHarukiConnection;
+  const assetProxyTimeoutMs = options.assetProxyTimeoutMs ?? defaultAssetProxyTimeoutMs;
   const app = Fastify({
     trustProxy: config.trustedProxyCidrs.length ? config.trustedProxyCidrs : false,
     logger: process.env.PJSKTOOLS_SILENT_APP_LOGS === "true" ? false : {
@@ -1400,7 +1416,8 @@ export async function buildApp(options: {
     try {
       const range = request.headers.range;
       const controller = new AbortController();
-      timeout = setTimeout(() => controller.abort(), 8_000);
+      const deadline = Date.now() + assetProxyTimeoutMs;
+      timeout = setTimeout(() => controller.abort(), assetProxyTimeoutMs);
       const upstream = await fetch(query.url, {
         signal: controller.signal,
         headers: {
@@ -1410,8 +1427,6 @@ export async function buildApp(options: {
           ...(request.headers["if-modified-since"] ? { "if-modified-since": String(request.headers["if-modified-since"]) } : {})
         }
       });
-      clearTimeout(timeout);
-      timeout = undefined;
       if (upstream.status === 304) return reply.code(304).send();
       if (!upstream.ok) {
         assetProxyFailures.set(query.url, Date.now());
@@ -1419,13 +1434,11 @@ export async function buildApp(options: {
         return reply.code(upstream.status).send(`Upstream asset unavailable: ${upstream.status}`);
       }
       const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
-      const contentLength = upstream.headers.get("content-length");
       const contentRange = upstream.headers.get("content-range");
       const acceptRanges = upstream.headers.get("accept-ranges");
       const etag = upstream.headers.get("etag");
       const lastModified = upstream.headers.get("last-modified");
       reply.header("content-type", contentType);
-      if (contentLength) reply.header("content-length", contentLength);
       if (contentRange) reply.header("content-range", contentRange);
       reply.header("accept-ranges", acceptRanges ?? "bytes");
       if (etag) reply.header("etag", etag);
@@ -1433,8 +1446,21 @@ export async function buildApp(options: {
       reply.header("cache-control", "public, max-age=31536000, immutable");
       if (upstream.status === 206) reply.code(206);
       if (!upstream.body) return reply.send();
+      clearTimeout(timeout);
+      timeout = undefined;
       assetProxyFailures.delete(query.url);
-      return reply.send(Readable.fromWeb(upstream.body as any));
+      const stream = createTimedAssetProxyStream(upstream.body as ReadableStream<Uint8Array>, controller, Math.max(1, deadline - Date.now()));
+      let clientDisconnected = false;
+      stream.once("error", () => {
+        if (!clientDisconnected) assetProxyFailures.set(query.url!, Date.now());
+      });
+      reply.raw.once("close", () => {
+        if (stream.destroyed) return;
+        clientDisconnected = true;
+        controller.abort();
+        stream.destroy();
+      });
+      return reply.send(stream);
     } catch (error) {
       assetProxyFailures.set(query.url, Date.now());
       return reply.serviceUnavailable(`Asset proxy failed: ${error instanceof Error ? error.message : String(error)}`);
