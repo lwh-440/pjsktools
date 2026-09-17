@@ -443,6 +443,7 @@ export interface Card {
   assetbundleName?: string;
   supportUnit?: string;
   cardRarityType?: string;
+  initialSpecialTrainingStatus?: "not_doing" | "done";
   specialTrainingPower1BonusFixed?: number;
   specialTrainingPower2BonusFixed?: number;
   specialTrainingPower3BonusFixed?: number;
@@ -463,6 +464,8 @@ export interface Card {
     normalThumbnailCandidates?: string[];
     afterTrainingImageCandidates?: string[];
     afterTrainingThumbnailCandidates?: string[];
+    specialTrainingAvailable?: boolean;
+    showsOnlyTrainedArt?: boolean;
     assetbundleName?: string;
     sources?: Record<string, string>;
     assetSourceTrace?: unknown;

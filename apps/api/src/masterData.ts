@@ -74,6 +74,7 @@ type RawCard = {
   characterId?: number;
   skillId?: number;
   cardRarityType?: string;
+  initialSpecialTrainingStatus?: "not_doing" | "done";
   attr?: string;
   attribute?: string;
   prefix?: string;
@@ -223,7 +224,7 @@ export const noCurrentEvent: EventInfo = {
   endAt: ""
 };
 
-const schemaVersion = 16;
+const schemaVersion = 17;
 const masterFiles = {
   musics: "master/musics.json",
   musicTags: ["master/musicTags.json", "master/musicTagRelations.json"],
@@ -741,6 +742,7 @@ function transformCards(cards: RawCard[], characters: RawCharacter[], skills: Ra
       assetbundleName: card.assetbundleName,
       supportUnit: card.supportUnit ?? character?.unit,
       cardRarityType: card.cardRarityType,
+      initialSpecialTrainingStatus: card.initialSpecialTrainingStatus,
       specialTrainingPower1BonusFixed: card.specialTrainingPower1BonusFixed,
       specialTrainingPower2BonusFixed: card.specialTrainingPower2BonusFixed,
       specialTrainingPower3BonusFixed: card.specialTrainingPower3BonusFixed,
@@ -917,8 +919,25 @@ export async function getCardDetail(region: RegionId, cardId: string): Promise<(
   return card ? { ...card, region } : null;
 }
 
-export async function getEvents(region: RegionId): Promise<EventInfo[]> {
+/** Hides only the unlinked cheerful-carnival QA records from public listings; master records remain available by ID. */
+export function isPublicEvent(event: Pick<EventInfo, "eventType" | "name" | "assetbundleName" | "relatedCards" | "storyEpisodes" | "storyOutline">) {
+  const isCheerful = event.eventType === "cheerful_carnival";
+  const isTestName = new Set([
+    "第1回チアフルカーニバルイベントテストイベント",
+    "第2回チアフルカーニバルイベントテストイベント",
+    "Cheerful Carnival Event Test Event"
+  ]).has(event.name);
+  const isTestBundle = /^event_cheerfutest\d*_/i.test(event.assetbundleName ?? "");
+  const hasFormalAssociation = Boolean(event.relatedCards?.length || event.storyEpisodes?.length || event.storyOutline?.trim());
+  return !(isCheerful && isTestName && isTestBundle && !hasFormalAssociation);
+}
+
+async function getAllEvents(region: RegionId): Promise<EventInfo[]> {
   return (await getFreshMaster(region))?.events ?? [];
+}
+
+export async function getEvents(region: RegionId): Promise<EventInfo[]> {
+  return (await getAllEvents(region)).filter(isPublicEvent);
 }
 
 export async function getCurrentEvent(region: RegionId): Promise<EventInfo & { region: RegionId; assets: ReturnType<typeof getEventAssetDetail> }> {
@@ -934,7 +953,7 @@ export async function getCurrentEvent(region: RegionId): Promise<EventInfo & { r
 }
 
 export async function getEventDetail(region: RegionId, eventId: string): Promise<(EventInfo & { region: RegionId; assets: ReturnType<typeof getEventAssetDetail> }) | null> {
-  const event = (await getEvents(region)).find((item) => item.id === eventId);
+  const event = (await getAllEvents(region)).find((item) => item.id === eventId);
   return event ? { ...event, region, assets: getEventAssetDetail(region, event) } : null;
 }
 

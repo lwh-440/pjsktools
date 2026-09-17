@@ -4,6 +4,8 @@ import { harukiAssetPath } from "./harukiAssetPaths.js";
 
 describe("harukiAssetPath", () => {
   it("maps MySekai and event story assets to their exported locations", () => {
+    expect(harukiAssetPath("gacha/ab_gacha_2/logo/logo.webp"))
+      .toBe("ondemand/gacha/ab_gacha_2/logo/logo.png");
     expect(harukiAssetPath("mysekai/thumbnail/material/item_wood_1.webp"))
       .toBe("ondemand/mysekai/thumbnail/material/item_wood_1.png");
     expect(harukiAssetPath("mysekai/thumbnail/fixture/mdl_mis0001_house_house1_1.webp"))

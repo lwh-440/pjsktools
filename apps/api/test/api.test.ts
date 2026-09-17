@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { classifyInformationDetail } from "../src/contentData.js";
+import { config } from "../src/config.js";
 import { store } from "../src/store.js";
 
 async function createRegistrationCode(email: string) {
@@ -54,6 +55,19 @@ describe("pjsktools api", () => {
       browseType: "internal",
       path: "https://example.com/untrusted.html"
     })).toMatchObject({ detailKind: "external", embedStatus: "missing-resource" });
+  });
+
+  it("allows only the configured Web origin to frame proxied announcement content", async () => {
+    const app = await buildApp();
+    const content = await app.inject({ method: "GET", url: "/api/master/en/information-content/1" });
+    const ordinary = await app.inject({ method: "GET", url: "/health" });
+    const cspHeader = config.cspReportOnly ? "content-security-policy-report-only" : "content-security-policy";
+
+    expect(content.statusCode).toBe(404);
+    expect(content.headers["x-frame-options"]).toBeUndefined();
+    expect(content.headers[cspHeader]).toContain(`frame-ancestors ${new URL(config.publicWebBaseUrl).origin}`);
+    expect(ordinary.headers["x-frame-options"]).toBe("DENY");
+    expect(ordinary.headers[cspHeader]).toContain("frame-ancestors 'none'");
   });
 
   it("returns a real-data asset config", async () => {
@@ -147,8 +161,9 @@ describe("pjsktools api", () => {
     const payload = response.json();
     expect(payload.type).toBe("gachas");
     expect(Array.isArray(payload.items)).toBe(true);
-    expect(payload.items[0].assets.logoUrl).toContain("/gacha/");
-    expect(payload.items[0].assets.imageCandidates.length).toBeGreaterThan(0);
+    const gachaWithLogo = payload.items.find((item: { assets?: { logoUrl?: string } }) => item.assets?.logoUrl);
+    expect(gachaWithLogo?.assets?.logoUrl).toContain("/gacha/");
+    expect(gachaWithLogo?.assets?.imageCandidates.length).toBeGreaterThan(0);
     expect(payload.status).toBeUndefined();
   }, 60_000);
 
@@ -184,7 +199,10 @@ describe("pjsktools api", () => {
     expect(event.statusCode).toBe(200);
     expect(Array.isArray(event.json().relations.relatedCards)).toBe(true);
 
-    const gacha = await app.inject({ method: "GET", url: "/api/master/jp/gachas/1/full" });
+    const gachaCatalog = await app.inject({ method: "GET", url: "/api/master/jp/gachas" });
+    const gachaWithLogo = gachaCatalog.json().items.find((item: { id: string; assets?: { logoUrl?: string } }) => item.assets?.logoUrl);
+    expect(gachaWithLogo).toBeTruthy();
+    const gacha = await app.inject({ method: "GET", url: `/api/master/jp/gachas/${gachaWithLogo.id}/full` });
     expect(gacha.statusCode).toBe(200);
     expect(gacha.json().item.assets).toBeTruthy();
     expect(gacha.json().assets.logoUrl).toContain("/api/assets/proxy?url=");

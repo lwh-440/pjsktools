@@ -11,7 +11,7 @@ export function harukiAssetPath(assetPath: string) {
   const gachaBanner = path.match(/^home\/banner\/(banner_gacha\d+)\/\1\.webp$/);
   if (gachaBanner) return `startapp/home/banner/${gachaBanner[1]}/${gachaBanner[1]}.png`;
   const gachaLogo = path.match(/^gacha\/([^/]+)\/logo\/logo\.webp$/);
-  if (gachaLogo) return `startapp/gacha/${gachaLogo[1]}/logo/logo.png`;
+  if (gachaLogo) return `ondemand/gacha/${gachaLogo[1]}/logo/logo.png`;
   const gachaScreen = path.match(/^gacha\/([^/]+)\/screen\/bg_gacha(\d+)_1\.webp$/);
   if (gachaScreen) return `startapp/gacha/${gachaScreen[1]}/screen/texture/bg_gacha${gachaScreen[2]}.png`;
   const honor = path.match(/^honor\/([^/]+)\/(degree_(?:main|sub)|rank_(?:main|sub)|scroll)\.webp$/);

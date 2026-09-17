@@ -11,7 +11,7 @@ import {
   getStoriesContext,
   informationCollection
 } from "./externalData.js";
-import { getCards } from "./masterData.js";
+import { getCards, getMasterCollection } from "./masterData.js";
 
 type ContentCapabilityStatus = "ready" | "partial" | "not-released" | "missing-resource" | "source-unavailable";
 type CatalogKind = "fixtures" | "materials" | "blueprints";
@@ -415,6 +415,10 @@ function exchangeMaterialCandidates(region: RegionId, resourceType: string, reso
   if (resourceType === "costume_3d" && item?.representativeAssetbundleName) {
     return getAssetCandidates(region, `thumbnail/costume/${item.representativeAssetbundleName}.webp`);
   }
+  if (resourceType === "honor") {
+    const assets = asRecord(item?.assets);
+    return uniqueStrings(array(assets.imageCandidates).map(String));
+  }
   if (resourceType === "mysekai_fixture" && item) return fixtureCandidates(region, item);
   return [];
 }
@@ -436,7 +440,7 @@ const exchangeLookupPaths: Record<string, string> = {
 const exchangeReferenceImageTypes = new Set([
   "card", "material", "mysekai_material", "stamp", "costume_3d", "mysekai_blueprint",
   "mysekai_fixture", "practice_ticket", "skill_practice_ticket", "character_rank_exp",
-  "coin", "jewel", "virtual_coin"
+  "coin", "jewel", "virtual_coin", "honor"
 ]);
 
 function representativeCostumeAsset(costume: Record<string, any>) {
@@ -537,7 +541,7 @@ function resolveExchangeResource(
     : resourceType === "character_rank_exp" && resourceId != null
       ? [`https://moe.exmeaning.com/chr_ts_${resourceId}.png`]
       : exchangeMaterialCandidates(region, resourceType, resourceId, resolvedItem);
-  const lookupRequired = Boolean(exchangeLookupPaths[resourceType]);
+  const lookupRequired = Boolean(exchangeLookupPaths[resourceType]) || resourceType === "honor";
   const lookupStatus = lookupRequired ? (item ? "matched" : "missing-data") : "not-required";
   const assetStatus = imageCandidates.length
     ? "matched"
@@ -596,9 +600,10 @@ export async function getMissionCatalog(region: RegionId) {
     const requestedFiles = region === "tw" || region === "kr" || region === "cn"
       ? [...missionFiles, "resourceBoxDetails.json"]
       : [...missionFiles];
-    const [results, cards] = await Promise.all([
+    const [results, cards, honorCollection] = await Promise.all([
       Promise.all(requestedFiles.map(async (file) => [file, await getOptionalMetadata(region, file)] as const)),
-      getCards(region)
+      getCards(region),
+      getMasterCollection(region, "honors").catch(() => null)
     ]);
     const data = new Map(results.map(([file, result]) => [file, array(result.data).map(rawItem)]));
     const normal = data.get("normalMissions.json") ?? [];
@@ -642,6 +647,16 @@ export async function getMissionCatalog(region: RegionId) {
     }
     if (rewardTypes.has("mysekai_blueprint")) rewardTypes.add("mysekai_fixture");
     const { maps: lookupMaps, diagnostics: lookupDiagnostics } = await loadExchangeLookups(region, rewardTypes);
+    const honors = honorCollection?.items ?? [];
+    if (rewardTypes.has("honor")) {
+      lookupMaps.set("honor", new Map(honors.map((item) => [Number(item.id), item as unknown as Record<string, any>])));
+      lookupDiagnostics.honor = {
+        file: "master/honors.json",
+        status: honors.length ? "available" : "missing-data",
+        count: honors.length,
+        warning: honorCollection?.unavailableReason
+      };
+    }
     const [materialResult, mysekaiMaterialResult] = await Promise.all([
       getOptionalMetadata(region, "materials.json"),
       getOptionalMetadata(region, "mysekaiMaterials.json")

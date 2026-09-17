@@ -57,10 +57,15 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-private val mediaClient = OkHttpClient()
+private val mediaClient = OkHttpClient.Builder()
+    .connectTimeout(15, TimeUnit.SECONDS)
+    .readTimeout(60, TimeUnit.SECONDS)
+    .callTimeout(70, TimeUnit.SECONDS)
+    .build()
 
 private sealed interface ImageState {
     data object Loading : ImageState

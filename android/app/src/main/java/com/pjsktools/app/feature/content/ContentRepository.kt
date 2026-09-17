@@ -12,10 +12,18 @@ import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class ContentRepository(baseUrl: String, private val client: OkHttpClient = OkHttpClient()) {
+class ContentRepository(
+    baseUrl: String,
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .callTimeout(70, TimeUnit.SECONDS)
+        .build()
+) {
     private val root = baseUrl.trimEnd('/').toHttpUrl()
 
     suspend fun information(region: String): ContentPage<InformationItem> {

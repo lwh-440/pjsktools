@@ -63,9 +63,12 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
       const controller = new StoryLive2DController(player, playback, settings, setOverlay, setStep, (warning) => setWarnings((current) => [...new Set([...current, warning])]));
       controllerRef.current = controller;
       setWarnings((current) => [...new Set([...current, ...modelWarnings])]);
-      setProgress({ stage: "render-model", completed: initialModels.length - modelWarnings.length, total: initialModels.length, status: modelWarnings.length ? "failed" : "loaded" });
-      setRuntimeStatus(modelWarnings.length || playback.playbackStatus === "partial-ready" ? "partial-ready" : "ready");
-      await controller.execute(0);
+      await controller.initializeThrough(readable);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const rendered = player.hasVisiblePixels();
+      if (!rendered) setWarnings((current) => [...new Set([...current, "Story canvas rendered no visible pixels"])]);
+      setProgress({ stage: "render-model", completed: initialModels.length - modelWarnings.length, total: initialModels.length, status: modelWarnings.length || !rendered ? "failed" : "loaded" });
+      setRuntimeStatus(modelWarnings.length || !rendered || playback.playbackStatus === "partial-ready" ? "partial-ready" : "ready");
     } catch (error) {
       if ((error as DOMException)?.name === "AbortError") return;
       player?.destroy();
@@ -83,6 +86,7 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
 
   async function jump(nextStep: number) {
     const safe = Math.min(Math.max(0, nextStep), Math.max(0, actions.length - 1));
+    if (!controllerRef.current && !textMode) return;
     setPlaying(false); playingRef.current = false;
     if (controllerRef.current && !textMode) await controllerRef.current.execute(safe);
     else { setStep(safe); setOverlay(textOverlay(actions[safe])); }
@@ -90,15 +94,17 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
 
   async function togglePlay() {
     if (playing) { setPlaying(false); playingRef.current = false; return; }
+    const controller = controllerRef.current;
+    if (!controller && !textMode) return;
     setPlaying(true); playingRef.current = true;
-    if (!controllerRef.current || textMode) {
+    if (textMode) {
       for (let current = step; current < actions.length && playingRef.current; current += 1) {
         setStep(current); setOverlay(textOverlay(actions[current]));
         await new Promise((resolve) => window.setTimeout(resolve, Math.max(350, settings.textSpeed * String(actions[current].body ?? "").length) / settings.fastForward));
         if (!autoPlay) break;
       }
-    } else {
-      try { await controllerRef.current.playFrom(step, () => playingRef.current && autoPlay); }
+    } else if (controller) {
+      try { await controller.playFrom(step, () => playingRef.current && autoPlay); }
       catch (error) { if ((error as DOMException)?.name !== "AbortError") setWarnings((current) => [...current, error instanceof Error ? error.message : String(error)]); }
     }
     setPlaying(false); playingRef.current = false;
@@ -107,10 +113,11 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
   async function reset() {
     setPlaying(false); playingRef.current = false;
     if (controllerRef.current && !textMode) { controllerRef.current.reset(); await controllerRef.current.execute(0); }
-    else { setStep(firstReadableIndex); setOverlay(textOverlay(actions[firstReadableIndex])); }
+    else if (textMode) { setStep(firstReadableIndex); setOverlay(textOverlay(actions[firstReadableIndex])); }
   }
 
   const current = actions[step];
+  const stageControlsDisabled = !actions.length || (!textMode && (runtimeStatus === "loading" || !controllerRef.current));
   const progressValue = actions.length ? Math.round((step + 1) / actions.length * 100) : 0;
   const preloadPercent = progress.total ? Math.round(progress.completed / progress.total * 100) : progress.status === "loaded" ? 100 : 0;
   return <section className={`story-player story-player-v3 ${textMode ? "text-mode" : ""}`}>
@@ -125,7 +132,7 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
     <article className="story-player-controls">
       <div className="story-player-title"><div><strong>{playback?.scenarioInfo?.episodeTitle ?? playback?.scenarioInfo?.scenarioId ?? "故事播放器"}</strong><small>{runtimeStatus} · {step + 1}/{actions.length}</small></div><button type="button" className="secondary" onClick={() => setTextMode((value) => !value)}>{textMode ? <Eye size={16} /> : <EyeOff size={16} />}{textMode ? "显示舞台" : "文本模式"}</button></div>
       <progress className="story-action-progress" value={progressValue} max="100" />
-      <div className="story-primary-controls"><button type="button" onClick={() => void jump(step - 1)} disabled={!actions.length}><SkipBack size={17} />上一句</button><button type="button" onClick={() => void togglePlay()} disabled={!actions.length}>{playing ? <Pause size={18} /> : <Play size={18} />}{playing ? "暂停" : "播放"}</button><button type="button" onClick={() => void jump(step + 1)} disabled={!actions.length}><SkipForward size={17} />下一句</button><button type="button" className="secondary" onClick={() => void reset()}><RotateCcw size={16} />重置</button><button type="button" className="secondary" onClick={() => void initialize()}><RefreshCw size={16} />重试舞台</button></div>
+      <div className="story-primary-controls"><button type="button" onClick={() => void jump(step - 1)} disabled={stageControlsDisabled}><SkipBack size={17} />上一句</button><button type="button" onClick={() => void togglePlay()} disabled={stageControlsDisabled}>{playing ? <Pause size={18} /> : <Play size={18} />}{playing ? "暂停" : "播放"}</button><button type="button" onClick={() => void jump(step + 1)} disabled={stageControlsDisabled}><SkipForward size={17} />下一句</button><button type="button" className="secondary" onClick={() => void reset()} disabled={stageControlsDisabled}><RotateCcw size={16} />重置</button><button type="button" className="secondary" onClick={() => void initialize()}><RefreshCw size={16} />重试舞台</button></div>
       <div className="story-settings-row"><label className="check-row"><input type="checkbox" checked={autoPlay} onChange={(event) => setAutoPlay(event.target.checked)} />自动连续</label><label><span><Zap size={15} />{settings.fastForward}x</span><input type="range" min="1" max="4" step="1" value={settings.fastForward} onChange={(event) => setSettings((current) => ({ ...current, fastForward: Number(event.target.value) }))} /></label>{(["bgmVolume", "seVolume", "voiceVolume"] as const).map((key) => <label key={key}><span><Volume2 size={15} />{key === "bgmVolume" ? "BGM" : key === "seVolume" ? "SE" : "语音"}</span><input type="range" min="0" max="1" step="0.05" value={settings[key]} onChange={(event) => setSettings((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}</div>
       {(playback?.unavailableReason || warnings.length > 0) && <p className="story-resource-note">部分画面或声音暂不可用，文本播放不受影响。</p>}
     </article>

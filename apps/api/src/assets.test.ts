@@ -86,36 +86,38 @@ describe("Haruki asset mappings", () => {
     expect(honor.degreeMainUrl).toBe(`${harukiJp}/startapp/rank_live/honor/season_2022_summer/degree_main.png`);
     expect(honor.rankMainUrl).toBe(`${harukiJp}/startapp/rank_live/honor/honor_rank_match_1870/main.png`);
   });
-  it("keeps card_normal first and uses same-card after-training art only as a non-trainable fallback", () => {
-    const nonTrainable = getCardAssetDetail("jp", {
-      id: "1463", character: "MEIKO", title: "酔いどれ知らず", rarity: 4, attribute: "cute", assetbundleName: "res025_no058"
+  it("uses rarity and initial training status to distinguish original and trained card art", () => {
+    const initiallyTrained = getCardAssetDetail("jp", {
+      id: "1463", character: "MEIKO", title: "酔いどれ知らず", rarity: 4, attribute: "cute", assetbundleName: "res025_no058", cardRarityType: "rarity_4", initialSpecialTrainingStatus: "done"
     });
-    const trainable = getCardAssetDetail("jp", {
-      id: "1473", character: "神代類", title: "いい１枚を頼むよ", rarity: 3, attribute: "mysterious", assetbundleName: "res016_no057", specialTrainingSkillId: "1"
+    const threeStar = getCardAssetDetail("jp", {
+      id: "1473", character: "神代類", title: "いい１枚を頼むよ", rarity: 3, attribute: "mysterious", assetbundleName: "res016_no057", cardRarityType: "rarity_3"
     });
 
-    expect(nonTrainable.specialTrainingAvailable).toBe(false);
-    expect(nonTrainable.normalImageCandidates.slice(0, 2)).toEqual([
-      `${harukiJp}/startapp/character/member/res025_no058/card_normal.png`,
-      `${harukiJp}/startapp/character/member/res025_no058/card_after_training.png`
-    ]);
-    expect(nonTrainable.normalImageCandidates).toContain(`${harukiJp}/startapp/character/member/res025_no058/card_after_training.png`);
-    expect(nonTrainable.afterTrainingImageCandidates).toEqual([]);
-    const oneStar = getCardAssetDetail("jp", { id: "1", character: "星乃一歌", title: "first", rarity: 1, attribute: "cool", assetbundleName: "res001_no001" });
-    const birthday = getCardAssetDetail("jp", { id: "295", character: "天馬咲希", title: "birthday", rarity: 4, attribute: "cute", assetbundleName: "res006_no012" });
+    const oneStar = getCardAssetDetail("jp", { id: "1", character: "星乃一歌", title: "first", rarity: 1, attribute: "cool", assetbundleName: "res001_no001", cardRarityType: "rarity_1" });
+    const birthday = getCardAssetDetail("jp", { id: "295", character: "天馬咲希", title: "birthday", rarity: 4, attribute: "cute", assetbundleName: "res006_no012", cardRarityType: "rarity_birthday" });
+    expect(initiallyTrained.specialTrainingAvailable).toBe(true);
+    expect(initiallyTrained.showsOnlyTrainedArt).toBe(true);
+    expect(initiallyTrained.normalImageCandidates).toEqual([]);
+    expect(initiallyTrained.imageCandidates).toEqual(expect.arrayContaining([`${harukiJp}/startapp/character/member/res025_no058/card_after_training.png`]));
+    expect(initiallyTrained.imageCandidates).not.toContain(`${harukiJp}/startapp/character/member/res025_no058/card_normal.png`);
+    expect(initiallyTrained.afterTrainingImageCandidates[0]).toBe(`${harukiJp}/startapp/character/member/res025_no058/card_after_training.png`);
+    expect(threeStar.specialTrainingAvailable).toBe(true);
+    expect(threeStar.showsOnlyTrainedArt).toBe(false);
+    expect(threeStar.afterTrainingImageCandidates[0]).toBe(`${harukiJp}/startapp/character/member/res016_no057/card_after_training.png`);
     expect(oneStar.normalImageCandidates[0]).toBe(`${harukiJp}/startapp/character/member/res001_no001/card_normal.png`);
     expect(birthday.normalImageCandidates[0]).toBe(`${harukiJp}/startapp/character/member/res006_no012/card_normal.png`);
-    expect(trainable.specialTrainingAvailable).toBe(true);
-    expect(trainable.afterTrainingImageCandidates[0]).toBe(`${harukiJp}/startapp/character/member/res016_no057/card_after_training.png`);
+    expect(birthday.specialTrainingAvailable).toBe(false);
+    expect(birthday.afterTrainingImageCandidates).toEqual([]);
   });
 
-  it("does not publish guessed gacha logo or screen paths and maps comics and nested rank-match art", () => {
+  it("publishes the current gacha bundle logo without guessed fallback paths and maps comics and nested rank-match art", () => {
     const gacha = getCollectionItemAssetDetail("jp", "gachas", { id: "281", assetbundleName: "ab_gacha_281", raw: { id: 281, assetbundleName: "ab_gacha_281" } });
     const comic = getCollectionItemAssetDetail("jp", "comics", { id: "1", assetbundleName: "comic_0001", raw: { id: 1, assetbundleName: "comic_0001" } });
     const rankMatch = getCollectionItemAssetDetail("jp", "honors", { id: "25", assetbundleName: "common/tier_25", raw: { id: 25, assetbundleName: "common/tier_25", honorGroup: { honorType: "rank_match", backgroundAssetbundleName: "common/tier_25" } } });
 
     expect(gacha.bannerUrl).toBe(`${harukiJp}/startapp/home/banner/banner_gacha281/banner_gacha281.png`);
-    expect(gacha).not.toHaveProperty("logoUrl");
+    expect(gacha.logoUrl).toBe(`${harukiJp}/ondemand/gacha/ab_gacha_281/logo/logo.png`);
     expect(gacha).not.toHaveProperty("screenUrl");
     const enTicket = getCollectionItemAssetDetail("en", "gachas", { id: "1171", assetbundleName: "ab_gacha_2", raw: { id: 1171, assetbundleName: "ab_gacha_2" } });
     expect(enTicket.imageCandidates).toContain("https://sekai-assets.haruki.seiunx.com/en-assets/ondemand/gacha/ab_gacha_2/logo/logo.png");

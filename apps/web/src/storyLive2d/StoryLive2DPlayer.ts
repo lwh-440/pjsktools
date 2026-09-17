@@ -2,7 +2,7 @@ import { Application, Container, Graphics, Sprite, Texture, filters } from "pixi
 import { apiResourceUrl } from "../api";
 import type { StoryModel, StoryOverlayState } from "./types";
 
-type ModelEntry = { definition: StoryModel; model: any; cid: number; costume: string; hidden: boolean };
+type ModelEntry = { definition: StoryModel; model: any; cid: number; costume: string; hidden: boolean; xPercent: number; yPercent: number; layoutMode: number };
 
 export class StoryLive2DPlayer {
   readonly app: Application;
@@ -22,6 +22,11 @@ export class StoryLive2DPlayer {
   private background?: Sprite;
   private overlay?: Graphics;
   private movieElement?: HTMLVideoElement;
+  private movieSprite?: Sprite;
+  private resizeObserver?: ResizeObserver;
+  private resizeFrame?: number;
+  private visualState: StoryOverlayState = {};
+  private wipeDirection?: string;
   private readonly canvas: HTMLCanvasElement;
 
   constructor(private readonly host: HTMLElement) {
@@ -39,6 +44,12 @@ export class StoryLive2DPlayer {
       this.layers.fullcolor,
       this.layers.movie
     );
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.resizeFrame) cancelAnimationFrame(this.resizeFrame);
+      this.resizeFrame = requestAnimationFrame(() => this.syncViewport());
+    });
+    this.resizeObserver.observe(host);
+    this.syncViewport();
   }
 
   async loadModels(definitions: StoryModel[], onProgress?: (completed: number, total: number, info?: string) => void) {
@@ -54,8 +65,9 @@ export class StoryLive2DPlayer {
         model.visible = false;
         model.eventMode = "none";
         this.layers.live2d.addChild(model);
-        this.fitModel(model, 50, 62, 0);
-        this.models.set(definition.costumeType, { definition, model, cid: Number(definition.character2dId ?? 0), costume: definition.costumeType, hidden: true });
+        const entry = { definition, model, cid: Number(definition.character2dId ?? 0), costume: definition.costumeType, hidden: true, xPercent: 50, yPercent: 62, layoutMode: 0 };
+        this.models.set(definition.costumeType, entry);
+        this.layoutModel(entry, 50, 62, 0);
       } catch (error) {
         failures.push(`${definition.costumeType}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -79,13 +91,16 @@ export class StoryLive2DPlayer {
     return [...this.models.values()].find((entry) => entry.cid === Number(cid));
   }
 
-  fitModel(model: any, xPercent: number, yPercent: number, layoutMode: number) {
-    const width = this.app.renderer.width || 1280;
-    const height = this.app.renderer.height || 720;
-    const bounds = model.getLocalBounds?.() ?? { width: 1000, height: 1800 };
+  private layoutModel(entry: ModelEntry, xPercent: number, yPercent: number, layoutMode: number) {
+    const width = this.app.renderer.width || Math.max(1, this.host.clientWidth) || 1280;
+    const height = this.app.renderer.height || Math.max(1, this.host.clientHeight) || 720;
+    const bounds = entry.model.getLocalBounds?.() ?? { width: 1000, height: 1800 };
     const scale = Math.min(width / Math.max(bounds.width, 1), height / Math.max(bounds.height, 1)) * (layoutMode === 3 ? 0.72 : 0.9);
-    model.scale.set(scale);
-    model.position.set(width * xPercent / 100, height * yPercent / 100);
+    entry.xPercent = xPercent;
+    entry.yPercent = yPercent;
+    entry.layoutMode = layoutMode;
+    entry.model.scale.set(scale);
+    entry.model.position.set(width * xPercent / 100, height * yPercent / 100);
   }
 
   async applyModel(cid: number | undefined, costume: string | undefined, x: number, y: number, visible: boolean, motion?: string, expression?: string, layoutMode = 0) {
@@ -93,7 +108,7 @@ export class StoryLive2DPlayer {
     if (!entry) return false;
     entry.model.visible = visible;
     entry.hidden = !visible;
-    this.fitModel(entry.model, x, y, layoutMode);
+    this.layoutModel(entry, x, y, layoutMode);
     if (visible) {
       await Promise.allSettled([
         motion ? this.playMotion(entry, motion) : Promise.resolve(),
@@ -144,6 +159,7 @@ export class StoryLive2DPlayer {
     this.background.height = this.app.renderer.height;
     this.layers.background.removeChildren();
     this.layers.background.addChild(this.background);
+    this.render();
   }
 
   setCamera(x = 0, y = 0, zoom = 1) {
@@ -151,9 +167,11 @@ export class StoryLive2DPlayer {
     this.root.pivot.set(this.app.renderer.width / 2, this.app.renderer.height / 2);
     this.root.position.set(this.app.renderer.width / 2 + x, this.app.renderer.height / 2 + y);
     this.root.scale.set(zoom);
+    this.render();
   }
 
   setVisualState(state: StoryOverlayState) {
+    this.visualState = { ...state };
     this.layers.memory.alpha = state.memory ? 0.28 : 0;
     this.layers.ambient.alpha = state.ambient && state.ambient !== "normal" ? 0.22 : 0;
     const color = state.ambient === "evening" ? 0xffb45e : 0x638dff;
@@ -162,25 +180,31 @@ export class StoryLive2DPlayer {
     this.root.filters = state.blur ? [new filters.BlurFilter(5)] : [];
     if (state.tone) this.fillLayer(this.layers.fullcolor, state.tone === "black" ? 0x000000 : 0xffffff, 1);
     else this.layers.fullcolor.removeChildren();
+    this.render();
   }
 
   setWipe(direction?: string) {
+    this.wipeDirection = direction;
     this.layers.wipe.removeChildren();
     if (!direction) return;
     const value = new Graphics();
     value.beginFill(0x000000, 1).drawRect(0, 0, this.app.renderer.width, this.app.renderer.height).endFill();
     this.layers.wipe.addChild(value);
+    this.render();
   }
 
   setMovie(video?: HTMLVideoElement) {
     this.layers.movie.removeChildren();
     this.movieElement = video;
-    if (!video) return;
+    this.movieSprite = undefined;
+    if (!video) { this.render(); return; }
     const sprite = Sprite.from(video);
     sprite.width = this.app.renderer.width;
     sprite.height = this.app.renderer.height;
+    this.movieSprite = sprite;
     this.layers.movie.addChild(sprite);
     void video.play().catch(() => undefined);
+    this.render();
   }
 
   private fillLayer(layer: Container, color: number, alpha: number) {
@@ -192,7 +216,40 @@ export class StoryLive2DPlayer {
     this.overlay = value;
   }
 
+  syncViewport() {
+    const width = Math.max(1, Math.round(this.host.clientWidth));
+    const height = Math.max(1, Math.round(this.host.clientHeight));
+    if (this.app.renderer.width !== width || this.app.renderer.height !== height) this.app.renderer.resize(width, height);
+    if (this.background) { this.background.width = width; this.background.height = height; }
+    if (this.movieSprite) { this.movieSprite.width = width; this.movieSprite.height = height; }
+    for (const entry of this.models.values()) this.layoutModel(entry, entry.xPercent, entry.yPercent, entry.layoutMode);
+    this.setVisualState(this.visualState);
+    this.setWipe(this.wipeDirection);
+    this.setCamera(this.camera.x, this.camera.y, this.camera.zoom);
+    this.render();
+  }
+
+  hasVisiblePixels() {
+    try {
+      const context2d = this.canvas.getContext("2d");
+      if (context2d) return [...context2d.getImageData(0, 0, Math.min(96, this.canvas.width), Math.min(96, this.canvas.height)).data].some((value, index) => index % 4 === 3 && value > 8);
+      const gl = this.canvas.getContext("webgl2") ?? this.canvas.getContext("webgl");
+      if (!gl) return true;
+      const width = Math.min(96, this.canvas.width); const height = Math.min(96, this.canvas.height);
+      const pixels = new Uint8Array(width * height * 4);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 8) return true;
+      return false;
+    } catch { return true; }
+  }
+
+  private render() {
+    try { this.app.renderer.render(this.app.stage); } catch { /* Pixi schedules a render when the context is not ready yet. */ }
+  }
+
   destroy() {
+    if (this.resizeFrame) cancelAnimationFrame(this.resizeFrame);
+    this.resizeObserver?.disconnect();
     this.movieElement?.pause();
     for (const entry of this.models.values()) entry.model.destroy?.({ children: true });
     this.models.clear();

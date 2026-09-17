@@ -213,23 +213,23 @@ export function getCardAfterTrainingThumbnailUrl(region: RegionId, card: Card) {
   return assetUrl(region, `thumbnail/chara/${card.assetbundleName}_after_training.webp`);
 }
 
+export function supportsCardSpecialTraining(card: Pick<Card, "cardRarityType">) {
+  return card.cardRarityType === "rarity_3" || card.cardRarityType === "rarity_4";
+}
+
+export function cardShowsOnlyTrainedArt(card: Pick<Card, "cardRarityType" | "initialSpecialTrainingStatus">) {
+  return supportsCardSpecialTraining(card) && card.initialSpecialTrainingStatus === "done";
+}
+
 export function getCardAssetDetail(region: RegionId, card: Card) {
-  const supportsSpecialTraining = Boolean(card.specialTrainingSkillId);
+  const supportsSpecialTraining = supportsCardSpecialTraining(card);
+  const showsOnlyTrainedArt = cardShowsOnlyTrainedArt(card);
   const normalImageCandidates = card.assetbundleName ? getAssetCandidates(region, `character/member/${card.assetbundleName}/card_normal.webp`) : [];
   const afterTrainingImageCandidates = card.assetbundleName ? getAssetCandidates(region, `character/member/${card.assetbundleName}/card_after_training.webp`) : [];
   const normalThumbnailCandidates = card.assetbundleName ? getAssetCandidates(region, `thumbnail/chara/${card.assetbundleName}_normal.webp`) : [];
   const afterTrainingThumbnailCandidates = card.assetbundleName ? getAssetCandidates(region, `thumbnail/chara/${card.assetbundleName}_after_training.webp`) : [];
-  // Non-trainable cards normally use card_normal. A small export subset has only card_after_training, so use it only as a same-card fallback.
-  const harukiPrefix = `${harukiAssetBase}/${regionAssetDir[region]}/`;
-  const withSameCardFallback = (normal: string[], fallback: string[]) => {
-    const harukiNormal = normal.filter((url) => url.startsWith(harukiPrefix));
-    const harukiFallback = fallback.filter((url) => url.startsWith(harukiPrefix));
-    return uniqueStrings([...harukiNormal, ...harukiFallback, ...normal.filter((url) => !url.startsWith(harukiPrefix)), ...fallback.filter((url) => !url.startsWith(harukiPrefix))]);
-  };
-  const displayImageCandidates = supportsSpecialTraining ? normalImageCandidates : withSameCardFallback(normalImageCandidates, afterTrainingImageCandidates);
-  const displayThumbnailCandidates = supportsSpecialTraining ? normalThumbnailCandidates : withSameCardFallback(normalThumbnailCandidates, afterTrainingThumbnailCandidates);
-  const normalUrl = displayImageCandidates[0] ?? displayThumbnailCandidates[0] ?? "";
-  const normalThumbnailUrl = displayThumbnailCandidates[0] ?? normalUrl;
+  const normalUrl = showsOnlyTrainedArt ? "" : normalImageCandidates[0] ?? normalThumbnailCandidates[0] ?? "";
+  const normalThumbnailUrl = normalThumbnailCandidates[0] ?? normalUrl;
   const trainedImageCandidates = supportsSpecialTraining ? afterTrainingImageCandidates : [];
   const trainedThumbnailCandidates = supportsSpecialTraining ? afterTrainingThumbnailCandidates : [];
   const afterTrainingUrl = trainedImageCandidates[0] ?? trainedThumbnailCandidates[0] ?? "";
@@ -241,20 +241,24 @@ export function getCardAssetDetail(region: RegionId, card: Card) {
     character: card.character,
     normalUrl,
     afterTrainingUrl,
-    normalThumbnailUrl,
+    normalThumbnailUrl: showsOnlyTrainedArt ? "" : normalThumbnailUrl,
     afterTrainingThumbnailUrl,
     specialTrainingAvailable: supportsSpecialTraining,
-    imageCandidates: uniqueStrings([...displayImageCandidates, ...displayThumbnailCandidates, ...trainedImageCandidates, ...trainedThumbnailCandidates]),
-    normalImageCandidates: displayImageCandidates,
-    normalThumbnailCandidates: displayThumbnailCandidates,
+    showsOnlyTrainedArt,
+    // List surfaces may use the trained image if the original source is absent, but detail surfaces keep the two states separate.
+    imageCandidates: uniqueStrings(showsOnlyTrainedArt
+      ? [...trainedImageCandidates, ...trainedThumbnailCandidates]
+      : [...normalImageCandidates, ...normalThumbnailCandidates, ...trainedImageCandidates, ...trainedThumbnailCandidates]),
+    normalImageCandidates: showsOnlyTrainedArt ? [] : normalImageCandidates,
+    normalThumbnailCandidates: showsOnlyTrainedArt ? [] : normalThumbnailCandidates,
     afterTrainingImageCandidates: trainedImageCandidates,
     afterTrainingThumbnailCandidates: trainedThumbnailCandidates,
     assetSourceTrace: { region, assetDirectory: regionAssetDir[region], priority: ["haruki", "exmeaning", "pjsk.moe", "sekai.best", "proxy"] },
     assetbundleName: card.assetbundleName,
     sources: {
-      normalUrl: supportsSpecialTraining ? "Haruki full card art" : "Haruki card_normal with same-card after_training fallback",
+      normalUrl: showsOnlyTrainedArt ? "not-applicable-initially-trained" : "Haruki original card art",
       afterTrainingUrl: supportsSpecialTraining ? "Haruki special-training card art" : "not-applicable",
-      normalThumbnailUrl: supportsSpecialTraining ? "Haruki card thumbnail" : "Haruki normal thumbnail with same-card fallback",
+      normalThumbnailUrl: "Haruki original card thumbnail",
       afterTrainingThumbnailUrl: supportsSpecialTraining ? "Haruki special-training thumbnail" : "not-applicable"
     }
   };
@@ -322,9 +326,6 @@ export function getChartAssetDetail(region: RegionId, song: Song, difficulty: st
 
 function collectionAssetCandidates(region: RegionId, type: string, id: string, assetbundleName = "", raw: Record<string, unknown> = {}) {
   const gachaId = stringField(raw, ["id"]) || id;
-  const gachaName = stringField(raw, ["name", "title"]);
-  const gachaFallbackId = gachaName.includes("[1回限定]") && Number.isFinite(Number(gachaId)) ? String(Number(gachaId) - 1) : "";
-  const gachaFallbackAssetbundleName = gachaFallbackId ? `ab_gacha_${gachaFallbackId}` : "";
   const numericId = numberField(raw, ["id", "materialId", "costume3dId", "seq"]) ?? (Number.isFinite(Number(id)) ? Number(id) : undefined);
   const rarity = stringField(raw, ["honorRarity"]);
   const honorGroup = raw.honorGroup && typeof raw.honorGroup === "object" ? (raw.honorGroup as Record<string, unknown>) : {};
@@ -339,13 +340,9 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
       // A banner is not exported for every region-specific ticket or gift gacha. Haruki's documented ondemand bundle logo is the real fallback.
       return uniqueStrings([
         gachaId ? harukiAssetUrl(region, `startapp/home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.png`) : undefined,
-        gachaFallbackId ? harukiAssetUrl(region, `startapp/home/banner/banner_gacha${gachaFallbackId}/banner_gacha${gachaFallbackId}.png`) : undefined,
         assetbundleName ? harukiAssetUrl(region, `ondemand/gacha/${assetbundleName}/logo/logo.png`) : undefined,
-        gachaFallbackAssetbundleName ? harukiAssetUrl(region, `ondemand/gacha/${gachaFallbackAssetbundleName}/logo/logo.png`) : undefined,
         ...(gachaId ? moeAssetUrlPair(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : []),
-        ...(gachaFallbackId ? moeAssetUrlPair(region, `home/banner/banner_gacha${gachaFallbackId}/banner_gacha${gachaFallbackId}.webp`) : []),
         ...(assetbundleName ? moeAssetUrlPair(region, `gacha/${assetbundleName}/logo/logo.webp`) : []),
-        ...(gachaFallbackAssetbundleName ? moeAssetUrlPair(region, `gacha/${gachaFallbackAssetbundleName}/logo/logo.webp`) : []),
         gachaId ? assetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined,
         assetbundleName ? assetUrl(region, `gacha/${assetbundleName}/logo/logo.webp`) : undefined
       ]);
@@ -439,7 +436,8 @@ export function getCollectionItemAssetDetail(region: RegionId, type: string, ite
   const imageCandidates = collectionAssetCandidates(region, type, item.id, assetbundleName, raw);
   const imageUrl = imageCandidates[0] ?? "";
   const gachaId = stringField(raw, ["id"]) || item.id;
-  const gachaBannerUrl = type === "gachas" && gachaId ? harukiAssetUrl(region, `startapp/home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.png`) : undefined;
+  const gachaBannerUrl = type === "gachas" && gachaId ? assetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined;
+  const gachaLogoUrl = type === "gachas" && assetbundleName ? assetUrl(region, `gacha/${assetbundleName}/logo/logo.webp`) : undefined;
   const honorGroup = raw.honorGroup && typeof raw.honorGroup === "object" ? (raw.honorGroup as Record<string, unknown>) : {};
   const backgroundName = stringField(honorGroup, ["backgroundAssetbundleName"]) || assetbundleName;
   const honorRoot = stringField(honorGroup, ["honorType"]) === "rank_match" ? "rank_live/honor" : "honor";
@@ -454,6 +452,7 @@ export function getCollectionItemAssetDetail(region: RegionId, type: string, ite
     thumbnailUrl: imageUrl,
     imageCandidates,
     bannerUrl: gachaBannerUrl,
+    logoUrl: gachaLogoUrl,
     bannerFallbackUrl: type === "gachas" && gachaId ? moeOverseasAssetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined,
     degreeMainUrl: type === "honors" && backgroundName ? assetUrl(region, `${honorRoot}/${backgroundName}/degree_main.webp`) : undefined,
     degreeSubUrl: type === "honors" && backgroundName ? assetUrl(region, `${honorRoot}/${backgroundName}/degree_sub.webp`) : undefined,

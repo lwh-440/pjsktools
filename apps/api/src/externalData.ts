@@ -54,8 +54,12 @@ export interface Live2dModelSummary {
   modelPath?: string;
   modelFile?: string;
   model3JsonUrl?: string;
+  buildModelDataUrl?: string;
+  legacyModel3JsonUrl?: string;
   modelBaseUrl?: string;
   motionBaseUrl?: string;
+  modelAssetSource?: "haruki-buildmodeldata";
+  motionAssetSource?: "sekai-viewer-legacy" | "none";
   characterId?: number;
   costumeType?: string;
   scope?: "global-shared-model-asset";
@@ -340,6 +344,50 @@ function soundEffectPath(se: string) {
   return `sound/scenario/se/${seBundleName}/${se}.mp3`;
 }
 
+function pathFromBuildModelData(value: unknown, expectedSuffix: string, trailingSuffixToStrip?: string) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (normalized.includes("..") || /^https?:\/\//i.test(normalized)) return undefined;
+  const result = trailingSuffixToStrip && normalized.endsWith(trailingSuffixToStrip) ? normalized.slice(0, -trailingSuffixToStrip.length) : normalized;
+  return result.endsWith(expectedSuffix) ? result : undefined;
+}
+
+function absoluteLive2dReference(baseUrl: string, value: unknown): unknown {
+  if (typeof value === "string") return absoluteUrl(baseUrl, value) ?? value;
+  if (Array.isArray(value)) return value.map((entry) => absoluteLive2dReference(baseUrl, entry));
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(record).map(([key, entry]) => {
+    if (["File", "file", "Path", "path"].includes(key) && typeof entry === "string") return [key, absoluteUrl(baseUrl, entry) ?? entry];
+    return [key, Array.isArray(entry) || (entry && typeof entry === "object") ? absoluteLive2dReference(baseUrl, entry) : entry];
+  }));
+}
+
+/** Converts Haruki's Unity BuildModelData export into the Cubism model3 shape consumed by the browser runtime. */
+export function model3FromHarukiBuildModelData(buildModelData: unknown, legacyModel3Json?: unknown, legacyBaseUrl = "") {
+  const build = buildModelData && typeof buildModelData === "object" ? buildModelData as Record<string, unknown> : {};
+  const legacy = legacyModel3Json && typeof legacyModel3Json === "object" ? legacyModel3Json as Record<string, unknown> : {};
+  const legacyRefs = legacy.FileReferences && typeof legacy.FileReferences === "object" ? legacy.FileReferences as Record<string, unknown> : {};
+  const moc = pathFromBuildModelData(build.Moc3FileName, ".moc3", ".bytes");
+  const physics = pathFromBuildModelData(build.PhysicsFileName, ".physics3", ".json");
+  const textures = Array.isArray(build.TextureNames) ? build.TextureNames.map((value) => pathFromBuildModelData(value, ".png")).filter((value): value is string => Boolean(value)) : [];
+  if (!moc || !textures.length) throw new Error("Haruki BuildModelData is missing a MOC3 or texture reference");
+  const fileReferences: Record<string, unknown> = { Moc: moc, Textures: textures };
+  if (physics) fileReferences.Physics = physics;
+  // Haruki exports Unity clips rather than Cubism motion3 files. Preserve only confirmed legacy Cubism motion/expression files as a clearly-labelled bridge.
+  if (legacyRefs.Motions) fileReferences.Motions = absoluteLive2dReference(legacyBaseUrl, legacyRefs.Motions);
+  if (legacyRefs.Expressions) fileReferences.Expressions = absoluteLive2dReference(legacyBaseUrl, legacyRefs.Expressions);
+  return { Version: 3, FileReferences: fileReferences };
+}
+
+async function harukiLive2dModel3(model: Live2dModelSummary) {
+  if (!model.buildModelDataUrl) throw new Error("Haruki BuildModelData URL is unavailable");
+  const buildModelData = await fetchJsonUrl<unknown>(model.buildModelDataUrl);
+  let legacyModel3Json: unknown;
+  if (model.legacyModel3JsonUrl) { try { legacyModel3Json = await fetchJsonUrl<unknown>(model.legacyModel3JsonUrl); } catch { /* Haruki base remains usable without legacy motion data. */ } }
+  return model3FromHarukiBuildModelData(buildModelData, legacyModel3Json, model.motionBaseUrl ?? "");
+}
+
 function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {
   if (typeof value === "string") return proxyUrl(absoluteUrl(baseUrl, value)) ?? value;
   if (Array.isArray(value)) return value.map((entry) => rewriteLive2dFileReference(baseUrl, entry));
@@ -501,7 +549,8 @@ function live2dSource(error?: unknown): ExternalDataSource {
   return {
     sourceType: "live2d-assets",
     primaryUrl: `${live2dAssetBase}/live2d/model_list.json`,
-    sourceProject: "Sekai-World/sekai-viewer Live2D assets",
+    fallbackUrl: `${config.harukiAssetBaseUrl.replace(/\/+$/, "")}/{region}-assets/startapp/live2d/model/{modelPath}/buildmodeldata.json`,
+    sourceProject: "Team-Haruki BuildModelData/MOC3/textures/physics; Sekai-World/sekai-viewer catalog and optional legacy Cubism motion bridge",
     fetchedAt: nowIso(),
     unavailableReason: error instanceof Error ? error.message : error ? String(error) : undefined
   };
@@ -979,6 +1028,13 @@ function normalizeCostumeItem(item: unknown, fallbackId: string): MasterCollecti
   };
 }
 
+/** CN master records labels for unreleased monthly costumes with these exact names. */
+export function isPublicCostumeItem(region: RegionId, item: unknown) {
+  if (region !== "cn" || !item || typeof item !== "object") return true;
+  const name = String((item as Record<string, unknown>).name ?? "").trim();
+  return !/^(?:\d+月)?占位$/.test(name);
+}
+
 function toCollection(region: RegionId, type: string, items: unknown[], sourceMetadata: ExternalDataSource): ResolvedCollectionResult {
   return {
     region,
@@ -997,6 +1053,7 @@ async function costumeCollection(region: RegionId): Promise<ResolvedCollectionRe
     const result = await fetchMetadataFile<unknown>(region, path);
     const wrapper = result.data && typeof result.data === "object" ? result.data as Record<string, unknown> : {};
     const costumes = Array.isArray(wrapper.costumes) ? wrapper.costumes : [];
+    const publicCostumes = costumes.filter((item) => isPublicCostumeItem(region, item));
     const sourceMetadata = costumeSource(result.source);
     return {
       region,
@@ -1004,8 +1061,8 @@ async function costumeCollection(region: RegionId): Promise<ResolvedCollectionRe
       source: sourceMetadata.primaryUrl,
       sourceMetadata,
       syncedAt: sourceMetadata.fetchedAt,
-      items: costumes.map((item, index) => normalizeCostumeItem(item, `costumes-${index + 1}`)),
-      unavailableReason: costumes.length ? undefined : "moe_costume.json returned no costume sets"
+      items: publicCostumes.map((item, index) => normalizeCostumeItem(item, `costumes-${index + 1}`)),
+      unavailableReason: publicCostumes.length ? undefined : "moe_costume.json returned no public costume sets"
     };
   } catch (error) {
     const sourceMetadata = costumeSource(metadataSource(region, path, error));
@@ -1185,7 +1242,9 @@ export async function getLive2dModels(region: RegionId, options: Live2dCatalogOp
       const raw = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const modelPath = String(raw.modelPath ?? raw.path ?? raw.modelBase ?? "");
       const modelFile = String(raw.modelFile ?? raw.file ?? "model.model3.json");
-      const modelBaseUrl = modelPath ? `${live2dAssetBase}/live2d/model/${modelPath}/` : undefined;
+      const modelBaseUrl = modelPath ? harukiRegionAssetCandidates(region, `startapp/live2d/model/${modelPath}/`)[0] : undefined;
+      const buildModelDataUrl = modelBaseUrl ? `${modelBaseUrl}buildmodeldata.json` : undefined;
+      const legacyModel3JsonUrl = modelPath ? `${live2dAssetBase}/live2d/model/${modelPath}/${modelFile}` : undefined;
       const id = String(raw.id ?? raw.modelId ?? raw.name ?? modelPath ?? index + 1);
       const referencedStories = [...(references.get(id)?.values() ?? [])];
       return {
@@ -1193,9 +1252,13 @@ export async function getLive2dModels(region: RegionId, options: Live2dCatalogOp
         name: typeof raw.name === "string" ? raw.name : undefined,
         modelPath,
         modelFile,
-        model3JsonUrl: modelPath ? `${modelBaseUrl}${modelFile}` : undefined,
+        model3JsonUrl: undefined,
+        buildModelDataUrl,
+        legacyModel3JsonUrl,
         modelBaseUrl,
-        motionBaseUrl: modelPath ? `${live2dAssetBase}/live2d/motion/${modelPath}/` : undefined,
+        motionBaseUrl: modelPath ? `${live2dAssetBase}/live2d/model/${modelPath}/` : undefined,
+        modelAssetSource: "haruki-buildmodeldata",
+        motionAssetSource: legacyModel3JsonUrl ? "sekai-viewer-legacy" : "none",
         characterId: live2dCharacterId(modelPath),
         costumeType: modelPath.split("/").filter(Boolean).at(-1) ?? modelPath,
         scope: "global-shared-model-asset",
@@ -1247,21 +1310,23 @@ export async function getLive2dModelDetail(region: RegionId, modelId: string) {
   if (!model) return null;
   let parsedModel3 = null;
   let unavailableReason: string | undefined;
-  if (model.model3JsonUrl) {
+  if (model.buildModelDataUrl) {
     try {
-      parsedModel3 = parseLive2dModel3(model, await fetchJsonUrl<unknown>(model.model3JsonUrl));
+      parsedModel3 = parseLive2dModel3(model, await harukiLive2dModel3(model));
     } catch (error) {
-      unavailableReason = `Failed to parse model3.json: ${error instanceof Error ? error.message : String(error)}`;
+      unavailableReason = `Failed to adapt Haruki BuildModelData: ${error instanceof Error ? error.message : String(error)}`;
     }
   } else {
-    unavailableReason = "model3.json URL is unavailable";
+    unavailableReason = "Haruki BuildModelData URL is unavailable";
   }
   return {
     region,
     model,
     assets: {
-      model3JsonUrl: model.model3JsonUrl,
-      proxiedModel3JsonUrl: proxyUrl(model.model3JsonUrl),
+      model3JsonUrl: undefined,
+      proxiedModel3JsonUrl: undefined,
+      buildModelDataUrl: model.buildModelDataUrl,
+      legacyModel3JsonUrl: model.legacyModel3JsonUrl,
       rewrittenModel3JsonUrl: `/api/master/${region}/live2d/models/${encodeURIComponent(model.id)}/model3-proxy`,
       modelBaseUrl: model.modelBaseUrl,
       motionBaseUrl: model.motionBaseUrl,
@@ -1298,9 +1363,7 @@ export async function getLive2dModelDetail(region: RegionId, modelId: string) {
       ? "missing-resource"
       : (parsedModel3?.textureFiles.length ?? 0) === 0
         ? "missing-resource"
-        : (parsedModel3?.motionFiles.length ?? 0) === 0 || (parsedModel3?.expressionFiles.length ?? 0) === 0
-          ? "partial"
-          : model.regionReferenceStatus === "region-referenced" ? "region-referenced" : "global-only",
+        : "partial",
     assetCounts: {
       motions: parsedModel3?.motionFiles.length ?? 0,
       expressions: parsedModel3?.expressionFiles.length ?? 0,
@@ -1317,8 +1380,8 @@ export async function getLive2dModel3Proxy(region: RegionId, modelId: string) {
   const list = await getLive2dModels(region);
   const model = list.models.find((item) => item.id === modelId || item.modelPath === modelId || item.name === modelId);
   if (!model) return null;
-  if (!model.model3JsonUrl) throw new Error("model3.json URL is unavailable");
-  return rewriteLive2dModel3(model, await fetchJsonUrl<unknown>(model.model3JsonUrl));
+  if (!model.buildModelDataUrl) throw new Error("Haruki BuildModelData URL is unavailable");
+  return rewriteLive2dModel3(model, await harukiLive2dModel3(model));
 }
 
 export async function getExternalContext(region: RegionId, kind: "exchanges" | "missions" | "virtualLives" | "mysekai") {

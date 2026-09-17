@@ -57,6 +57,14 @@ export class StoryLive2DController {
     await this.executeAction(action);
   }
 
+  async initializeThrough(index: number) {
+    const last = Math.min(Math.max(0, index), Math.max(0, (this.playback.actions?.length ?? 1) - 1));
+    for (let current = 0; current <= last; current += 1) {
+      if (this.abortController.signal.aborted) return;
+      await this.execute(current);
+    }
+  }
+
   async playFrom(index: number, shouldContinue: () => boolean) {
     for (let current = index; current < (this.playback.actions?.length ?? 0); current += 1) {
       if (!shouldContinue() || this.abortController.signal.aborted) return;

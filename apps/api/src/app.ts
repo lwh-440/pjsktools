@@ -455,6 +455,16 @@ async function resolveShareCardData(
 }
 
 const informationDocumentStyles = `html{color:#232833;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif}body{margin:0;padding:20px;line-height:1.75}img{display:block;max-width:100%;height:auto;margin:0 auto 18px}a{color:#26708f;overflow-wrap:anywhere}.information-pre,.information-body-element{font-size:15px}.information-body-heading{margin:28px 0 14px;padding:10px 14px;border-radius:6px;background:#eef2f5;font-size:20px}.information-body-element-heading{font-size:17px}.btn{display:inline-block;padding:10px 16px;border:1px solid #26708f;border-radius:6px;text-decoration:none}@media(max-width:480px){body{padding:14px}.information-body-heading{font-size:18px}}`;
+const informationContentRoute = "/api/master/:region/information-content/:informationId";
+const informationContentFrameAncestor = (() => {
+  try {
+    const url = new URL(config.publicWebBaseUrl);
+    return ["http:", "https:"].includes(url.protocol) ? url.origin : "'none'";
+  } catch {
+    return "'none'";
+  }
+})();
+const informationContentCsp = `default-src 'none'; img-src https: data:; media-src https:; style-src 'unsafe-inline' https:; font-src https: data:; frame-src https:; frame-ancestors ${informationContentFrameAncestor}; form-action 'none'; base-uri https:`;
 
 function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -1368,10 +1378,14 @@ export async function buildApp(options: {
     }
     if (config.nodeEnv === "production") reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     reply.header("X-Content-Type-Options", "nosniff");
-    reply.header("X-Frame-Options", "DENY");
+    const isInformationContent = request.routeOptions?.url === informationContentRoute;
+    if (isInformationContent) reply.removeHeader("X-Frame-Options");
+    else reply.header("X-Frame-Options", "DENY");
     reply.header("Referrer-Policy", "no-referrer");
     reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
-    const csp = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+    const csp = isInformationContent
+      ? informationContentCsp
+      : "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
     reply.header(config.cspReportOnly ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy", csp);
     return payload;
   });
@@ -1725,7 +1739,7 @@ export async function buildApp(options: {
     if (!isRegion(region) || (region !== "jp" && region !== "cn")) return reply.notFound("Information is not released for this region");
     const detail = await getInformationDetail(region, informationId);
     reply.type("text/html; charset=utf-8");
-    reply.header("content-security-policy", "default-src 'none'; img-src https: data:; media-src https:; style-src 'unsafe-inline' https:; font-src https: data:; frame-src https:; form-action 'none'; base-uri https:");
+    reply.header("content-security-policy", informationContentCsp);
     const contentSourceUrl = detail && "contentSourceUrl" in detail ? detail.contentSourceUrl : undefined;
     if (!detail || detail.embedStatus !== "ready" || !contentSourceUrl) {
       reply.header("cache-control", "no-store");
