@@ -99,7 +99,7 @@ export async function fetchSourceImage(url: string | undefined, fetchImpl: typeo
   }
 }
 
-function cardSvg(data: ShareCardData, cardOpacity = 1) {
+function cardSvg(data: ShareCardData, cardOpacity = 1, opaqueBackground = true) {
   const title = escapeXml(truncate(data.title, 28));
   const subtitle = escapeXml(truncate(data.subtitle, 54));
   const detail = escapeXml(truncate(data.detail ?? `ID ${data.id}`, 68));
@@ -108,7 +108,7 @@ function cardSvg(data: ShareCardData, cardOpacity = 1) {
   const accent = /^#[0-9a-f]{6}$/i.test(data.accent ?? "") ? data.accent : "#35b8b0";
   return Buffer.from(`
     <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
-      <rect width="1200" height="630" fill="#f7fbfc"/>
+      ${opaqueBackground ? '<rect width="1200" height="630" fill="#f7fbfc"/>' : ""}
       <rect width="1200" height="18" fill="${accent}"/>
       <rect y="18" width="1200" height="8" fill="#f05b9d"/>
       <rect x="68" y="74" width="1064" height="482" rx="20" fill="#ffffff" fill-opacity="${cardOpacity}" stroke="#cddde2" stroke-width="3"/>
@@ -128,8 +128,8 @@ function cardSvg(data: ShareCardData, cardOpacity = 1) {
     </svg>`);
 }
 
-export async function renderShareCardPng(data: ShareCardData) {
-  const sourceImage = await fetchSourceImage(data.sourceImageUrl);
+export async function renderShareCardPng(data: ShareCardData, fetchImpl: typeof fetch = fetch) {
+  const sourceImage = await fetchSourceImage(data.sourceImageUrl, fetchImpl);
   const base = sharp(cardSvg(data));
   if (!sourceImage) return base.png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer();
 
@@ -140,7 +140,7 @@ export async function renderShareCardPng(data: ShareCardData) {
       .blur(0.8)
       .png()
       .toBuffer();
-    const overlay = await sharp(cardSvg(data, 0.72)).png().toBuffer();
+    const overlay = await sharp(cardSvg(data, 0.72, false)).png().toBuffer();
     return sharp({ create: { width: 1200, height: 630, channels: 4, background: "#f7fbfc" } })
       .composite([
         { input: visual, left: 68, top: 74 },

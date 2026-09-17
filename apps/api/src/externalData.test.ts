@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPublicCostumeItem, model3FromHarukiBuildModelData, normalizeScenarioData } from "./externalData.js";
+import { isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData } from "./externalData.js";
 
 describe("Haruki Live2D BuildModelData adapter", () => {
   it("creates a Cubism model3 document from the exported MOC3, textures, and physics", () => {
@@ -33,6 +33,26 @@ describe("Haruki Live2D BuildModelData adapter", () => {
       TextureNames: [],
       AdditionalMotionData: [{ ClipAssetName: "walk" }]
     })).toThrow(/MOC3 or texture/i);
+  });
+
+  it("maps a confirmed Cubism motion manifest without fabricating model-relative files", () => {
+    expect(live2dMotionReferencesFromManifest({
+      motions: ["w-normal-tilthead05"],
+      expressions: ["face_smile_02", "../ignored"]
+    }, "https://storage.sekai.best/sekai-live2d-assets/live2d/motion/v1/main/01_ichika/01ichika_motion_base")).toEqual({
+      Motion: [{
+        Name: "w-normal-tilthead05",
+        File: "https://storage.sekai.best/sekai-live2d-assets/live2d/motion/v1/main/01_ichika/01ichika_motion_base/motion/w-normal-tilthead05.motion3.json",
+        FadeInTime: 1,
+        FadeOutTime: 1
+      }],
+      Expression: [{
+        Name: "face_smile_02",
+        File: "https://storage.sekai.best/sekai-live2d-assets/live2d/motion/v1/main/01_ichika/01ichika_motion_base/facial/face_smile_02.motion3.json",
+        FadeInTime: 1,
+        FadeOutTime: 1
+      }]
+    });
   });
 });
 

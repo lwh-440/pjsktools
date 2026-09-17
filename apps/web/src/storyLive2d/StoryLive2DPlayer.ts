@@ -129,28 +129,25 @@ export class StoryLive2DPlayer {
   }
 
   async playMotion(entry: ModelEntry, name: string) {
-    const clean = name.replaceAll(" ", "");
-    const definitions = entry.model.internalModel?.motionManager?.definitions ?? {};
-    const matched = Object.entries(definitions).flatMap(([group, items]) =>
-      (Array.isArray(items) ? items : []).map((item: any, index) => ({
-        group,
-        index,
-        file: String(item?.File ?? item?.file ?? item?.Name ?? item?.name ?? "").replaceAll(" ", "")
-      }))
-    ).find((item) => item.file.includes(clean) || clean.includes(item.file.replace(/\.(motion3|mtn)\.json$/i, "")));
-    const group = matched?.group ?? Object.keys(definitions)[0];
-    if (!group) throw new Error(`Motion group unavailable for ${name}`);
-    const index = matched?.index ?? 0;
-    if (entry.model.motion) await entry.model.motion(group, index);
-    else await entry.model.internalModel?.motionManager?.startMotion?.(group, index);
+    await this.playDefinedMotion(entry, name, "Motion");
   }
 
   async playExpression(entry: ModelEntry, name: string) {
+    await this.playDefinedMotion(entry, name, "Expression");
+  }
+
+  private async playDefinedMotion(entry: ModelEntry, name: string, expectedGroup: "Motion" | "Expression") {
     const clean = name.replaceAll(" ", "");
-    const expressions = entry.definition.expressions ?? [];
-    const index = Math.max(0, expressions.findIndex((item) => item === clean));
-    if (entry.model.expression) await entry.model.expression(index);
-    else await entry.model.internalModel?.motionManager?.expressionManager?.setExpression?.(index);
+    const definitions = entry.model.internalModel?.motionManager?.definitions ?? {};
+    const matched = (Array.isArray(definitions[expectedGroup]) ? definitions[expectedGroup] : [])
+      .map((item: any, index: number) => ({
+        index,
+        file: String(item?.File ?? item?.file ?? item?.Name ?? item?.name ?? "").replaceAll(" ", "")
+      }))
+      .find((item: { index: number; file: string }) => item.file.includes(clean) || clean.includes(item.file.replace(/\.(motion3|mtn)\.json$/i, "")));
+    if (!matched) throw new Error(`${expectedGroup} unavailable for ${name}`);
+    if (entry.model.motion) await entry.model.motion(expectedGroup, matched.index);
+    else await entry.model.internalModel?.motionManager?.startMotion?.(expectedGroup, matched.index);
   }
 
   setSpeaking(cid: number | undefined, active: boolean) {

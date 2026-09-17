@@ -363,8 +363,80 @@ function absoluteLive2dReference(baseUrl: string, value: unknown): unknown {
   }));
 }
 
+type Live2dMotionManifest = { motions?: unknown; expressions?: unknown };
+
+function motionNames(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((name): name is string => typeof name === "string" && /^[A-Za-z0-9_-]+$/.test(name))
+    : [];
+}
+
+export function live2dMotionReferencesFromManifest(manifest: Live2dMotionManifest, motionBaseUrl: string) {
+  const baseUrl = motionBaseUrl.replace(/\/+$/, "");
+  const files = (kind: "motion" | "facial", names: unknown) => motionNames(names).map((name) => ({
+    Name: name,
+    File: `${baseUrl}/${kind}/${name}.motion3.json`,
+    FadeInTime: 1,
+    FadeOutTime: 1
+  }));
+  return {
+    Motion: files("motion", manifest.motions),
+    Expression: files("facial", manifest.expressions)
+  };
+}
+
+function live2dMotionBaseCandidates(model: Live2dModelSummary) {
+  const modelPath = model.modelPath ?? "";
+  const raw = model.raw && typeof model.raw === "object" ? model.raw as Record<string, unknown> : {};
+  let modelDir = modelPath.split("/").slice(0, -1).join("/");
+  if (modelDir.toLowerCase().includes("v2/collabo/21_miku")) modelDir = modelDir.replace("collabo", "main");
+  else if (modelDir.toLowerCase().includes("v2/collabo/egg")) modelDir = modelDir.split("/").slice(0, -1).join("/");
+  const initialBase = String(raw.modelBase ?? model.costumeType ?? modelPath.split("/").at(-1) ?? "");
+  const bases: string[] = [initialBase];
+  if (/^v2_clb\d{2}_.*$/.test(initialBase)) bases.push(initialBase.replace(/^v2_clb\d{2}_/, "v2_"));
+  const back = initialBase.match(/(.*)_back(\d{2})?$/);
+  if (back) bases.push(`${back[1].split("_").slice(0, 2).join("_")}_back`);
+  if (/.*\d{2}$/.test(initialBase)) bases.push(initialBase.replace(/\d{2}$/, ""));
+  for (const base of [...bases]) {
+    let shortened = base;
+    while (shortened.includes("_")) {
+      shortened = shortened.split("_").slice(0, -1).join("_");
+      bases.push(shortened);
+    }
+  }
+  return [...new Set(bases.filter(Boolean))].map((base) => ({
+    base,
+    url: `${live2dAssetBase}/live2d/motion/${modelDir}/${base}_motion_base`
+  }));
+}
+
+const live2dMotionReferenceCache = new Map<string, Promise<Record<string, unknown> | undefined>>();
+
+async function live2dMotionReferences(model: Live2dModelSummary) {
+  const key = model.modelPath ?? model.id;
+  const cached = live2dMotionReferenceCache.get(key);
+  if (cached) return cached;
+  const load = (async () => {
+    for (const candidate of live2dMotionBaseCandidates(model)) {
+      try {
+        const manifest = await fetchJsonUrl<Live2dMotionManifest>(`${candidate.url}/BuildMotionData.json`);
+        const references = live2dMotionReferencesFromManifest(manifest, candidate.url);
+        if (references.Motion.length || references.Expression.length) return references;
+      } catch {
+        // The model naming scheme has several costume suffixes; try the next verified loader candidate.
+      }
+    }
+    return undefined;
+  })();
+  live2dMotionReferenceCache.set(key, load);
+  const references = await load;
+  // Do not turn a transient mirror timeout into a process-lifetime "no motions" result.
+  if (!references && live2dMotionReferenceCache.get(key) === load) live2dMotionReferenceCache.delete(key);
+  return references;
+}
+
 /** Converts Haruki's Unity BuildModelData export into the Cubism model3 shape consumed by the browser runtime. */
-export function model3FromHarukiBuildModelData(buildModelData: unknown, legacyModel3Json?: unknown, legacyBaseUrl = "") {
+export function model3FromHarukiBuildModelData(buildModelData: unknown, legacyModel3Json?: unknown, legacyBaseUrl = "", motionReferences?: Record<string, unknown>) {
   const build = buildModelData && typeof buildModelData === "object" ? buildModelData as Record<string, unknown> : {};
   const legacy = legacyModel3Json && typeof legacyModel3Json === "object" ? legacyModel3Json as Record<string, unknown> : {};
   const legacyRefs = legacy.FileReferences && typeof legacy.FileReferences === "object" ? legacy.FileReferences as Record<string, unknown> : {};
@@ -374,8 +446,9 @@ export function model3FromHarukiBuildModelData(buildModelData: unknown, legacyMo
   if (!moc || !textures.length) throw new Error("Haruki BuildModelData is missing a MOC3 or texture reference");
   const fileReferences: Record<string, unknown> = { Moc: moc, Textures: textures };
   if (physics) fileReferences.Physics = physics;
-  // Haruki exports Unity clips rather than Cubism motion3 files. Preserve only confirmed legacy Cubism motion/expression files as a clearly-labelled bridge.
-  if (legacyRefs.Motions) fileReferences.Motions = absoluteLive2dReference(legacyBaseUrl, legacyRefs.Motions);
+  // Haruki exports Unity clips rather than Cubism motion3 files. The motion manifest comes from the confirmed Cubism asset catalog.
+  if (motionReferences) fileReferences.Motions = motionReferences;
+  else if (legacyRefs.Motions) fileReferences.Motions = absoluteLive2dReference(legacyBaseUrl, legacyRefs.Motions);
   if (legacyRefs.Expressions) fileReferences.Expressions = absoluteLive2dReference(legacyBaseUrl, legacyRefs.Expressions);
   return { Version: 3, FileReferences: fileReferences };
 }
@@ -385,7 +458,8 @@ async function harukiLive2dModel3(model: Live2dModelSummary) {
   const buildModelData = await fetchJsonUrl<unknown>(model.buildModelDataUrl);
   let legacyModel3Json: unknown;
   if (model.legacyModel3JsonUrl) { try { legacyModel3Json = await fetchJsonUrl<unknown>(model.legacyModel3JsonUrl); } catch { /* Haruki base remains usable without legacy motion data. */ } }
-  return model3FromHarukiBuildModelData(buildModelData, legacyModel3Json, model.motionBaseUrl ?? "");
+  const motionReferences = await live2dMotionReferences(model);
+  return model3FromHarukiBuildModelData(buildModelData, legacyModel3Json, model.motionBaseUrl ?? "", motionReferences);
 }
 
 function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {

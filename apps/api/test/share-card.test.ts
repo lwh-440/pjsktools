@@ -3,7 +3,8 @@ process.env.PJSKTOOLS_FORCE_MEMORY_STORE = "true";
 process.env.PJSKTOOLS_SILENT_APP_LOGS = "true";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { fetchSourceImage } from "../src/shareCard.js";
+import sharp from "sharp";
+import { fetchSourceImage, renderShareCardPng } from "../src/shareCard.js";
 
 type App = Awaited<ReturnType<typeof import("../src/app.js")["buildApp"]>>;
 
@@ -181,5 +182,28 @@ describe("share-card source image redirects", () => {
     fetchMock.mockResolvedValueOnce(imageResponse());
     expect(await fetchSourceImage("https://storage.sekai.best/share/start.png", fetchMock)).toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("share-card source image composition", () => {
+  it("keeps a fetched event image visible beneath the translucent card layer", async () => {
+    const source = await sharp({ create: { width: 8, height: 8, channels: 4, background: "#d00000" } }).png().toBuffer();
+    const image = await renderShareCardPng({
+      type: "event",
+      id: "217",
+      region: "jp",
+      title: "Drive to Dream！",
+      subtitle: "Event share composition",
+      sourceImageUrl: "https://sekai-assets.haruki.seiunx.com/jp-assets/ondemand/event_story/event_drive_2026/screen_image/banner_event_story.png"
+    }, vi.fn<typeof fetch>().mockResolvedValue(new Response(source, {
+      status: 200,
+      headers: { "content-type": "image/png", "content-length": String(source.length) }
+    })));
+    const pixel = await sharp(image).raw().toBuffer({ resolveWithObject: true });
+    const offset = (400 * pixel.info.width + 800) * pixel.info.channels;
+    const [red, green, blue] = pixel.data.subarray(offset, offset + 3);
+
+    expect(red).toBeGreaterThan(green + 20);
+    expect(red).toBeGreaterThan(blue + 20);
   });
 });

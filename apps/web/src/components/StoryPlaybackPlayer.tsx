@@ -22,6 +22,7 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
   const controllerRef = useRef<StoryLive2DController | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
   const playingRef = useRef(false);
+  const playbackTaskRef = useRef<Promise<void> | null>(null);
   const actions = useMemo(() => [...(playback?.actions ?? [])].sort((a, b) => a.index - b.index), [playback]);
   const firstReadableIndex = Math.max(0, actions.findIndex((action) => action.type === "Talk"));
   const [step, setStep] = useState(firstReadableIndex);
@@ -86,6 +87,7 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
 
   function dispose() {
     playingRef.current = false;
+    playbackTaskRef.current = null;
     loadAbortRef.current?.abort(); loadAbortRef.current = null;
     controllerRef.current?.destroy(); controllerRef.current = null;
   }
@@ -94,12 +96,20 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
     const safe = Math.min(Math.max(0, nextStep), Math.max(0, actions.length - 1));
     if (!controllerRef.current && !textMode) return;
     setPlaying(false); playingRef.current = false;
-    if (controllerRef.current && !textMode) await controllerRef.current.execute(safe);
+    if (controllerRef.current && !textMode) {
+      controllerRef.current.reset();
+      playbackTaskRef.current = null;
+      await controllerRef.current.execute(safe);
+    }
     else { setStep(safe); setOverlay(textOverlay(actions[safe])); }
   }
 
   async function togglePlay() {
-    if (playing) { setPlaying(false); playingRef.current = false; return; }
+    if (playing) {
+      setPlaying(false); playingRef.current = false;
+      if (!textMode) controllerRef.current?.pause();
+      return;
+    }
     const controller = controllerRef.current;
     if (!controller && !textMode) return;
     setPlaying(true); playingRef.current = true;
@@ -109,15 +119,27 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
         await new Promise((resolve) => window.setTimeout(resolve, Math.max(350, settings.textSpeed * String(actions[current].body ?? "").length) / settings.fastForward));
         if (!autoPlay) break;
       }
+      setPlaying(false); playingRef.current = false;
     } else if (controller) {
-      try { await controller.playFrom(step, () => playingRef.current && autoPlay); }
-      catch (error) { if ((error as DOMException)?.name !== "AbortError") setWarnings((current) => [...current, error instanceof Error ? error.message : String(error)]); }
+      controller.resume();
+      if (playbackTaskRef.current) return;
+      const task = controller.playFrom(step, () => playingRef.current && autoPlay)
+        .catch((error) => { if ((error as DOMException)?.name !== "AbortError") setWarnings((current) => [...current, error instanceof Error ? error.message : String(error)]); })
+        .finally(() => {
+          if (playbackTaskRef.current !== task) return;
+          playbackTaskRef.current = null;
+          setPlaying(false);
+          playingRef.current = false;
+        });
+      playbackTaskRef.current = task;
+      return;
     }
     setPlaying(false); playingRef.current = false;
   }
 
   async function reset() {
     setPlaying(false); playingRef.current = false;
+    playbackTaskRef.current = null;
     if (controllerRef.current && !textMode) { controllerRef.current.reset(); await controllerRef.current.execute(0); }
     else if (textMode) { setStep(firstReadableIndex); setOverlay(textOverlay(actions[firstReadableIndex])); }
   }
