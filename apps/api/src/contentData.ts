@@ -1,5 +1,5 @@
 import type { RegionId } from "./config.js";
-import { getAssetCandidates } from "./assets.js";
+import { getAssetCandidates, getCharacterIconCandidates } from "./assets.js";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -539,7 +539,7 @@ function resolveExchangeResource(
   const imageCandidates = resourceType === "card"
     ? array(asRecord(item?.assets).normalThumbnailCandidates).map(String)
     : resourceType === "character_rank_exp" && resourceId != null
-      ? [`https://moe.exmeaning.com/chr_ts_${resourceId}.png`]
+      ? getCharacterIconCandidates(region, resourceId)
       : exchangeMaterialCandidates(region, resourceType, resourceId, resolvedItem);
   const lookupRequired = Boolean(exchangeLookupPaths[resourceType]) || resourceType === "honor";
   const lookupStatus = lookupRequired ? (item ? "matched" : "missing-data") : "not-required";

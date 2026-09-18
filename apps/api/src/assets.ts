@@ -11,6 +11,16 @@ const moeChartBase = "https://charts-new.unipjsk.com/moe/svg";
 const comicsAssetBase = `${sekaiBestAssetBase}/sekai-comics`;
 const live2dAssetBase = `${sekaiBestAssetBase}/sekai-live2d-assets`;
 const harukiAssetBase = config.harukiAssetBaseUrl.replace(/\/+$/, "");
+const harukiToolboxImageBase = "https://images.haruki.seiunx.com/sekai-toolbox/static_images/chara_icon";
+
+// Team-Haruki Toolbox publishes these stable icon nicknames for every game character icon.
+const harukiCharacterIconNicknames: Record<number, string> = {
+  1: "ick", 2: "saki", 3: "hnm", 4: "shiho", 5: "mnr", 6: "hrk", 7: "airi", 8: "szk",
+  9: "khn", 10: "an", 11: "akt", 12: "toya", 13: "tks", 14: "emu", 15: "nene", 16: "rui",
+  17: "knd", 18: "mfy", 19: "ena", 20: "mzk", 21: "miku", 22: "rin", 23: "len", 24: "luka",
+  25: "meiko", 26: "kaito", 27: "miku_light_sound", 28: "miku_idol", 29: "miku_street",
+  30: "miku_theme_park", 31: "miku_school_refusal"
+};
 
 const regionAssetDir: Record<RegionId, string> = {
   jp: "jp-assets",
@@ -117,7 +127,9 @@ export function getAssetCandidates(region: RegionId, assetPath: string) {
 
 export function getCharacterIconCandidates(region: RegionId, characterId?: string | number) {
   if (characterId == null || String(characterId).trim() === "") return [];
-  const staticUrl = `${moeStaticBase}/assets/chr_ts_${characterId}.png`;
+  const nickname = harukiCharacterIconNicknames[Number(characterId)];
+  if (!nickname) return [];
+  const staticUrl = `${harukiToolboxImageBase}/${nickname}.png`;
   return [staticUrl, proxiedAssetUrl(staticUrl)];
 }
 

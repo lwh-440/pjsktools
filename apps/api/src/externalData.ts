@@ -1,5 +1,6 @@
 import { config, type RegionId } from "./config.js";
 import { harukiAssetPath } from "./harukiAssetPaths.js";
+import { fetchHarukiMasterJson, harukiMasterConfigured } from "./harukiMasterClient.js";
 import type { MasterCollection, MasterCollectionItem } from "./types.js";
 
 export type CollectionSourceType = "team-haruki" | "metadata" | "information-api" | "asset-list" | "live2d-assets";
@@ -558,6 +559,24 @@ function parseLive2dModel3(model: Live2dModelSummary, model3Json: unknown) {
 async function fetchMetadataFile<T>(region: RegionId, path: string): Promise<{ data: T; source: ExternalDataSource }> {
   const primaryUrl = metadataUrl(region, path);
   const fallbackUrl = metadataUrl(region, path, metadataFallbackBase);
+  // moe_costume.json is a mirror-specific wrapper, unlike ordinary master arrays.
+  if (path !== "moe_costume.json" && harukiMasterConfigured()) {
+    try {
+      const result = await fetchHarukiMasterJson<T>(region, [path]);
+      return {
+        data: result.value,
+        source: {
+          sourceType: "team-haruki",
+          primaryUrl: result.sourceUrl,
+          fallbackUrl: primaryUrl,
+          sourceProject: "Team-Haruki master registry",
+          fetchedAt: nowIso()
+        }
+      };
+    } catch {
+      // Keep the established mirrors as a fallback while the registry is unavailable.
+    }
+  }
   try {
     return {
       data: await fetchJsonUrl<T>(primaryUrl),
@@ -2201,6 +2220,7 @@ export function isAllowedExternalAssetUrl(value: string) {
       "storage.exmeaning.com",
       "storage.pjsk.moe",
       "moe.exmeaning.com",
+      "images.haruki.seiunx.com",
       "charts-new.unipjsk.com",
       "production-web.sekai.colorfulpalette.org",
       "lf3-mkcncdn-tos.dailygn.com"

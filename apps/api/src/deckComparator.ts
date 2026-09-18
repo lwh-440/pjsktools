@@ -67,7 +67,7 @@ async function resolveCandidate(input: DeckCompareInput, candidate: DeckCompareC
 }
 
 export async function compareDecks(input: DeckCompareInput) {
-  const musicMeta = await getMusicMeta(input.musicId, input.difficulty);
+  const musicMeta = await getMusicMeta(input.region, input.musicId, input.difficulty);
   const configuredTeammates = input.teammates?.slice(0, 4) ?? [];
   const teammateAssumption = configuredTeammates.length !== 4;
   const comparisons = [];

@@ -2,11 +2,21 @@ process.env.HARUKI_ASSET_BASE_URL = "https://sekai-assets.haruki.seiunx.com";
 
 import { describe, expect, it } from "vitest";
 
-const { getAssetCandidates, getCardAssetDetail, getCollectionItemAssetDetail } = await import("./assets.js");
+const { getAssetCandidates, getCardAssetDetail, getCharacterIconCandidates, getCollectionItemAssetDetail } = await import("./assets.js");
 
 const harukiJp = "https://sekai-assets.haruki.seiunx.com/jp-assets";
 
 describe("Haruki asset mappings", () => {
+  it("uses the verified Haruki Toolbox character icons and proxy candidates", () => {
+    const ichika = "https://images.haruki.seiunx.com/sekai-toolbox/static_images/chara_icon/ick.png";
+    const lightSoundMiku = "https://images.haruki.seiunx.com/sekai-toolbox/static_images/chara_icon/miku_light_sound.png";
+
+    expect(getCharacterIconCandidates("jp", 1)).toEqual([ichika, `/api/assets/proxy?url=${encodeURIComponent(ichika)}`]);
+    expect(getCharacterIconCandidates("en", 27)).toEqual([lightSoundMiku, `/api/assets/proxy?url=${encodeURIComponent(lightSoundMiku)}`]);
+    expect(getCharacterIconCandidates("jp", 31)[0]).toContain("miku_school_refusal.png");
+    expect(getCharacterIconCandidates("jp", 32)).toEqual([]);
+  });
+
   it("uses the confirmed full-size card path instead of a thumbnail", () => {
     const assets = getCardAssetDetail("jp", {
       id: "281",

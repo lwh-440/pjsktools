@@ -423,7 +423,7 @@ async function resolveShareCardData(
       title: card.title,
       subtitle: [card.character, card.attribute, `星级 ${card.rarity}`].filter(Boolean).join(" · "),
       detail: `卡牌 ID ${card.id}`,
-      sourceImageUrl: card.assets?.afterTrainingUrl ?? card.assets?.normalUrl
+      sourceImageUrl: card.assets?.afterTrainingUrl || card.assets?.normalUrl
     };
   }
   if (type === "song") {

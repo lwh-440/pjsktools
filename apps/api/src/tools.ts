@@ -220,7 +220,7 @@ export async function recommendDeck(input: DeckRecommendInput) {
     ? contributions.filter((item) => !targetCharacterId || cardCharacterId(item.card) === targetCharacterId)
     : [];
   const searchableContributions = isChallengeMode && targetCharacterId ? challengeCandidates : contributions;
-  const musicMetaResult = await getMusicMeta(input.musicId, input.difficulty);
+  const musicMetaResult = await getMusicMeta(input.region, input.musicId, input.difficulty);
   const search = searchDecks(searchableContributions, { ...resolvedOptions, musicMeta: musicMetaResult.meta });
   const recommendedCards = search.decks[0]?.cards ?? searchableContributions.slice(0, 5);
   const challengeDecks = isChallengeMode
@@ -524,7 +524,7 @@ export async function recommendMusic(input: {
       });
     }
   }
-  const metaCache = await getMusicMetas().catch(() => undefined);
+  const metaCache = await getMusicMetas(input.region).catch(() => undefined);
   const metaMap = new Map((metaCache?.rows ?? []).map((meta) => [`${meta.musicId}:${meta.difficulty.toLowerCase()}`, meta]));
   const summaries = candidates.map((candidate) => {
       const meta = metaMap.get(`${candidate.music.id}:${candidate.difficulty.difficulty.toLowerCase()}`);

@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData } from "./externalData.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { config } from "./config.js";
+import { getOptionalMetadata, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData } from "./externalData.js";
+import { resetHarukiMasterClientStateForTests } from "./harukiMasterClient.js";
 
 describe("Haruki Live2D BuildModelData adapter", () => {
   it("creates a Cubism model3 document from the exported MOC3, textures, and physics", () => {
@@ -104,5 +106,39 @@ describe("Story Live2D costume coverage", () => {
     expect((result.actions[0] as any).voice.url).toMatch(
       /\/startapp\/sound\/scenario\/voice\/story_connect_live_parallelpaaaarty_01\/connectlive_12_beforestory_01_21_piapro\.mp3$/
     );
+  });
+});
+
+describe("Haruki Toolbox static image host", () => {
+  it("allows the exact HTTPS host used by character icon candidates", () => {
+    expect(isAllowedExternalAssetUrl("https://images.haruki.seiunx.com/sekai-toolbox/static_images/chara_icon/ick.png")).toBe(true);
+    expect(isAllowedExternalAssetUrl("https://untrusted.images.haruki.seiunx.com/sekai-toolbox/static_images/chara_icon/ick.png")).toBe(false);
+  });
+});
+
+describe("Haruki master metadata", () => {
+  const originalBaseUrl = config.harukiMasterBaseUrl;
+
+  afterEach(() => {
+    Object.assign(config, { harukiMasterBaseUrl: originalBaseUrl });
+    resetHarukiMasterClientStateForTests();
+    vi.unstubAllGlobals();
+  });
+
+  it("uses the Haruki registry for ordinary master arrays before legacy mirrors", async () => {
+    Object.assign(config, { harukiMasterBaseUrl: "https://haruki.test" });
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/v1/master/jp/current")) return new Response(JSON.stringify({ files: [] }), { status: 200 });
+      if (url.endsWith("/v1/master/jp/files/events.json")) return new Response(JSON.stringify([{ id: 217 }]), { status: 200 });
+      return new Response("unexpected", { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getOptionalMetadata("jp", "events.json")).resolves.toMatchObject({
+      data: [{ id: 217 }],
+      source: { sourceType: "team-haruki", primaryUrl: "https://haruki.test/v1/master/jp/files/events.json" }
+    });
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain(expect.stringContaining("metadata.exmeaning.com"));
   });
 });

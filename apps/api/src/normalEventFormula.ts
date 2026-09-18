@@ -963,7 +963,7 @@ export function calculateReferenceEventPoint(input: {
 export async function estimateNormalEventPoint(input: EventPointEstimateInput) {
   const song = input.musicId ? await getSongDetail(input.region, input.musicId) : null;
   const difficulty = song?.difficultyDetails?.find((item) => item.difficulty.toLowerCase() === input.difficulty?.toLowerCase());
-  const musicMetaResult = await getMusicMeta(input.musicId, input.difficulty);
+  const musicMetaResult = await getMusicMeta(input.region, input.musicId, input.difficulty);
   const formulaContext = await buildNormalEventFormulaContext({
     region: input.region,
     eventId: input.eventId,
@@ -1062,7 +1062,7 @@ export async function estimateNormalEventPoint(input: EventPointEstimateInput) {
     referenceParity: formulaContext.referenceParity,
     calculationTrace: [
       "EventCalculator.getEventPoint reference shape is applied by live type",
-      "musicRate uses Moesekai musicMeta.event_rate; calculation remains missing-data when the exact row is unavailable",
+      "musicRate uses the region's Haruki music metadata event_rate; calculation remains missing-data when the exact row is unavailable",
       "Deck bonus is consumed as eventBonusPercent; supportDeckBonus is added for Bloom/WL when uploaded"
     ],
     modeSpecificBreakdown: {

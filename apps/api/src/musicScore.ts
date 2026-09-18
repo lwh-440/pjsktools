@@ -1,19 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { RegionId } from "./config.js";
+import { buildHarukiMusicScoreUrl } from "./chartRenderer.js";
 
 export type MusicScoreNoteBase = { time: number };
 export type MusicScoreNote = MusicScoreNoteBase & { type: number; longId?: number };
 export type MusicScore = { notes: MusicScoreNote[]; skills: MusicScoreNoteBase[]; fevers: MusicScoreNoteBase[] };
 
-const regionAssetDir: Record<RegionId, string> = {
-  jp: "sekai-jp-assets",
-  en: "sekai-en-assets",
-  tw: "sekai-tc-assets",
-  kr: "sekai-kr-assets",
-  cn: "sekai-cn-assets"
-};
-const storageBase = "https://storage.exmeaning.com";
+const harukiAssetBase = "https://sekai-assets.haruki.seiunx.com";
 const fastRefresh = process.env.PJSKTOOLS_FAST_MASTER_REFRESH === "true";
 
 function apiRoot() {
@@ -30,7 +24,8 @@ function normalizeDifficulty(difficulty: string) {
 }
 
 export function musicScoreUrl(region: RegionId, musicId: string, difficulty: string) {
-  return `${storageBase}/${regionAssetDir[region]}/music/music_score/${padMusicId(musicId)}_01/${normalizeDifficulty(difficulty)}.txt`;
+  return buildHarukiMusicScoreUrl(region, musicId, difficulty)
+    ?? `${harukiAssetBase}/${region}-assets/startapp/music/music_score/${padMusicId(musicId)}_01/${normalizeDifficulty(difficulty)}.txt?v=2`;
 }
 
 function cachePath(region: RegionId, musicId: string, difficulty: string) {
@@ -169,10 +164,12 @@ export async function getMusicScore(region: RegionId, musicId?: string, difficul
   const filePath = cachePath(region, musicId, difficulty);
   try {
     const cached = JSON.parse(await readFile(filePath, "utf-8")) as { score: MusicScore; warnings?: string[]; sourceUrl?: string; cachedAt?: string };
-    return {
-      score: cached.score,
-      trace: { status: "cache-stale", source: filePath, sourceUrl: cached.sourceUrl, cachedAt: cached.cachedAt, warnings: cached.warnings ?? [], missingFields: [] as string[] }
-    };
+    if (cached.sourceUrl === musicScoreUrl(region, musicId, difficulty)) {
+      return {
+        score: cached.score,
+        trace: { status: "cache-stale", source: filePath, sourceUrl: cached.sourceUrl, cachedAt: cached.cachedAt, warnings: cached.warnings ?? [], missingFields: [] as string[] }
+      };
+    }
   } catch {
     // fetch below
   }

@@ -1224,7 +1224,7 @@ export async function estimateEventPoint(input: {
       target: "power",
       liveType: input.liveType ?? "solo"
     });
-    const musicMeta = await getMusicMeta(input.musicId, input.difficulty);
+    const musicMeta = await getMusicMeta(input.region, input.musicId, input.difficulty);
     const search = searchDecks(built.contributions, { ...built.resolvedOptions, musicMeta: musicMeta.meta, target: "power", limit: 1 });
     const detail = search.decks[0]?.deckDetail;
     if (detail && musicMeta.meta) {

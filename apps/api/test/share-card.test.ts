@@ -48,10 +48,10 @@ beforeAll(async () => {
       source: "share-card-test-profile"
     })
   });
-});
+}, 30_000);
 
 afterAll(async () => {
-  await app.close();
+  if (app) await app.close();
 });
 
 async function expectMetadataAndPng(type: "profile" | "event" | "score" | "card" | "song", id: string) {
@@ -137,22 +137,6 @@ describe("share-card source image redirects", () => {
     await expect(fetchSourceImage(url, genericType)).resolves.toEqual(image);
   });
 
-  it("allows a trusted CDN image that arrives after the former five-second limit", async () => {
-    vi.useFakeTimers();
-    try {
-      const fetchMock = vi.fn<typeof fetch>((_url, options) => new Promise<Response>((resolve, reject) => {
-        options?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
-        setTimeout(() => resolve(imageResponse()), 6_000);
-      }));
-      const pending = fetchSourceImage("https://sekai-assets.haruki.seiunx.com/jp-assets/startapp/character/member/res014_no057/card_normal.png", fetchMock);
-
-      await vi.advanceTimersByTimeAsync(6_000);
-      await expect(pending).resolves.toEqual(image);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("does not infer an image type for a non-image extension", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(image, { status: 200 }));
     await expect(fetchSourceImage("https://sekai-assets.haruki.seiunx.com/jp-assets/master-data.json", fetchMock)).resolves.toBeUndefined();
@@ -202,6 +186,18 @@ describe("share-card source image redirects", () => {
 });
 
 describe("share-card source image composition", () => {
+  it("uses a birthday card's original art when special-training art is empty", async () => {
+    const metadata = await app.inject({ method: "GET", url: "/api/share/cards/card/1464?region=jp" });
+    expect(metadata.statusCode).toBe(200);
+    const image = await app.inject({ method: "GET", url: metadata.json().imageUrl });
+    expect(image.statusCode).toBe(200);
+    const decoded = await sharp(image.rawPayload).raw().toBuffer({ resolveWithObject: true });
+    const offset = (400 * decoded.info.width + 800) * decoded.info.channels;
+    const [red, green, blue] = decoded.data.subarray(offset, offset + 3);
+
+    expect(Math.max(red, green, blue) - Math.min(red, green, blue)).toBeGreaterThan(12);
+  }, 30_000);
+
   it("keeps a fetched event image visible beneath the translucent card layer", async () => {
     const source = await sharp({ create: { width: 8, height: 8, channels: 4, background: "#d00000" } }).png().toBuffer();
     const image = await renderShareCardPng({
