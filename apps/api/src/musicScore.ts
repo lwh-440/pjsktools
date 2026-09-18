@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { RegionId } from "./config.js";
 import { buildHarukiMusicScoreUrl } from "./chartRenderer.js";
@@ -6,6 +7,17 @@ import { buildHarukiMusicScoreUrl } from "./chartRenderer.js";
 export type MusicScoreNoteBase = { time: number };
 export type MusicScoreNote = MusicScoreNoteBase & { type: number; longId?: number };
 export type MusicScore = { notes: MusicScoreNote[]; skills: MusicScoreNoteBase[]; fevers: MusicScoreNoteBase[] };
+export type MusicScoreTrace = {
+  status: "missing-data" | "cache-hit" | "not-released" | "unsupported-chart-format" | "matched" | "source-unavailable";
+  source?: string;
+  sourceUrl?: string;
+  cachedAt?: string;
+  warnings?: string[];
+  missingFields: string[];
+  unsupportedReason?: string;
+  unavailableReason?: string;
+};
+export type MusicScoreResult = { score?: MusicScore; trace: MusicScoreTrace };
 
 const harukiAssetBase = "https://sekai-assets.haruki.seiunx.com";
 const fastRefresh = process.env.PJSKTOOLS_FAST_MASTER_REFRESH === "true";
@@ -28,15 +40,36 @@ export function musicScoreUrl(region: RegionId, musicId: string, difficulty: str
     ?? `${harukiAssetBase}/${region}-assets/startapp/music/music_score/${padMusicId(musicId)}_01/${normalizeDifficulty(difficulty)}.txt?v=2`;
 }
 
+let musicScoreCacheRootForTest: string | undefined;
+const pendingMusicScores = new Map<string, Promise<MusicScoreResult>>();
+
 function cachePath(region: RegionId, musicId: string, difficulty: string) {
-  return path.join(apiRoot(), "data", "music-score", region, `${padMusicId(musicId)}_${normalizeDifficulty(difficulty)}.json`);
+  return path.join(musicScoreCacheRootForTest ?? apiRoot(), "data", "music-score", region, `${padMusicId(musicId)}_${normalizeDifficulty(difficulty)}.json`);
+}
+
+function musicScoreKey(region: RegionId, musicId: string, difficulty: string) {
+  return `${region}:${padMusicId(musicId)}:${normalizeDifficulty(difficulty)}`;
+}
+
+export function setMusicScoreCacheRootForTest(directory?: string) {
+  musicScoreCacheRootForTest = directory;
+  pendingMusicScores.clear();
+}
+
+export function resetMusicScoreStateForTest() {
+  musicScoreCacheRootForTest = undefined;
+  pendingMusicScores.clear();
 }
 
 async function atomicWrite(filePath: string, value: unknown) {
   await mkdir(path.dirname(filePath), { recursive: true });
-  const temporary = `${filePath}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
-  await rename(temporary, filePath);
+  const temporary = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+    await rename(temporary, filePath);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
 }
 
 function parseBase36Pair(value: string) {
@@ -157,17 +190,14 @@ async function fetchSus(region: RegionId, musicId: string, difficulty: string) {
   }
 }
 
-export async function getMusicScore(region: RegionId, musicId?: string, difficulty?: string) {
-  if (!musicId || !difficulty) {
-    return { score: undefined, trace: { status: "missing-data", missingFields: ["musicId", "difficulty"] } };
-  }
+async function loadMusicScore(region: RegionId, musicId: string, difficulty: string): Promise<MusicScoreResult> {
   const filePath = cachePath(region, musicId, difficulty);
   try {
     const cached = JSON.parse(await readFile(filePath, "utf-8")) as { score: MusicScore; warnings?: string[]; sourceUrl?: string; cachedAt?: string };
     if (cached.sourceUrl === musicScoreUrl(region, musicId, difficulty)) {
       return {
         score: cached.score,
-        trace: { status: "cache-stale", source: filePath, sourceUrl: cached.sourceUrl, cachedAt: cached.cachedAt, warnings: cached.warnings ?? [], missingFields: [] as string[] }
+        trace: { status: "cache-hit", source: filePath, sourceUrl: cached.sourceUrl, cachedAt: cached.cachedAt, warnings: cached.warnings ?? [], missingFields: [] }
       };
     }
   } catch {
@@ -176,14 +206,20 @@ export async function getMusicScore(region: RegionId, musicId?: string, difficul
   try {
     const remote = await fetchSus(region, musicId, difficulty);
     if (!remote.text) {
-      return { score: undefined, trace: { status: remote.status, source: remote.url, missingFields: [`musicScore:${region}:${musicId}:${difficulty}`] } };
+      return { score: undefined, trace: { status: "not-released", source: remote.url, missingFields: [`musicScore:${region}:${musicId}:${difficulty}`] } };
     }
     const parsed = parseSusMusicScore(remote.text);
     if (!parsed.score) {
       return { score: undefined, trace: { status: "unsupported-chart-format", source: remote.url, missingFields: ["parsable musicScore"], unsupportedReason: parsed.unsupportedReason, warnings: parsed.warnings } };
     }
-    await atomicWrite(filePath, { score: parsed.score, warnings: parsed.warnings, sourceUrl: remote.url, cachedAt: new Date().toISOString() });
-    return { score: parsed.score, trace: { status: "matched", source: remote.url, cachedAt: new Date().toISOString(), warnings: parsed.warnings, missingFields: [] as string[] } };
+    const cachedAt = new Date().toISOString();
+    const warnings = [...parsed.warnings];
+    try {
+      await atomicWrite(filePath, { score: parsed.score, warnings, sourceUrl: remote.url, cachedAt });
+    } catch (error) {
+      warnings.push(`music score cache write failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return { score: parsed.score, trace: { status: "matched", source: remote.url, cachedAt, warnings, missingFields: [] } };
   } catch (error) {
     return {
       score: undefined,
@@ -195,4 +231,16 @@ export async function getMusicScore(region: RegionId, musicId?: string, difficul
       }
     };
   }
+}
+
+export async function getMusicScore(region: RegionId, musicId?: string, difficulty?: string): Promise<MusicScoreResult> {
+  if (!musicId || !difficulty) {
+    return { score: undefined, trace: { status: "missing-data", missingFields: ["musicId", "difficulty"] } };
+  }
+  const key = musicScoreKey(region, musicId, difficulty);
+  const pending = pendingMusicScores.get(key);
+  if (pending) return pending;
+  const load = loadMusicScore(region, musicId, difficulty).finally(() => pendingMusicScores.delete(key));
+  pendingMusicScores.set(key, load);
+  return load;
 }
