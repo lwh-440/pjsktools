@@ -189,7 +189,7 @@ export function getAssetConfig(region: RegionId) {
       formulaReferenceMaster: "Haruki master registry primary, Moesekai metadata and Team-Haruki raw fallbacks",
       realtimeRanking: "Haruki toolbox primary, rks-n fallback",
       publicPlayerAssets: "Haruki Suite Public API for user-uploaded public player assets",
-      rankingFallback: "Haruki toolbox primary; rks-n fallback for churn/tier-series/worldlink",
+      rankingFallback: "Haruki toolbox primary; rks-n fallback for churn and unavailable legacy boards",
       sekaiBestAssets: `${sekaiBestAssetBase}/${assetDir}`,
       moeAssets: `${moeAssetBase}/${assetDir}`,
       moeChartSvg: moeChartBase,

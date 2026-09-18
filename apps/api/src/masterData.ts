@@ -2072,7 +2072,7 @@ export async function getMasterRegionStatus(region: RegionId) {
       realtimeRanking: {
         primary: "Haruki toolbox",
         fallback: "https://rks-n.exmeaning.com/api/public/v2 and https://rks-n.pjsk.moe/api/public/v2",
-        role: "Haruki toolbox first-screen top board and border snapshots; rks-n fills churn, tier-series, and World Link gaps"
+        role: "Haruki toolbox first-screen top board, tier-series, and World Link snapshots; rks-n remains only for churn and unavailable legacy fallbacks"
       },
       assets: {
         primary: config.harukiAssetBaseUrl ? "Haruki asset mirror" : "Sekai.best / storage.sekai.best",
