@@ -84,7 +84,7 @@ describe("World Link ranking isolation", () => {
     expect(selectRealtimeWorldLinkGroup(result.snapshot, 99)).toBeUndefined();
   });
 
-  it("uses worldBlooms only to order characters that have a real upstream group", () => {
+  it("uses all master World Link characters and adds upstream-only groups", () => {
     const ids = collectWorldLinkCharacterIds(
       "211",
       { id: "211", eventType: "world_bloom", bonusCharacterIds: ["9"] },
@@ -96,13 +96,13 @@ describe("World Link ranking isolation", () => {
       [8, 7]
     );
 
-    expect(ids).toEqual([8, 7]);
+    expect(ids).toEqual([5, 8, 7]);
     expect(collectWorldLinkCharacterIds(
       "211",
       { id: "211", eventType: "world_bloom", bonusCharacterIds: ["9"] },
       [{ raw: { eventId: 211, chapterNo: 1, gameCharacterId: 5 } }],
       []
-    )).toEqual([]);
+    )).toEqual([5]);
   });
 
   it.each([
@@ -285,6 +285,41 @@ describe("World Link ranking isolation", () => {
     expect(fetchMock.mock.calls.some(([url]) => /\/latest(?:\?|$)/.test(String(url)))).toBe(false);
   }, 20_000);
 
+  it("keeps a Haruki World Link board available without rks-n discovery", async () => {
+    const eventId = `wl-haruki-${Date.now()}`;
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes(`/events/jp/${eventId}/leaderboards/world-bloom/5/overview`)) {
+        return new Response(JSON.stringify({
+          meta: { server: "jp", eventId, scope: "world-bloom/5", characterId: 5 },
+          topRankings: [{
+            rankData: { rank: 1, userId: "a".repeat(64), score: 7654321, timestamp: 1_700_000_100, characterId: 5 },
+            userData: { name: "Haruki World Link Player", cardId: 1235 }
+          }],
+          borderLines: [{ rank: 200, score: 5000000, timestamp: 1_700_000_000 }]
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response("unavailable", { status: 503 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const live = await getLiveRankingCached(
+      "jp",
+      eventId,
+      { id: eventId, eventType: "world_bloom" },
+      true,
+      { boardType: "worldlink", gameCharacterId: 5 }
+    );
+
+    expect(live).toMatchObject({
+      boardType: "worldlink",
+      gameCharacterId: 5,
+      worldLinkAvailable: true,
+      top100: [{ rank: 1, score: 7654321, playerName: "Haruki World Link Player" }]
+    });
+    expect(live.worldLinkCharacters.map((character) => character.id)).toEqual([5]);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/worldlink-latest"))).toBe(false);
+  }, 20_000);
   it("preserves World Link character metadata across repeated authoritative background refreshes", async () => {
     const fetchMock = vi.fn(async (input: string | URL) => {
       const url = String(input);
@@ -324,7 +359,7 @@ describe("World Link ranking isolation", () => {
     for (const tick of [first, second]) {
       if (!("liveRanking" in tick)) throw new Error("authoritative World Link refresh was unexpectedly skipped");
       expect(tick.liveRanking).toMatchObject({ boardType: "overall", worldLinkAvailable: true });
-      expect(tick.liveRanking.worldLinkCharacters.map((character) => character.id)).toEqual([2, 12]);
+      expect(tick.liveRanking.worldLinkCharacters.map((character) => character.id)).toEqual([2, 12, 16, 20, 26]);
     }
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/worldlink-latest"))).toHaveLength(2);
   }, 20_000);

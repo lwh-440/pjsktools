@@ -236,18 +236,14 @@ export function collectWorldLinkCharacterIds(
   worldBlooms: Array<{ raw?: unknown }>,
   upstreamCharacterIds: number[] = []
 ) {
-  const availableIds = [...new Set(
-    upstreamCharacterIds.map(Number).filter((id) => Number.isInteger(id) && id > 0)
-  )];
-  if (!availableIds.length) return [];
-  const available = new Set(availableIds);
   const chapterIds = worldBlooms
     .map((entry) => entry?.raw as Record<string, unknown> | undefined)
     .filter((raw) => raw && String(raw.eventId ?? raw.event_id ?? "") === eventId)
     .sort((left, right) => Number(left?.chapterNo ?? left?.chapter_no ?? 0) - Number(right?.chapterNo ?? right?.chapter_no ?? 0))
     .map((raw) => Number(raw?.gameCharacterId ?? raw?.game_character_id))
-    .filter((id) => available.has(id));
-  return [...new Set([...chapterIds, ...availableIds])];
+    .filter((id) => Number.isInteger(id) && id > 0);
+  const upstreamIds = upstreamCharacterIds.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  return [...new Set([...chapterIds, ...upstreamIds])];
 }
 
 async function worldLinkCharacters(region: RegionId, eventId: string, event: unknown, upstreamCharacterIds: number[] = []) {
@@ -295,6 +291,28 @@ export function attachRankingHourlyGrowth<T extends RealtimeRankingEntry>(entrie
   });
 }
 
+function normalizedRankingUserId(value: unknown) {
+  const userId = String(value ?? "").trim();
+  return userId || undefined;
+}
+
+export function resolveRankingPlayerIdentity(raw: Record<string, any>, liveEntry?: RealtimeRankingEntry) {
+  const rawUserId = normalizedRankingUserId(raw.userId);
+  const liveUserId = normalizedRankingUserId(liveEntry?.userId);
+  const identityMismatch = Boolean(rawUserId && liveUserId && rawUserId !== liveUserId);
+  const compatibleRaw = identityMismatch ? {} : raw;
+  return {
+    identityMismatch,
+    raw: compatibleRaw,
+    userId: liveUserId ?? rawUserId
+  };
+}
+
+export function selectRankingDetailChurnEntry(churn: RankingChurnResult | null, userId: unknown, rank: number) {
+  const resolvedUserId = normalizedRankingUserId(userId);
+  return (resolvedUserId ? churn?.entries.find((entry) => entry.userId && String(entry.userId) === resolvedUserId) : undefined)
+    ?? churn?.entries.find((entry) => entry.isTierLine && entry.rank === rank);
+}
 async function normalizeTop100(region: RegionId, entries: RealtimeRankingEntry[]) {
   return enrichRankingAssets(region, entries.filter((entry) => entry.rank >= 1 && entry.rank <= 100).sort((a, b) => a.rank - b.rank));
 }
@@ -367,35 +385,37 @@ export async function getRankingPlayerDetail(
   if (boardType === "worldlink" && !liveEntry) {
     throw new Error(`World Link rank ${rank} is unavailable for gameCharacterId ${options.gameCharacterId}`);
   }
-  const leaderCard = raw.leaderCard ?? raw.userCard ?? raw.card ?? {};
-  const leaderCardId = raw.leaderCardId ?? raw.cardId ?? leaderCard.cardId ?? liveEntry?.leaderCardId;
-  const leaderCardDefaultImage = raw.leaderCardDefaultImage ?? leaderCard.defaultImage ?? raw.cardDefaultImage ?? liveEntry?.leaderCardDefaultImage ?? liveEntry?.cardDefaultImage;
+  const identity = resolveRankingPlayerIdentity(raw, liveEntry);
+  const compatibleRaw = identity.raw;
+  const leaderCard = compatibleRaw.leaderCard ?? compatibleRaw.userCard ?? compatibleRaw.card ?? {};
+  const leaderCardId = compatibleRaw.leaderCardId ?? compatibleRaw.cardId ?? leaderCard.cardId ?? liveEntry?.leaderCardId;
+  const leaderCardDefaultImage = compatibleRaw.leaderCardDefaultImage ?? leaderCard.defaultImage ?? compatibleRaw.cardDefaultImage ?? liveEntry?.leaderCardDefaultImage ?? liveEntry?.cardDefaultImage;
   const base = {
     ...liveEntry,
-    ...raw,
+    ...compatibleRaw,
+    userId: identity.userId,
     rank,
     leaderCardId: leaderCardId == null ? undefined : Number(leaderCardId),
-    cardId: leaderCardId == null ? raw.cardId : Number(leaderCardId),
+    cardId: leaderCardId == null ? compatibleRaw.cardId : Number(leaderCardId),
     leaderCardDefaultImage,
     cardDefaultImage: leaderCardDefaultImage,
-    leaderCardMasterRank: raw.leaderCardMasterRank ?? leaderCard.masterRank ?? liveEntry?.leaderCardMasterRank,
-    leaderCharacterId: raw.leaderCharacterId ?? leaderCard.characterId ?? liveEntry?.leaderCharacterId,
+    leaderCardMasterRank: compatibleRaw.leaderCardMasterRank ?? leaderCard.masterRank ?? liveEntry?.leaderCardMasterRank,
+    leaderCharacterId: compatibleRaw.leaderCharacterId ?? leaderCard.characterId ?? liveEntry?.leaderCharacterId,
     leaderCardImageUrl: undefined,
     leaderCardImageCandidates: undefined,
     leaderCharacterImageCandidates: undefined
   } as RealtimeRankingEntry & Record<string, any>;
   const enriched = (await enrichRankingAssets(region, [base]))[0] as Record<string, any>;
   const observedPtUpdates = (() => {
-    const trace = Array.isArray(raw.playerTrace) ? [...raw.playerTrace].sort((a: any, b: any) => Number(a.timestamp) - Number(b.timestamp)) : [];
-    const latestTimestamp = Number(raw.timestamp ?? trace.at(-1)?.timestamp ?? 0);
+    const trace = Array.isArray(compatibleRaw.playerTrace) ? [...compatibleRaw.playerTrace].sort((a: any, b: any) => Number(a.timestamp) - Number(b.timestamp)) : [];
+    const latestTimestamp = Number(compatibleRaw.timestamp ?? trace.at(-1)?.timestamp ?? 0);
     const recent = trace.filter((point: any) => Number(point.timestamp) >= latestTimestamp - 3600);
     return recent.slice(1).reduce((count: number, point: any, index: number) => count + (Number(point.score) !== Number(recent[index]?.score) ? 1 : 0), 0);
   })();
-  const playerIds = new Set([enriched.userId, raw.userId, liveEntry?.userId].filter((value) => value != null).map(String));
-  const churnEntry = churn?.entries.find((entry) => entry.userId && playerIds.has(String(entry.userId)))
-    ?? churn?.entries.find((entry) => entry.isTierLine && entry.rank === rank);
+  const churnEntry = selectRankingDetailChurnEntry(churn, enriched.userId, rank);
   return {
     ...enriched,
+    ...(identity.identityMismatch ? { warnings: [...new Set([...(Array.isArray(enriched.warnings) ? enriched.warnings : []), "identity-mismatch"])] } : {}),
     churnSource: churnEntry ? churn?.sourceUrl : undefined,
     churnStatus: churnEntry ? churn?.status : churn?.status === "fresh" ? "player-not-tracked" : churn?.status ?? "source-unavailable",
     churn1h: churnEntry?.churn1h,
@@ -560,15 +580,34 @@ async function refreshLiveRanking(
   if (options.boardType === "worldlink" && !isWorldLinkEvent) {
     throw new Error("World Link ranking is available only for the matching active world_bloom event");
   }
-  const worldLinkResponse = knownWorldLink ?? (
-    options.boardType === "worldlink"
-      ? await fetchRealtimeWorldLinkLatest(region, 30_000)
-      : undefined
-  );
+  let worldLinkResponse = knownWorldLink;
   let harukiPrimaryError: unknown;
   let latest = options.boardType === "worldlink"
-    ? selectRealtimeWorldLinkGroup(worldLinkResponse?.snapshot ?? null, options.gameCharacterId)
+    ? undefined
     : knownLatest;
+  if (options.boardType === "worldlink") {
+    try {
+      const worldLinkLatest = await harukiClient.getWorldLinkRankingSnapshot(region, eventId, options.gameCharacterId ?? 0);
+      latest = worldLinkLatest;
+      worldLinkResponse = {
+        snapshot: {
+          region,
+          eventId,
+          startAt: worldLinkLatest.startAt,
+          endAt: worldLinkLatest.endAt,
+          updatedAt: worldLinkLatest.updatedAt,
+          groups: [worldLinkLatest],
+          sourceLine: worldLinkLatest.sourceLine,
+          sourceUrl: worldLinkLatest.sourceUrl
+        },
+        errors: []
+      };
+    } catch (error) {
+      harukiPrimaryError = error;
+      worldLinkResponse ??= await fetchRealtimeWorldLinkLatest(region, 30_000);
+      latest = selectRealtimeWorldLinkGroup(worldLinkResponse.snapshot, options.gameCharacterId);
+    }
+  }
   if (!latest && options.boardType !== "worldlink") {
     try {
       latest = await harukiClient.getRankingLatestSnapshot(region, eventId);
@@ -577,7 +616,7 @@ async function refreshLiveRanking(
       latest = await fetchRealtimeLatest(region);
     }
   }
-  if (!latest) throw new Error("World Link ranking unavailable");
+  if (!latest) throw new Error(options.boardType === "worldlink" ? "World Link ranking unavailable" : "Overall ranking unavailable");
   if (latest.eventId !== eventId) {
     throw new Error(`Realtime latest event mismatch: expected ${eventId}, got ${latest.eventId}`);
   }
@@ -626,7 +665,7 @@ async function refreshLiveRanking(
         ...(worldLink.errors ?? []),
         ...tierSeries.errors,
         ...(churn?.errors ?? []),
-        ...(harukiPrimaryError ? [`Haruki toolbox primary failed; using rks-n fallback: ${harukiPrimaryError instanceof Error ? harukiPrimaryError.message : String(harukiPrimaryError)}`] : [])
+        ...(harukiPrimaryError ? [`${options.boardType === "worldlink" ? "Haruki World Link overview failed; using rks-n World Link fallback" : "Haruki total overview failed; using rks-n overall fallback"}: ${harukiPrimaryError instanceof Error ? harukiPrimaryError.message : String(harukiPrimaryError)}`] : [])
       ].slice(-6)
     },
     boardType: options.boardType,
@@ -635,11 +674,12 @@ async function refreshLiveRanking(
     worldLinkAvailable: Boolean(matchingSnapshot?.groups.length),
     staleRanks: [],
     warnings: [
-      ...(harukiPrimaryError ? ["Haruki toolbox primary unavailable; using rks-n fallback"] : []),
+      ...(harukiPrimaryError ? [options.boardType === "worldlink" ? "Haruki World Link overview unavailable; using rks-n World Link fallback" : "Haruki total overview unavailable; using rks-n overall fallback"] : []),
       ...(borderLines.length ? [] : ["Realtime ranking tier-series did not include configured border ranks"])
     ]
   };
-  cache.liveRankings[key] = { key, region, updatedAt: sampledAt, source: latest.sourceUrl, data: snapshot };
+  const cacheUpdatedAt = new Date().toISOString();
+  cache.liveRankings[key] = { key, region, updatedAt: cacheUpdatedAt, source: latest.sourceUrl, data: snapshot };
   cache.rankingTop100[key] = { key, region, updatedAt: sampledAt, source: latest.sourceUrl, data: top100 };
   if (borderLines.length) {
     cache.rankingBorders[key] = { key, region, updatedAt: sampledAt, source: latest.sourceUrl, data: borderLines };

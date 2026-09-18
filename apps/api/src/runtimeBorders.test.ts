@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeHourlyGrowth, normalizeParkingPeriods } from "./realtimeRankingClient.js";
 import { normalizeRankingBorderHourlyGrowths } from "./harukiClient.js";
-import { attachRankingBorderHourlyGrowth, attachRankingHourlyGrowth, mergeRealtimeBorderLines } from "./runtimeData.js";
+import { attachRankingBorderHourlyGrowth, attachRankingHourlyGrowth, mergeRealtimeBorderLines, resolveRankingPlayerIdentity, selectRankingDetailChurnEntry } from "./runtimeData.js";
 
 const region = "jp" as const;
 const eventId = "216";
@@ -69,6 +69,49 @@ describe("attachRankingHourlyGrowth", () => {
   });
 });
 
+describe("ranking player identity", () => {
+  it("keeps the live player when the same rank has a different Haruki identity", () => {
+    const live = { ...at(1, 123_456), userId: "a".repeat(64), playerName: "Live player" };
+    const raw = {
+      rank: 1,
+      userId: "990000000000000001",
+      score: 999_999,
+      playerName: "Different player",
+      playerTrace: [{ timestamp: 1, score: 1 }, { timestamp: 2, score: 999_999 }],
+      rankTrace: [{ timestamp: 2, score: 999_999 }]
+    };
+
+    const identity = resolveRankingPlayerIdentity(raw, live);
+
+    expect(identity).toMatchObject({ identityMismatch: true, userId: "a".repeat(64), raw: {} });
+    expect({ ...live, ...identity.raw, userId: identity.userId }).toMatchObject({
+      userId: "a".repeat(64),
+      score: 123_456,
+      playerName: "Live player"
+    });
+  });
+
+  it("matches churn only to the retained identity and still falls back to the rank tier", () => {
+    const rawPlayer = { rank: 1, userId: "990000000000000001", score: 999_999, playerName: "Different player" };
+    const live = { ...at(1, 123_456), userId: "a".repeat(64), playerName: "Live player" };
+    const identity = resolveRankingPlayerIdentity(rawPlayer, live);
+    const tierLine = { rank: 1, isTierLine: true, name: "T1", score: 123_456, churn1h: 12, churn20min: 3, churn48h: 24, hourlyChurn: [], recentScoreChanges: [], parkingPeriods: [] };
+    const rawPlayerChurn = { rank: 1, userId: rawPlayer.userId, name: rawPlayer.playerName, score: rawPlayer.score, growth1h: 999, churn1h: 99, churn20min: 88, churn48h: 77, hourlyChurn: [], recentScoreChanges: [], parkingPeriods: [] };
+
+    const churn = selectRankingDetailChurnEntry({
+      region,
+      eventId,
+      boardType: "overall",
+      updatedAt: "2026-09-09T00:00:00.000Z",
+      sourceLine: "main",
+      sourceUrl: "churn",
+      status: "fresh",
+      entries: [rawPlayerChurn, tierLine]
+    }, identity.userId, 1);
+
+    expect(churn).toBe(tierLine);
+  });
+});
 describe("border hourly growth", () => {
   it("normalizes Haruki's actual sampling window to an hourly rate and preserves zero", () => {
     const now = Date.parse("2026-09-09T00:20:00.000Z");

@@ -1,5 +1,5 @@
 import type { RegionId } from "./config.js";
-import type { RealtimeRankingEntry, RealtimeRankingSnapshot } from "./realtimeRankingClient.js";
+import type { RealtimeRankingEntry, RealtimeRankingSnapshot, RealtimeWorldLinkGroupSnapshot } from "./realtimeRankingClient.js";
 
 const TOOLBOX_API_BASE = "https://toolbox-api-direct.haruki.seiunx.com";
 const commonBorderRanks = [500, 1000, 2000, 5000];
@@ -172,6 +172,19 @@ async function fetchToolboxOverviewCached(region: RegionId, eventId: string, int
   return value;
 }
 
+function isoFromEventTrackerTimestamp(value: unknown) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return undefined;
+  return new Date((timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000)).toISOString();
+}
+
+function assertWorldLinkOverviewContext(overview: any, region: RegionId, eventId: string, gameCharacterId: number) {
+  const meta = overview?.meta;
+  if (String(meta?.server ?? "").toLowerCase() !== region) throw new Error(`Haruki World Link overview region mismatch: expected ${region}`);
+  if (String(meta?.eventId ?? "") !== eventId) throw new Error(`Haruki World Link overview event mismatch: expected ${eventId}`);
+  if (String(meta?.scope ?? "") !== `world-bloom/${gameCharacterId}`) throw new Error(`Haruki World Link overview scope mismatch: expected world-bloom/${gameCharacterId}`);
+  if (Number(meta?.characterId) !== gameCharacterId) throw new Error(`Haruki World Link overview character mismatch: expected ${gameCharacterId}`);
+}
 function sourceNumber(value: unknown) {
   if (value === null || value === undefined || typeof value === "boolean" || (typeof value === "string" && !value.trim())) return undefined;
   const numeric = Number(value);
@@ -284,6 +297,53 @@ export class HarukiClient {
     };
   }
 
+  async getEventTrackerOverallSnapshot(region: RegionId, eventId: string): Promise<RealtimeRankingSnapshot> {
+    const url = `${TOOLBOX_API_BASE}/event-tracker/api/v2/web/events/${region}/${eventId}/leaderboards/total/overview?interval=3600`;
+    const overview = await fetchHarukiJson<any>(url, "ranking overview");
+    const meta = overview?.meta;
+    if (String(meta?.server ?? "").toLowerCase() !== region) throw new Error(`Haruki overview region mismatch: expected ${region}`);
+    if (String(meta?.eventId ?? "") !== eventId) throw new Error(`Haruki overview event mismatch: expected ${eventId}`);
+    if (String(meta?.scope ?? "") !== "total") throw new Error("Haruki overview scope mismatch: expected total");
+    const rows = [...(Array.isArray(overview?.topRankings) ? overview.topRankings : []), ...(Array.isArray(overview?.borderLines) ? overview.borderLines : [])];
+    const updatedAt = rows.map((item) => isoFromEventTrackerTimestamp(item?.rankData?.timestamp ?? item?.timestamp)).filter((value): value is string => Boolean(value)).sort().at(-1);
+    if (!updatedAt) throw new HarukiRequestError("upstream-error", 502, { operation: "ranking overview timestamp" });
+    const entriesByRank = new Map<number, RealtimeRankingEntry>();
+    for (const item of rows) {
+      const rank = Number(item?.rankData?.rank ?? item?.rank);
+      const score = Number(item?.rankData?.score ?? item?.score);
+      if (!Number.isInteger(rank) || rank < 1 || !Number.isFinite(score) || score < 0 || entriesByRank.has(rank)) continue;
+      const rowUpdatedAt = isoFromEventTrackerTimestamp(item?.rankData?.timestamp ?? item?.timestamp) ?? updatedAt;
+      const player = item?.rankData ? normalizePlayerItem(item, region, eventId, rowUpdatedAt) : null;
+      entriesByRank.set(rank, player ?? { rank, score, region, eventId, updatedAt: rowUpdatedAt, source: "haruki-event-tracker" });
+    }
+    const entries = [...entriesByRank.values()].sort((left, right) => left.rank - right.rank);
+    if (!entries.length) throw new HarukiRequestError("upstream-error", 502, { operation: "ranking overview" });
+    return { region, eventId, updatedAt, entries, sourceLine: "main", sourceUrl: url };
+  }
+  async getWorldLinkRankingSnapshot(region: RegionId, eventId: string, gameCharacterId: number): Promise<RealtimeWorldLinkGroupSnapshot> {
+    if (!Number.isInteger(gameCharacterId) || gameCharacterId < 1) throw new Error("World Link ranking requires a valid gameCharacterId");
+    const url = `${TOOLBOX_API_BASE}/event-tracker/api/v2/web/events/${region}/${eventId}/leaderboards/world-bloom/${gameCharacterId}/overview?interval=3600`;
+    const overview = await fetchHarukiJson<any>(url, "World Link ranking overview");
+    assertWorldLinkOverviewContext(overview, region, eventId, gameCharacterId);
+    const rows = [
+      ...(Array.isArray(overview?.topRankings) ? overview.topRankings : []),
+      ...(Array.isArray(overview?.borderLines) ? overview.borderLines : [])
+    ];
+    const updatedAt = rows.map((item) => isoFromEventTrackerTimestamp(item?.rankData?.timestamp ?? item?.timestamp)).filter((value): value is string => Boolean(value)).sort().at(-1);
+    if (!updatedAt) throw new HarukiRequestError("upstream-error", 502, { operation: "World Link ranking overview timestamp" });
+    const entriesByRank = new Map<number, RealtimeRankingEntry>();
+    for (const item of rows) {
+      const rank = Number(item?.rankData?.rank ?? item?.rank);
+      const score = Number(item?.rankData?.score ?? item?.score);
+      if (!Number.isInteger(rank) || rank < 1 || !Number.isFinite(score) || score < 0 || entriesByRank.has(rank)) continue;
+      const rowUpdatedAt = isoFromEventTrackerTimestamp(item?.rankData?.timestamp ?? item?.timestamp) ?? updatedAt;
+      const player = item?.rankData ? normalizePlayerItem(item, region, eventId, rowUpdatedAt) : null;
+      entriesByRank.set(rank, player ?? { rank, score, region, eventId, updatedAt: rowUpdatedAt, source: "haruki-event-tracker" });
+    }
+    const entries = [...entriesByRank.values()].sort((left, right) => left.rank - right.rank);
+    if (!entries.length) throw new HarukiRequestError("upstream-error", 502, { operation: "World Link ranking overview" });
+    return { region, eventId, updatedAt, entries, sourceLine: "main", sourceUrl: url, gameCharacterId, isWorldBloomChapterAggregate: false };
+  }
   async getRankingBorderHourlyGrowths(region: RegionId, eventId: string) {
     const overview = await fetchToolboxOverviewCached(region, eventId, 3600);
     return normalizeRankingBorderHourlyGrowths(overview, region, eventId);
@@ -408,3 +468,5 @@ export class HarukiClient {
 }
 
 export const harukiClient = new HarukiClient();
+
+

@@ -73,4 +73,31 @@ describe.sequential("Haruki request controls", () => {
     expect(snapshot.entries.map((entry) => entry.rank)).toEqual([1, 500, 1000, 2000, 5000]);
     expect(snapshot.entries.find((entry) => entry.rank === 500)?.source).toBe("toolbox-api");
   });
+  it("maps a World Link overview only when its region, event, scope and character match", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => new Response(JSON.stringify({
+      meta: { server: "en", eventId: 179, scope: "world-bloom/21", characterId: 21 },
+      topRankings: [{
+        rankData: { rank: 1, userId: "a".repeat(64), score: 700, timestamp: 1_700_000_100, characterId: 21 },
+        userData: { name: "World Link player", cardId: 1235 }
+      }],
+      borderLines: [{ rank: 200, score: 500, timestamp: 1_700_000_000 }]
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const snapshot = await harukiClient.getWorldLinkRankingSnapshot("en", "179", 21);
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/events/en/179/leaderboards/world-bloom/21/overview?interval=3600");
+    expect(snapshot.updatedAt).toBe("2023-11-14T22:15:00.000Z");
+    expect(snapshot.entries).toMatchObject([{ rank: 1, userId: "a".repeat(64), score: 700 }, { rank: 200, score: 500 }]);
+  });
+
+  it("rejects a World Link overview whose scope does not match the requested character", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      meta: { server: "en", eventId: 179, scope: "world-bloom/22", characterId: 22 },
+      topRankings: [{ rankData: { rank: 1, score: 700, timestamp: 1_700_000_100 }, userData: {} }]
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+
+    await expect(harukiClient.getWorldLinkRankingSnapshot("en", "179", 21)).rejects.toThrow("scope mismatch");
+  });
 });
+
