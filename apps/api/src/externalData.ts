@@ -514,6 +514,7 @@ function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
   const record = value as Record<string, unknown>;
   return Object.fromEntries(Object.entries(record).map(([key, entry]) => {
+    if (["Name", "name", "Group", "group"].includes(key)) return [key, entry];
     if (["File", "file", "Path", "path"].includes(key) && typeof entry === "string") {
       const resolved = absoluteUrl(baseUrl, entry);
       return [key, resolved?.includes("sekai-assets.haruki.seiunx.com") ? resolved : proxyUrl(resolved) ?? entry];
