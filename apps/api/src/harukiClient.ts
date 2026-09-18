@@ -191,6 +191,162 @@ function sourceNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : undefined;
 }
 
+type WorldLinkTraceCoverage = {
+  complete: boolean;
+  pages: number;
+  records: number;
+  termination: "exhausted" | "page-cap" | "record-cap" | "cursor-stalled" | "invalid-page" | "identity-mismatch";
+  oldestTimestamp?: number;
+  newestTimestamp?: number;
+  excludedIdentityRecords?: number;
+  invalidRecords?: number;
+};
+
+type NormalizedWorldLinkTrace = {
+  rawCount: number;
+  cursor?: number;
+  records: Record<string, unknown>[];
+  excludedIdentityRecords: number;
+  invalidRecords: number;
+};
+
+function positiveIntegerEnvironmentValue(name: string, fallback: number, maximum: number) {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 ? Math.min(value, maximum) : fallback;
+}
+
+function worldLinkTracePageLimit() { return positiveIntegerEnvironmentValue("HARUKI_WORLD_LINK_TRACE_PAGE_LIMIT", 100, 5_000); }
+function worldLinkTracePageCap() { return positiveIntegerEnvironmentValue("HARUKI_WORLD_LINK_TRACE_MAX_PAGES", 20, 100); }
+function worldLinkTraceRecordCap() { return positiveIntegerEnvironmentValue("HARUKI_WORLD_LINK_TRACE_MAX_RECORDS", 2_000, 100_000); }
+
+function tracePointTimestamp(value: unknown) {
+  const timestamp = sourceNumber((value as any)?.timestamp);
+  return timestamp !== undefined && timestamp > 0 ? timestamp : undefined;
+}
+
+function normalizeWorldLinkTrace(points: unknown, expectedUserId?: string): NormalizedWorldLinkTrace {
+  if (!Array.isArray(points)) {
+    return { rawCount: 0, records: [], excludedIdentityRecords: 0, invalidRecords: 1 };
+  }
+  const seen = new Set<string>();
+  let excludedIdentityRecords = 0;
+  let invalidRecords = 0;
+  const records = points.flatMap((point) => {
+    const timestamp = tracePointTimestamp(point);
+    const score = sourceNumber((point as any)?.score);
+    const rank = sourceNumber((point as any)?.rank);
+    const userId = String((point as any)?.userId ?? "").trim();
+    if (timestamp === undefined || score === undefined || score < 0 || rank === undefined || !Number.isInteger(rank) || rank < 1 || !userId) {
+      invalidRecords += 1;
+      return [];
+    }
+    if (expectedUserId && userId !== expectedUserId) {
+      excludedIdentityRecords += 1;
+      return [];
+    }
+    const key = String(timestamp) + ":" + userId + ":" + String(rank) + ":" + String(score);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ ...(point as Record<string, unknown>), timestamp, score, rank, userId }];
+  }).sort((left, right) => Number(left.timestamp) - Number(right.timestamp));
+  return {
+    rawCount: points.length,
+    cursor: points.length ? tracePointTimestamp(points.at(-1)) : undefined,
+    records,
+    excludedIdentityRecords,
+    invalidRecords
+  };
+}
+
+function assertWorldLinkDetailContext(detail: any, region: RegionId, eventId: string, gameCharacterId: number, rank: number) {
+  assertWorldLinkOverviewContext(detail, region, eventId, gameCharacterId);
+  const rankData = detail?.current?.rankData;
+  const userData = detail?.current?.userData;
+  if (Number(rankData?.rank) !== rank) throw new Error("Haruki World Link detail rank mismatch: expected " + rank);
+  const rankUserId = String(rankData?.userId ?? "").trim();
+  const profileUserId = String(userData?.userId ?? "").trim();
+  if (!rankUserId) throw new Error("Haruki World Link detail is missing current userId");
+  if (profileUserId && profileUserId !== rankUserId) throw new Error("Haruki World Link detail current userId mismatch");
+  return rankUserId;
+}
+
+function normalizedOfficialGrowth(item: any) {
+  const scoreLatest = sourceNumber(item?.scoreLatest);
+  const scoreEarlier = sourceNumber(item?.scoreEarlier);
+  const timestampLatest = sourceNumber(item?.timestampLatest);
+  const timestampEarlier = sourceNumber(item?.timestampEarlier);
+  const timeDiff = sourceNumber(item?.timeDiff);
+  const growth = sourceNumber(item?.growth);
+  if ([scoreLatest, scoreEarlier, timestampLatest, timestampEarlier, timeDiff, growth].some((value) => value === undefined)) return undefined;
+  if (timeDiff! <= 0 || timestampLatest! <= timestampEarlier! || Math.abs((timestampLatest! - timestampEarlier!) - timeDiff!) > 120) return undefined;
+  if (scoreLatest! - scoreEarlier! !== growth!) return undefined;
+  return { scoreLatest, scoreEarlier, timestampLatest, timestampEarlier, timeDiff, growth, hourlyGrowth: Math.round(growth! * 3_600 / timeDiff!) };
+}
+
+async function fetchWorldLinkRankingDetailPage(region: RegionId, eventId: string, gameCharacterId: number, rank: number, options: { includeTrace: boolean; includePlayerTrace: boolean; cursor?: number; limit: number }) {
+  const params = new URLSearchParams({ includeTrace: String(options.includeTrace), includePlayerTrace: String(options.includePlayerTrace), limit: String(options.limit), interval: "3600" });
+  if (options.cursor !== undefined) params.set("cursor", String(options.cursor));
+  const url = TOOLBOX_API_BASE + "/event-tracker/api/v2/web/events/" + region + "/" + eventId + "/leaderboards/world-bloom/" + gameCharacterId + "/details/rank/" + rank + "?" + params;
+  const detail = await fetchHarukiJson<any>(url, "World Link ranking detail");
+  const currentUserId = assertWorldLinkDetailContext(detail, region, eventId, gameCharacterId, rank);
+  return { detail, url, currentUserId };
+}
+
+async function fetchCompleteWorldLinkTrace(
+  initial: unknown,
+  expectedUserId: string | undefined,
+  pageLimit: number,
+  fetchPage: (cursor: number) => Promise<{ points: unknown; currentUserId: string }>
+): Promise<{ records: Record<string, unknown>[]; coverage: WorldLinkTraceCoverage }> {
+  const first = normalizeWorldLinkTrace(initial, expectedUserId);
+  const records = [...first.records];
+  let pages = 1;
+  let cursor = first.cursor;
+  let excludedIdentityRecords = first.excludedIdentityRecords;
+  let invalidRecords = first.invalidRecords;
+  let termination: WorldLinkTraceCoverage["termination"] = first.rawCount < pageLimit ? "exhausted" : "page-cap";
+  let complete = first.rawCount < pageLimit;
+
+  while (!complete) {
+    if (pages >= worldLinkTracePageCap()) { termination = "page-cap"; break; }
+    if (records.length >= worldLinkTraceRecordCap()) { termination = "record-cap"; break; }
+    if (cursor === undefined) { termination = "invalid-page"; break; }
+    const previousCursor = cursor;
+    const response = await fetchPage(previousCursor);
+    pages += 1;
+    if (expectedUserId && response.currentUserId !== expectedUserId) { termination = "identity-mismatch"; break; }
+    const next = normalizeWorldLinkTrace(response.points, expectedUserId);
+    excludedIdentityRecords += next.excludedIdentityRecords;
+    invalidRecords += next.invalidRecords;
+    if (next.rawCount === 0) { complete = true; termination = "exhausted"; break; }
+    if (next.cursor === undefined) { termination = "invalid-page"; break; }
+    if (next.cursor <= previousCursor) { termination = "cursor-stalled"; break; }
+    records.push(...next.records.filter((record) => Number(record.timestamp) > previousCursor));
+    cursor = next.cursor;
+    if (next.rawCount < pageLimit) { complete = true; termination = "exhausted"; }
+  }
+
+  const bounded = records.slice(0, worldLinkTraceRecordCap());
+  if (bounded.length < records.length) { complete = false; termination = "record-cap"; }
+  if (complete && (invalidRecords > 0 || excludedIdentityRecords > 0)) {
+    complete = false;
+    termination = excludedIdentityRecords > 0 ? "identity-mismatch" : "invalid-page";
+  }
+  return {
+    records: bounded,
+    coverage: {
+      complete,
+      pages,
+      records: bounded.length,
+      termination,
+      oldestTimestamp: tracePointTimestamp(bounded[0]),
+      newestTimestamp: tracePointTimestamp(bounded.at(-1)),
+      ...(expectedUserId ? { excludedIdentityRecords } : {}),
+      ...(invalidRecords ? { invalidRecords } : {})
+    }
+  };
+}
+
 export function normalizeRankingBorderHourlyGrowths(
   overview: unknown,
   region: RegionId,
@@ -343,6 +499,59 @@ export class HarukiClient {
     const entries = [...entriesByRank.values()].sort((left, right) => left.rank - right.rank);
     if (!entries.length) throw new HarukiRequestError("upstream-error", 502, { operation: "World Link ranking overview" });
     return { region, eventId, updatedAt, entries, sourceLine: "main", sourceUrl: url, gameCharacterId, isWorldBloomChapterAggregate: false };
+  }
+  async getWorldLinkRankingPlayerDetail(region: RegionId, eventId: string, gameCharacterId: number, rank: number) {
+    if (!Number.isInteger(gameCharacterId) || gameCharacterId < 1) throw new Error("World Link ranking requires a valid gameCharacterId");
+    if (!Number.isInteger(rank) || rank < 1) throw new Error("World Link ranking detail requires a valid rank");
+    const pageLimit = worldLinkTracePageLimit();
+    const first = await fetchWorldLinkRankingDetailPage(region, eventId, gameCharacterId, rank, { includeTrace: true, includePlayerTrace: true, limit: pageLimit });
+    const updatedAt = isoFromEventTrackerTimestamp(first.detail.current?.rankData?.timestamp ?? first.detail.meta?.fetchedAt);
+    if (!updatedAt) throw new HarukiRequestError("upstream-error", 502, { operation: "World Link ranking detail timestamp" });
+    const current = normalizePlayerItem(first.detail.current, region, eventId, updatedAt);
+    const next = normalizePlayerItem(first.detail.next, region, eventId, updatedAt);
+    if (!current || current.rank !== rank) throw new Error("World Link ranking player detail not found");
+    const [rankTrace, playerTrace] = await Promise.all([
+      fetchCompleteWorldLinkTrace(first.detail.rankTrace, undefined, pageLimit, async (cursor) => {
+        const page = await fetchWorldLinkRankingDetailPage(region, eventId, gameCharacterId, rank, { includeTrace: true, includePlayerTrace: false, cursor, limit: pageLimit });
+        return { points: page.detail.rankTrace, currentUserId: page.currentUserId };
+      }),
+      fetchCompleteWorldLinkTrace(first.detail.playerTrace, current.userId, pageLimit, async (cursor) => {
+        const page = await fetchWorldLinkRankingDetailPage(region, eventId, gameCharacterId, rank, { includeTrace: false, includePlayerTrace: true, cursor, limit: pageLimit });
+        return { points: page.detail.playerTrace, currentUserId: page.currentUserId };
+      })
+    ]);
+    const overview = await (async () => {
+      const url = `${TOOLBOX_API_BASE}/event-tracker/api/v2/web/events/${region}/${eventId}/leaderboards/world-bloom/${gameCharacterId}/overview?interval=3600`;
+      try {
+        const value = await fetchHarukiJson<any>(url, "World Link ranking overview");
+        assertWorldLinkOverviewContext(value, region, eventId, gameCharacterId);
+        return value;
+      } catch { return null; }
+    })();
+    const playerGrowth = normalizedOfficialGrowth((Array.isArray(overview?.topPlayerGrowths) ? overview.topPlayerGrowths : []).find((item: any) => String(item?.userId ?? "") === current.userId));
+    const rankGrowth = normalizedOfficialGrowth((Array.isArray(overview?.topRankGrowths) ? overview.topRankGrowths : []).find((item: any) => Number(item?.rank) === rank));
+    return {
+      ...current,
+      ...(playerGrowth ?? {}),
+      next,
+      fetchedAt: first.detail.meta?.fetchedAt,
+      intervalSeconds: first.detail.intervalSeconds,
+      windowStart: first.detail.windowStart,
+      windowEnd: first.detail.windowEnd,
+      rankScoreLatest: rankGrowth?.scoreLatest,
+      rankScoreEarlier: rankGrowth?.scoreEarlier,
+      rankTimestampLatest: rankGrowth?.timestampLatest,
+      rankTimestampEarlier: rankGrowth?.timestampEarlier,
+      rankTimeDiff: rankGrowth?.timeDiff,
+      rankGrowth: rankGrowth?.growth,
+      rankHourlyGrowth: rankGrowth?.hourlyGrowth,
+      inTop100Range: current.rank >= 1 && current.rank <= 100,
+      playerTrace: playerTrace.records,
+      rankTrace: rankTrace.records,
+      traceCoverage: { playerTrace: playerTrace.coverage, rankTrace: rankTrace.coverage },
+      traceCompleteness: rankTrace.coverage.complete && playerTrace.coverage.complete ? "complete" : "partial",
+      sourceUrl: first.url
+    };
   }
   async getRankingBorderHourlyGrowths(region: RegionId, eventId: string) {
     const overview = await fetchToolboxOverviewCached(region, eventId, 3600);

@@ -269,7 +269,11 @@ const schemas: Record<string, Schema> = {
       hourlyChurn: { type: "array", items: { type: "object", required: ["hour", "count"], properties: { hour: { type: "string" }, count: { type: "integer" } }, additionalProperties: false } },
       recentScoreChanges: { type: "array", items: { type: "object", required: ["timestamp", "delta"], properties: { timestamp: { type: "integer", format: "int64" }, delta: { type: "number" } }, additionalProperties: false } },
       parkingPeriods: { type: "array", items: { type: "object", properties: { startTime: nullable({ type: "integer", format: "int64" }), sinceMs: nullable({ type: "integer", format: "int64" }), endTime: nullable({ type: "integer", format: "int64" }), durationSeconds: nullable({ type: "integer" }) }, additionalProperties: false } },
-      playerTrace: { type: "array", items: ref("RankingTracePoint") }, lineTrace: { type: "array", items: ref("RankingTracePoint") },
+      playerTrace: { type: "array", items: ref("RankingTracePoint") }, rankTrace: { type: "array", items: ref("RankingTracePoint") },
+      traceCompleteness: { type: "string", enum: ["complete", "partial", "unavailable"] },
+      traceCoverage: { type: "object", properties: {
+        playerTrace: { type: "object", additionalProperties: true }, rankTrace: { type: "object", additionalProperties: true }
+      }, additionalProperties: false },
       previous: nullable(ref("RankingNeighbor")), next: nullable(ref("RankingNeighbor"))
     } }]
   },

@@ -91,6 +91,68 @@ describe.sequential("Haruki request controls", () => {
     expect(snapshot.entries).toMatchObject([{ rank: 1, userId: "a".repeat(64), score: 700 }, { rank: 200, score: 500 }]);
   });
 
+  it("loads a World Link detail through the official rank route, follows monotonic cursors, and reports trace coverage", async () => {
+    process.env.HARUKI_WORLD_LINK_TRACE_PAGE_LIMIT = "2";
+    const userId = "a".repeat(64);
+    const detail = (url: URL) => {
+      const cursor = Number(url.searchParams.get("cursor") ?? "0");
+      const includeTrace = url.searchParams.get("includeTrace") === "true";
+      const includePlayerTrace = url.searchParams.get("includePlayerTrace") === "true";
+      const page = (values: number[]) => values.map((timestamp) => ({ timestamp, userId, score: timestamp * 10, rank: 1 }));
+      const payload: Record<string, unknown> = {
+        meta: { server: "en", eventId: 179, scope: "world-bloom/21", characterId: 21, fetchedAt: 1_700_000_500 },
+        current: { rankData: { rank: 1, userId, score: 4_000, timestamp: 400 }, userData: { userId, name: "World Link player", cardId: 1235 } },
+        next: { rankData: { rank: 2, userId: "b".repeat(64), score: 3_900, timestamp: 400 }, userData: { name: "next" } },
+        intervalSeconds: 3600,
+        windowStart: 1,
+        windowEnd: 400
+      };
+      if (includeTrace) payload.rankTrace = cursor === 0 ? page([100, 200]) : cursor === 200 ? page([200, 300]) : [{ ...page([400])[0] }];
+      if (includePlayerTrace) payload.playerTrace = cursor === 0 ? page([100, 200]) : cursor === 200 ? [{ timestamp: 250, userId: "wrong-user", score: 2500, rank: 1 }, ...page([300])] : [{ ...page([400])[0] }];
+      return payload;
+    };
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/overview")) {
+        return new Response(JSON.stringify({
+          meta: { server: "en", eventId: 179, scope: "world-bloom/21", characterId: 21 },
+          topPlayerGrowths: [{ userId, scoreLatest: 4000, scoreEarlier: 400, timestampLatest: 400, timestampEarlier: 100, timeDiff: 300, growth: 3600 }],
+          topRankGrowths: [{ rank: 1, scoreLatest: 4000, scoreEarlier: 400, timestampLatest: 400, timestampEarlier: 100, timeDiff: 300, growth: 3600 }]
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.pathname.includes("/world-bloom/21/details/rank/1")) return new Response(JSON.stringify(detail(url)), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response("unexpected", { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await harukiClient.getWorldLinkRankingPlayerDetail("en", "179", 21, 1);
+
+    expect(result).toMatchObject({ userId, rank: 1, hourlyGrowth: 43200, rankHourlyGrowth: 43200, traceCompleteness: "partial" });
+    expect(result.playerTrace.map((item: any) => item.timestamp)).toEqual([100, 200, 300, 400]);
+    expect(result.rankTrace.map((item: any) => item.timestamp)).toEqual([100, 200, 300, 400]);
+    expect(result.traceCoverage).toMatchObject({
+      playerTrace: { complete: false, pages: 3, excludedIdentityRecords: 1, termination: "identity-mismatch" },
+      rankTrace: { complete: true, pages: 3, termination: "exhausted" }
+    });
+    const detailRequests = fetchMock.mock.calls.map(([input]) => new URL(String(input))).filter((url) => url.pathname.includes("/details/rank/1"));
+    expect(detailRequests.map((url) => url.searchParams.get("cursor")).filter(Boolean)).toEqual(["200", "200", "300", "300"]);
+    expect(detailRequests.every((url) => url.searchParams.get("limit") === "2" && url.searchParams.get("interval") === "3600")).toBe(true);
+  });
+
+  it.each([
+    ["wrong character", { server: "en", eventId: 179, scope: "world-bloom/22", characterId: 22 }, "scope mismatch"],
+    ["wrong event", { server: "en", eventId: 180, scope: "world-bloom/21", characterId: 21 }, "event mismatch"],
+    ["current UID mismatch", { server: "en", eventId: 179, scope: "world-bloom/21", characterId: 21 }, "current userId mismatch"]
+  ])("rejects a World Link detail with %s", async (_label, meta, message) => {
+    const userId = "a".repeat(64);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      meta,
+      current: { rankData: { rank: 1, userId, score: 1, timestamp: 1 }, userData: { userId: message.includes("current userId") ? "b".repeat(64) : userId, name: "player" } },
+      rankTrace: [], playerTrace: []
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+
+    await expect(harukiClient.getWorldLinkRankingPlayerDetail("en", "179", 21, 1)).rejects.toThrow(message);
+  });
   it("rejects a World Link overview whose scope does not match the requested character", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       meta: { server: "en", eventId: 179, scope: "world-bloom/22", characterId: 22 },

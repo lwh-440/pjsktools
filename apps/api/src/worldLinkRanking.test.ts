@@ -246,7 +246,42 @@ describe("World Link ranking isolation", () => {
           }]
         }), { status: 200, headers: { "content-type": "application/json" } });
       }
-      if (url.includes("/worldlink-churn")) {
+      if (url.includes(`/events/jp/${eventId}/leaderboards/world-bloom/5/details/rank/1`)) {
+        return new Response(JSON.stringify({
+          meta: { server: "jp", eventId, scope: "world-bloom/5", characterId: 5, fetchedAt: 1_700_000_100 },
+          current: {
+            rankData: { rank: 1, score: 7654321, userId: "wl-user", timestamp: 1_700_000_100 },
+            userData: { userId: "wl-user", name: "World Link Player", cardId: 1235 }
+          },
+          next: {
+            rankData: { rank: 2, score: 7654000, userId: "wl-next", timestamp: 1_700_000_100 },
+            userData: { name: "next" }
+          },
+          playerTrace: [
+            { timestamp: 1_699_996_500, userId: "wl-user", score: 7650000, rank: 1 },
+            { timestamp: 1_700_000_100, userId: "wl-user", score: 7654321, rank: 1 }
+          ],
+          rankTrace: [
+            { timestamp: 1_699_996_500, userId: "wl-user", score: 7650000, rank: 1 },
+            { timestamp: 1_700_000_100, userId: "wl-user", score: 7654321, rank: 1 }
+          ],
+          intervalSeconds: 3600,
+          windowStart: 1_699_996_500,
+          windowEnd: 1_700_000_100
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.includes(`/events/jp/${eventId}/leaderboards/world-bloom/5/overview`)) {
+        return new Response(JSON.stringify({
+          meta: { server: "jp", eventId, scope: "world-bloom/5", characterId: 5 },
+          topRankings: [{
+            rankData: { rank: 1, score: 7654321, userId: "wl-user", timestamp: 1_700_000_100 },
+            userData: { name: "World Link Player", cardId: 1235 }
+          }],
+          borderLines: [],
+          topPlayerGrowths: [],
+          topRankGrowths: []
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }      if (url.includes("/worldlink-churn")) {
         return new Response(JSON.stringify({
           event_id: eventId,
           rankings: [{ rank: 1, score: 7654321, name: "World Link Player", userId: "wl-user", growth_1h: 1234 }]
@@ -275,8 +310,10 @@ describe("World Link ranking isolation", () => {
       rank: 1,
       score: 7654321,
       playerName: "World Link Player",
-      growth1h: 1234
+      growth1h: 1234,
+      traceCompleteness: "complete"
     });
+    expect((detail as any).playerTrace).toEqual(expect.arrayContaining([expect.objectContaining({ userId: "wl-user" })]));
     expect(churn).toMatchObject({
       status: "fresh",
       boardType: "worldlink",

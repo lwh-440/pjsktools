@@ -13465,11 +13465,33 @@
                   "$ref": "#/components/schemas/RankingTracePoint"
                 }
               },
-              "lineTrace": {
+              "rankTrace": {
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/RankingTracePoint"
                 }
+              },
+              "traceCompleteness": {
+                "type": "string",
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unavailable"
+                ]
+              },
+              "traceCoverage": {
+                "type": "object",
+                "properties": {
+                  "playerTrace": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "rankTrace": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": false
               },
               "previous": {
                 "anyOf": [

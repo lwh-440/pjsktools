@@ -1,4 +1,4 @@
-﻿import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config, type RegionId } from "./config.js";
 import { harukiClient, type RankingBorderHourlyGrowth } from "./harukiClient.js";
@@ -371,12 +371,22 @@ export async function getRankingPlayerDetail(
   rank: number,
   options: { boardType?: "overall" | "worldlink"; gameCharacterId?: number } = {},
   event?: unknown
-) {
+): Promise<Record<string, any>> {
   const boardType = options.boardType ?? "overall";
   if (boardType === "worldlink" && !options.gameCharacterId) throw new Error("worldlink-context-missing");
-  const raw = boardType === "worldlink"
-    ? {}
-    : await harukiClient.getRankingPlayerDetail(region, eventId, rank) as Record<string, any>;
+  let raw: Record<string, any>;
+  let worldLinkTraceUnavailable = false;
+  if (boardType === "worldlink") {
+    try {
+      raw = await harukiClient.getWorldLinkRankingPlayerDetail(region, eventId, options.gameCharacterId!, rank) as Record<string, any>;
+    } catch {
+      // Keep the live Haruki board usable when the optional trace endpoint is unavailable.
+      raw = {};
+      worldLinkTraceUnavailable = true;
+    }
+  } else {
+    raw = await harukiClient.getRankingPlayerDetail(region, eventId, rank) as Record<string, any>;
+  }
   const [live, churn] = await Promise.all([
     getLiveRankingCached(region, eventId, event, false, options).catch(() => null),
     getRankingChurnCached(region, eventId, { boardType: options.boardType, gameCharacterId: options.gameCharacterId, top: 100 }).catch(() => null)
@@ -409,13 +419,17 @@ export async function getRankingPlayerDetail(
   const observedPtUpdates = (() => {
     const trace = Array.isArray(compatibleRaw.playerTrace) ? [...compatibleRaw.playerTrace].sort((a: any, b: any) => Number(a.timestamp) - Number(b.timestamp)) : [];
     const latestTimestamp = Number(compatibleRaw.timestamp ?? trace.at(-1)?.timestamp ?? 0);
+    if (boardType === "worldlink") {
+      const coverage = compatibleRaw.traceCoverage?.playerTrace;
+      if (!Number.isFinite(latestTimestamp) || latestTimestamp <= 0 || !coverage?.complete || Number(coverage.oldestTimestamp) > latestTimestamp - 3600) return undefined;
+    }
     const recent = trace.filter((point: any) => Number(point.timestamp) >= latestTimestamp - 3600);
     return recent.slice(1).reduce((count: number, point: any, index: number) => count + (Number(point.score) !== Number(recent[index]?.score) ? 1 : 0), 0);
   })();
   const churnEntry = selectRankingDetailChurnEntry(churn, enriched.userId, rank);
   return {
     ...enriched,
-    ...(identity.identityMismatch ? { warnings: [...new Set([...(Array.isArray(enriched.warnings) ? enriched.warnings : []), "identity-mismatch"])] } : {}),
+    ...((identity.identityMismatch || worldLinkTraceUnavailable) ? { warnings: [...new Set([...(Array.isArray(enriched.warnings) ? enriched.warnings : []), ...(identity.identityMismatch ? ["identity-mismatch"] : []), ...(worldLinkTraceUnavailable ? ["trace-unavailable"] : [])])] } : {}),
     churnSource: churnEntry ? churn?.sourceUrl : undefined,
     churnStatus: churnEntry ? churn?.status : churn?.status === "fresh" ? "player-not-tracked" : churn?.status ?? "source-unavailable",
     churn1h: churnEntry?.churn1h,
@@ -426,7 +440,9 @@ export async function getRankingPlayerDetail(
     recentScoreChanges: churnEntry?.recentScoreChanges ?? [],
     parkingPeriods: churnEntry?.parkingPeriods ?? [],
     churnUpdatedAt: churn?.updatedAt,
-    observedPtUpdates
+    observedPtUpdates,
+    traceCoverage: compatibleRaw.traceCoverage,
+    traceCompleteness: worldLinkTraceUnavailable ? "unavailable" : compatibleRaw.traceCompleteness
   };
 }
 
