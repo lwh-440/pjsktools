@@ -650,6 +650,215 @@ function costumeSource(source: ExternalDataSource): ExternalDataSource {
   };
 }
 
+export type CnCostume3dRow = {
+  id: number;
+  costume3dGroupId: number;
+  partType: string;
+  colorId: number;
+  assetbundleName: string;
+};
+
+export type CnCostume3dGroup = {
+  groupId: number;
+  name: string;
+  characterId: number;
+  designer: string;
+  publishedAt?: number;
+  archivePublishedAt?: number;
+};
+
+export type CnCostumeThumbnailIndex = {
+  groupsByName: Map<string, CnCostume3dGroup[]>;
+  rowsByGroupAndPart: Map<number, Map<string, CnCostume3dRow[]>>;
+  sourceUrls: string[];
+  sourceProjects: string[];
+  stale?: boolean;
+};
+
+const cnCostumeThumbnailIndexCache = new Map<RegionId, { expiresAt: number; value: CnCostumeThumbnailIndex }>();
+const cnCostumeThumbnailIndexRequests = new Map<RegionId, Promise<CnCostumeThumbnailIndex>>();
+
+function cnCostumeThumbnailIndexTtlMs() {
+  const configured = Number(process.env.CN_COSTUME_THUMBNAIL_INDEX_TTL_MS ?? 30 * 60_000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 30 * 60_000;
+}
+
+function numberValue(value: unknown) {
+  if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function normalizedCostumeText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function cnCostumePartKey(partType: string, colorId: number) {
+  return `${partType.trim().toLowerCase()}:${colorId}`;
+}
+
+/** Direct port of Haruki Toolbox's thumbnail-name rule for a verified costume3d row. */
+export function buildCnCostumeThumbnailAssetbundleName(row: Pick<CnCostume3dRow, "id" | "partType" | "colorId" | "assetbundleName">) {
+  const override = normalizedCostumeText(row.assetbundleName);
+  if (override.includes("_")) return override;
+  const partType = normalizedCostumeText(row.partType);
+  if (!partType) return override;
+  const base = override || String(Math.floor(row.id / 1000)).padStart(4, "0");
+  const colorSuffix = row.colorId >= 2 ? `_${String(row.colorId - 1).padStart(2, "0")}` : "";
+  return `cos${base}_${partType}${colorSuffix}`;
+}
+
+export function createCnCostumeThumbnailIndex(costume3ds: unknown, costume3dGroups: unknown, sourceUrls: string[]): CnCostumeThumbnailIndex {
+  const groupsByName = new Map<string, CnCostume3dGroup[]>();
+  for (const value of Array.isArray(costume3dGroups) ? costume3dGroups : []) {
+    const raw = asRecord(value);
+    const groupId = numberValue(raw.groupId);
+    const characterId = numberValue(raw.characterId);
+    const name = normalizedCostumeText(raw.name);
+    if (groupId == null || characterId == null || !name) continue;
+    const group: CnCostume3dGroup = {
+      groupId,
+      characterId,
+      name,
+      designer: normalizedCostumeText(raw.designer),
+      publishedAt: numberValue(raw.publishedAt),
+      archivePublishedAt: numberValue(raw.archivePublishedAt)
+    };
+    const existing = groupsByName.get(name) ?? [];
+    existing.push(group);
+    groupsByName.set(name, existing);
+  }
+
+  const rowsByGroupAndPart = new Map<number, Map<string, CnCostume3dRow[]>>();
+  for (const value of Array.isArray(costume3ds) ? costume3ds : []) {
+    const raw = asRecord(value);
+    const id = numberValue(raw.id);
+    const costume3dGroupId = numberValue(raw.costume3dGroupId);
+    const colorId = numberValue(raw.colorId);
+    const partType = normalizedCostumeText(raw.partType);
+    if (id == null || costume3dGroupId == null || colorId == null || !partType) continue;
+    const row: CnCostume3dRow = {
+      id,
+      costume3dGroupId,
+      colorId,
+      partType,
+      assetbundleName: normalizedCostumeText(raw.assetbundleName)
+    };
+    const byPart = rowsByGroupAndPart.get(costume3dGroupId) ?? new Map<string, CnCostume3dRow[]>();
+    const key = cnCostumePartKey(partType, colorId);
+    const entries = byPart.get(key) ?? [];
+    entries.push(row);
+    byPart.set(key, entries);
+    rowsByGroupAndPart.set(costume3dGroupId, byPart);
+  }
+  return { groupsByName, rowsByGroupAndPart, sourceUrls, sourceProjects: [] };
+}
+
+async function getCnCostumeThumbnailIndex(region: RegionId) {
+  const cached = cnCostumeThumbnailIndexCache.get(region);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const pending = cnCostumeThumbnailIndexRequests.get(region);
+  if (pending) return pending;
+  const load = Promise.all([
+    fetchMetadataFile<unknown[]>(region, "costume3ds.json"),
+    fetchMetadataFile<unknown[]>(region, "costume3dGroups.json")
+  ]).then(([costume3ds, costume3dGroups]) => {
+    const index = createCnCostumeThumbnailIndex(
+      costume3ds.data,
+      costume3dGroups.data,
+      [costume3ds.source.primaryUrl, costume3dGroups.source.primaryUrl]
+    );
+    index.sourceProjects = [costume3ds.source.sourceProject, costume3dGroups.source.sourceProject];
+    if (!index.groupsByName.size || !index.rowsByGroupAndPart.size) {
+      throw new Error("CN costume thumbnail master index was empty or invalid");
+    }
+    cnCostumeThumbnailIndexCache.set(region, { expiresAt: Date.now() + cnCostumeThumbnailIndexTtlMs(), value: index });
+    return index;
+  }).catch((error) => {
+    if (cached) return { ...cached.value, stale: true };
+    throw error;
+  }).finally(() => cnCostumeThumbnailIndexRequests.delete(region));
+  cnCostumeThumbnailIndexRequests.set(region, load);
+  return load;
+}
+
+function matchesCnCostumeGroup(costume: Record<string, unknown>, group: CnCostume3dGroup) {
+  const characterIds = Array.isArray(costume.characterIds)
+    ? new Set(costume.characterIds.map(numberValue).filter((value): value is number => value != null))
+    : new Set<number>();
+  if (!characterIds.has(group.characterId)) return false;
+  const sameWhenSpecified = (left: unknown, right: unknown) => {
+    const leftText = normalizedCostumeText(left);
+    const rightText = normalizedCostumeText(right);
+    return !leftText || !rightText || leftText === rightText;
+  };
+  const sameNumberWhenSpecified = (left: unknown, right: unknown) => {
+    const leftNumber = numberValue(left);
+    const rightNumber = numberValue(right);
+    return leftNumber == null || rightNumber == null || leftNumber === rightNumber;
+  };
+  return sameWhenSpecified(costume.designer, group.designer)
+    && sameNumberWhenSpecified(costume.publishedAt, group.publishedAt)
+    && sameNumberWhenSpecified(costume.archivePublishedAt, group.archivePublishedAt);
+}
+
+/**
+ * Replaces a Moe wrapper part name only when official CN master rows produce one
+ * unambiguous thumbnail name across every matching character group.
+ */
+export function applyCnCostumeThumbnailMappings(costume: unknown, index: CnCostumeThumbnailIndex) {
+  const raw = asRecord(costume);
+  const name = normalizedCostumeText(raw.name);
+  const groups = (index.groupsByName.get(name) ?? []).filter((group) => matchesCnCostumeGroup(raw, group));
+  const parts = raw.parts && typeof raw.parts === "object" && !Array.isArray(raw.parts) ? raw.parts as Record<string, unknown> : {};
+  let replacements = 0;
+  const ambiguousParts: string[] = [];
+  const mappedParts = Object.fromEntries(Object.entries(parts).map(([partType, variants]) => {
+    if (!Array.isArray(variants)) return [partType, variants];
+    return [partType, variants.map((variant) => {
+      const part = asRecord(variant);
+      const colorId = numberValue(part.colorId);
+      if (colorId == null || !groups.length) return variant;
+      const candidates = [...new Set(groups.flatMap((group) =>
+        (index.rowsByGroupAndPart.get(group.groupId)?.get(cnCostumePartKey(partType, colorId)) ?? [])
+          .map(buildCnCostumeThumbnailAssetbundleName)
+          .filter(Boolean)
+      ))];
+      if (candidates.length === 1) {
+        replacements += 1;
+        return { ...part, assetbundleName: candidates[0] };
+      }
+      if (candidates.length > 1) ambiguousParts.push(`${partType}:${colorId}`);
+      return variant;
+    })];
+  }));
+  return {
+    ...raw,
+    parts: mappedParts,
+    thumbnailAssetbundleMapping: {
+      status: ambiguousParts.length ? "ambiguous" : replacements ? "matched" : "no-match",
+      source: "CN costume3ds + costume3dGroups master association",
+      sourceUrls: index.sourceUrls,
+      sourceProjects: [...new Set(index.sourceProjects)],
+      stale: Boolean(index.stale),
+      matchedGroupIds: groups.map((group) => group.groupId),
+      replacements,
+      ambiguousParts: [...new Set(ambiguousParts)]
+    }
+  };
+}
+
+function markCnCostumeThumbnailMappingUnavailable(costume: unknown, error: unknown) {
+  const raw = asRecord(costume);
+  return {
+    ...raw,
+    thumbnailAssetbundleMapping: {
+      status: "source-unavailable",
+      source: "CN costume3ds + costume3dGroups master association",
+      error: error instanceof Error ? error.message : String(error)
+    }
+  };
+}
 function live2dSource(error?: unknown): ExternalDataSource {
   return {
     sourceType: "live2d-assets",
@@ -1181,14 +1390,33 @@ async function costumeCollection(region: RegionId): Promise<ResolvedCollectionRe
     const wrapper = result.data && typeof result.data === "object" ? result.data as Record<string, unknown> : {};
     const costumes = Array.isArray(wrapper.costumes) ? wrapper.costumes : [];
     const publicCostumes = costumes.filter((item) => isPublicCostumeItem(region, item));
-    const sourceMetadata = costumeSource(result.source);
+    let mappedCostumes = publicCostumes;
+    let mappingUnavailable: unknown;
+    let thumbnailIndex: CnCostumeThumbnailIndex | undefined;
+    if (region === "cn") {
+      try {
+        const resolvedThumbnailIndex = await getCnCostumeThumbnailIndex(region);
+        thumbnailIndex = resolvedThumbnailIndex;
+        mappedCostumes = publicCostumes.map((item) => applyCnCostumeThumbnailMappings(item, resolvedThumbnailIndex));
+      } catch (error) {
+        mappingUnavailable = error;
+        mappedCostumes = publicCostumes.map((item) => markCnCostumeThumbnailMappingUnavailable(item, error));
+      }
+    }
+    const mappingProjects = [...new Set(thumbnailIndex?.sourceProjects ?? [])].filter(Boolean);
+    const sourceMetadata = {
+      ...costumeSource(result.source),
+      sourceProject: region === "cn"
+        ? `${result.source.sourceProject} + CN costume3ds/costume3dGroups thumbnail association${mappingProjects.length ? ` (${mappingProjects.join("; ")})` : ""}${mappingUnavailable ? " (master mapping unavailable; retained original candidates)" : ""}`
+        : "moe-sekai/Moesekai metadata + asset rules"
+    };
     return {
       region,
       type: "costumes",
       source: sourceMetadata.primaryUrl,
       sourceMetadata,
       syncedAt: sourceMetadata.fetchedAt,
-      items: publicCostumes.map((item, index) => normalizeCostumeItem(item, `costumes-${index + 1}`)),
+      items: mappedCostumes.map((item, index) => normalizeCostumeItem(item, `costumes-${index + 1}`)),
       unavailableReason: publicCostumes.length ? undefined : "moe_costume.json returned no public costume sets"
     };
   } catch (error) {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { config } from "./config.js";
-import { getOptionalMetadata, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData } from "./externalData.js";
+import { applyCnCostumeThumbnailMappings, buildCnCostumeThumbnailAssetbundleName, createCnCostumeThumbnailIndex, getExternalCollection, getOptionalMetadata, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData } from "./externalData.js";
 import { resetHarukiMasterClientStateForTests } from "./harukiMasterClient.js";
 
 describe("Haruki Live2D BuildModelData adapter", () => {
@@ -68,6 +68,149 @@ describe("CN costume catalog", () => {
   });
 });
 
+describe("CN costume collection runtime association", () => {
+  const originalBaseUrl = config.harukiMasterBaseUrl;
+
+  afterEach(() => {
+    Object.assign(config, { harukiMasterBaseUrl: originalBaseUrl });
+    resetHarukiMasterClientStateForTests();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps wrapper candidates and reports source-unavailable when the first official index is empty", async () => {
+    Object.assign(config, { harukiMasterBaseUrl: "https://haruki.test" });
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/v1/master/cn/current")) return new Response(JSON.stringify({ files: [] }));
+      if (url.includes("/master/moe_costume.json")) return new Response(JSON.stringify({
+        costumes: [{ costumeNumber: 251221, name: "冲锋苹果狗", characterIds: [11], designer: "代谢灰尘", publishedAt: 1764518400000, parts: { body: [{ colorId: 1, assetbundleName: "existing-candidate" }] } }]
+      }));
+      if (url.endsWith("/v1/master/cn/files/costume3ds.json") || url.endsWith("/v1/master/cn/files/costume3dGroups.json")) return new Response("[]");
+      return new Response("unexpected", { status: 500 });
+    }));
+
+    const collection = await getExternalCollection("cn", "costumes");
+    const raw = collection?.items[0]?.raw as Record<string, any>;
+    expect(raw.parts.body[0].assetbundleName).toBe("existing-candidate");
+    expect(raw.thumbnailAssetbundleMapping).toMatchObject({ status: "source-unavailable" });
+  });
+
+  it("uses the official CN index through the public collection path", async () => {
+    Object.assign(config, { harukiMasterBaseUrl: "https://haruki.test" });
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/v1/master/cn/current")) return new Response(JSON.stringify({ files: [] }));
+      if (url.includes("/master/moe_costume.json")) return new Response(JSON.stringify({
+        costumes: [{ costumeNumber: 251221, name: "冲锋苹果狗", characterIds: [11, 12], designer: "代谢灰尘", publishedAt: 1764518400000, parts: { body: [{ colorId: 1, assetbundleName: "existing-candidate" }] } }]
+      }));
+      if (url.endsWith("/v1/master/cn/files/costume3ds.json")) return new Response(JSON.stringify([
+        { id: 25122002, costume3dGroupId: 251221001, partType: "body", colorId: 1 },
+        { id: 25122010, costume3dGroupId: 251221002, partType: "body", colorId: 1 }
+      ]));
+      if (url.endsWith("/v1/master/cn/files/costume3dGroups.json")) return new Response(JSON.stringify([
+        { groupId: 251221001, name: "冲锋苹果狗", characterId: 11, designer: "代谢灰尘", publishedAt: 1764518400000 },
+        { groupId: 251221002, name: "冲锋苹果狗", characterId: 12, designer: "代谢灰尘", publishedAt: 1764518400000 }
+      ]));
+      return new Response("unexpected", { status: 500 });
+    }));
+
+    const collection = await getExternalCollection("cn", "costumes");
+    const raw = collection?.items[0]?.raw as Record<string, any>;
+    expect(raw.parts.body[0].assetbundleName).toBe("cos25122_body");
+    expect(raw.thumbnailAssetbundleMapping).toMatchObject({
+      status: "matched",
+      sourceProjects: ["Team-Haruki master registry"],
+      stale: false
+    });
+  });
+});
+describe("CN costume thumbnail association", () => {
+  const mapCostume = (costume: Record<string, unknown>, groups: unknown[], costume3ds: unknown[]) => applyCnCostumeThumbnailMappings(
+    costume,
+    createCnCostumeThumbnailIndex(costume3ds, groups, ["https://haruki.test/costume3ds.json", "https://haruki.test/costume3dGroups.json"])
+  ) as Record<string, any>;
+
+  it.each([
+    {
+      label: "normal costume shared by characters 1 and 2",
+      costume: { name: "校园摇滚", characterIds: [1, 2], designer: "-", publishedAt: 1233288000000, parts: { body: [{ colorId: 1, assetbundleName: "existing-candidate" }] } },
+      groups: [
+        { groupId: 1001, name: "校园摇滚", characterId: 1, designer: "-", publishedAt: 1233288000000 },
+        { groupId: 1002, name: "校园摇滚", characterId: 2, designer: "-", publishedAt: 1233288000000 }
+      ],
+      rows: [
+        { id: 1002, costume3dGroupId: 1001, partType: "body", colorId: 1 },
+        { id: 1010, costume3dGroupId: 1002, partType: "body", colorId: 1 }
+      ],
+      expected: "cos0001_body"
+    },
+    {
+      label: "male CN costume despite an incorrect wrapper gender",
+      costume: { name: "冲锋苹果狗", characterIds: [11, 12], gender: "female", designer: "代谢灰尘", publishedAt: 1764518400000, parts: { body: [{ colorId: 1, assetbundleName: "existing-candidate" }] } },
+      groups: [
+        { groupId: 251221001, name: "冲锋苹果狗", characterId: 11, designer: "代谢灰尘", publishedAt: 1764518400000 },
+        { groupId: 251221002, name: "冲锋苹果狗", characterId: 12, designer: "代谢灰尘", publishedAt: 1764518400000 }
+      ],
+      rows: [
+        { id: 25122002, costume3dGroupId: 251221001, partType: "body", colorId: 1 },
+        { id: 25122010, costume3dGroupId: 251221002, partType: "body", colorId: 1 }
+      ],
+      expected: "cos25122_body"
+    },
+    {
+      label: "female CN costume with empty official asset names",
+      costume: { name: "可露丽棉花兔", characterIds: [1, 2], gender: "male", designer: "汉堡猫套餐", publishedAt: 1764518400000, parts: { body: [{ colorId: 1, assetbundleName: "existing-candidate" }] } },
+      groups: [
+        { groupId: 251211001, name: "可露丽棉花兔", characterId: 1, designer: "汉堡猫套餐", publishedAt: 1764518400000 },
+        { groupId: 251211002, name: "可露丽棉花兔", characterId: 2, designer: "汉堡猫套餐", publishedAt: 1764518400000 }
+      ],
+      rows: [
+        { id: 25121002, costume3dGroupId: 251211001, partType: "body", colorId: 1 },
+        { id: 25121010, costume3dGroupId: 251211002, partType: "body", colorId: 1 }
+      ],
+      expected: "cos25121_body"
+    },
+    {
+      label: "CN color variant",
+      costume: { name: "冲锋苹果狗", characterIds: [11, 12], designer: "代谢灰尘", publishedAt: 1764518400000, parts: { body: [{ colorId: 2, assetbundleName: "existing-candidate" }] } },
+      groups: [
+        { groupId: 251221001, name: "冲锋苹果狗", characterId: 11, designer: "代谢灰尘", publishedAt: 1764518400000 },
+        { groupId: 251221002, name: "冲锋苹果狗", characterId: 12, designer: "代谢灰尘", publishedAt: 1764518400000 }
+      ],
+      rows: [
+        { id: 25122004, costume3dGroupId: 251221001, partType: "body", colorId: 2 },
+        { id: 25122012, costume3dGroupId: 251221002, partType: "body", colorId: 2 }
+      ],
+      expected: "cos25122_body_01"
+    }
+  ])("maps $label only through official group rows", ({ costume, groups, rows, expected }) => {
+    const result = mapCostume(costume, groups, rows);
+    expect(result.parts.body[0].assetbundleName).toBe(expected);
+    expect(result.thumbnailAssetbundleMapping).toMatchObject({ status: "matched", replacements: 1 });
+  });
+
+  it("keeps the existing candidate when same-name official groups resolve to different bundles", () => {
+    const result = mapCostume(
+      { name: "校园摇滚", characterIds: [1, 11], designer: "-", publishedAt: 1233288000000, parts: { body: [{ colorId: 1, assetbundleName: "existing-candidate" }] } },
+      [
+        { groupId: 1001, name: "校园摇滚", characterId: 1, designer: "-", publishedAt: 1233288000000 },
+        { groupId: 2001, name: "校园摇滚", characterId: 11, designer: "-", publishedAt: 1233288000000 }
+      ],
+      [
+        { id: 1002, costume3dGroupId: 1001, partType: "body", colorId: 1 },
+        { id: 2002, costume3dGroupId: 2001, partType: "body", colorId: 1 }
+      ]
+    );
+
+    expect(result.parts.body[0].assetbundleName).toBe("existing-candidate");
+    expect(result.thumbnailAssetbundleMapping).toMatchObject({ status: "ambiguous", replacements: 0, ambiguousParts: ["body:1"] });
+  });
+
+  it("uses a verified numeric override or a complete official asset name", () => {
+    expect(buildCnCostumeThumbnailAssetbundleName({ id: 9_999_002, partType: "body", colorId: 2, assetbundleName: "0278" })).toBe("cos0278_body_01");
+    expect(buildCnCostumeThumbnailAssetbundleName({ id: 9_999_002, partType: "body", colorId: 2, assetbundleName: "body_seifuku_a" })).toBe("body_seifuku_a");
+  });
+});
 describe("Story Live2D costume coverage", () => {
   it("keeps distinct costumes for one character when actions switch outfits", () => {
     const result = normalizeScenarioData("jp", { scenarioId: "story-test" } as any, {

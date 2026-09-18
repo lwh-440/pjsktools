@@ -57,6 +57,35 @@ Their MIT licenses cover their contributed code and repository content only;
 they do not grant rights to third-party Project Sekai content contained in or
 obtained through those projects.
 
+### Haruki Toolbox costume thumbnail rule
+
+- Project: `Team-Haruki/Haruki-Toolbox`
+- Reference revision: `f2ec28930e2b9f79e166e1235f95b2a6bb4a52da`
+- Source: https://github.com/Team-Haruki/Haruki-Toolbox
+- Adapted file: `src/modules/costumes/lib/costume-options.ts`
+- Used in `apps/api/src/externalData.ts` for verified costume3d thumbnails.
+
+MIT License
+
+Copyright (c) 2025 Haruki Dev Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ### pixi-live2d-display-mulmotion
 
 - Package: `@sekai-world/pixi-live2d-display-mulmotion` version `0.5.1`
