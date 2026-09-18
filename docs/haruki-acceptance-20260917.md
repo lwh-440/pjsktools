@@ -1,41 +1,77 @@
 # Haruki 资产验收矩阵（更新至2026-09-18）
 
+## 2026-09-18 CN服装正式验收：603ed80已部署，18件列表与详情通过
+
+`603ed80`已推送GitHub、完成服务器部署，snapshot marker为603ed80、API healthy，CI35335803358成功。正式Web `cn-costume-mapping-603ed80/report.json`中18/18已发布服装列表及详情均显示128px真实图，最终URL为同CN Haruki正确bundle，errors=[]；2件future明确未通过，未跨区替图。
+
+主代理目视Web260221详情，以及原正式APK中的CN251221「冲锋苹果狗」列表/详情、CN260211「甜心天使」详情，图片均真实显示。证据为`android-cn251221-list-603ed80.png`、`android-cn251221-detail-603ed80.png`、`android-cn260211-detail-603ed80.png`。本次API-only，Android沿用已验证原APK；任务模拟器5558已`emu kill`。
+
+按原2160列表样本中的同ID增量复验，关闭18项旧缺图后累计**2153显示（2053 Haruki＋100旧漫画）、7未显示（CN未发布2件＋KR称号4件＋CN素材1件）**。这是原批次加同ID复验，不是2160项重新整批扫描，也不代表全库完成。
+
+服装catalog元数据仍来自Moe wrapper，本次缩略图映射与图源为Haruki，不能称全部服装元数据已迁移。男款260221在原wrapper中的gender仍为female，主代理Web截图已见，属独立数据问题待查；不随图片修复无证改写。排名详情实现仍进行，trace/churn未计完成。
+
+## 2026-09-18 WorldLink增量：3d29a53已部署，列表与图片样本通过
+
+`3d29a53`已修复此前review拦下的角色筛选与详情UID mismatch：从master提供全角色选项，并检查identityMismatch。独立review通过，主代理三组44/44测试通过，GitHub推送、服务器部署及CI35332875697均成功。旧“排名候选被拦、尚未部署”已被本节取代；**完整排名子功能迁移仍未完成**。
+
+| 入口 | 实际证据 | 验收边界 |
+| --- | --- | --- |
+| EN179 Miku21 / Len23公开overview | 两个角色响应均有六角色选项及100条数据，来源为各自Haruki `world-bloom/{21或23}/overview`；保留上游2026-09-15T10:15:00Z时间 | 不用本次请求时间伪装角色章数据新鲜 |
+| Miku浏览器列表及详情队长图 | `worldlink-haruki-3d29a53/report.json`的Miku部分100张卡图均实际Haruki显示；详情队长图128×128，主代理目视 | 同报告随后Len等待第73行图超时，不把整个报告标为全通过 |
+| Len浏览器第三次验证 | 首次73行等待超时、第二次导航超时均保留为未通过尝试；第三次`worldlink-len-3d29a53-verified/report.json`为passed=true，100张卡图Haruki显示、详情队长128×128，主代理已目视详情 | 新证据只覆盖本次Len列表/图片；不将此前超时抹成首次成功 |
+| 详情trace / 周回 / 档线历史 | 详情trace仍0，周回source-unavailable | **不通过完整详情/周回验收**；Haruki rank-detail/tiers接入及churn/parking语义仍待完成，列表来源与队长图片通过不能替代这些分支 |
+
+## 2026-09-18 CN服装来源纠正与官方关联依据（后续603ed80已验收）
+
+**本节取代此前把20件CN服装统称上游缺图的判断。** 初次来源调查按官方真实字段重建同区缩略图，18件已发布服装均GET200、sharp完整解码128×128；随后603ed80部署并取得18件Web列表/详情与Android代表图证据，见顶部。原巡检25项缺图保留为历史，按同ID增量验收后剩7项未显示。
+
+| 范围 | 当前权威结论 | 剩余工作 |
+| --- | --- | --- |
+| CN已发布18件服装 | 展示`costumeNumber`误构造旧路径，正确使用真实costume3dId映射；603ed80正式Web18件列表/详情128px均通过，Android两件代表已目视 | 图片问题关闭；catalog仍Moe wrapper、男款gender错误另查，不能称元数据全部Haruki |
+| CN未发布2件 | 261021→`cos26102_body`、261011→`cos26101_body`正确同区路径仍404；registry为missing，发布时间2026-09-30 | 保留正式记录及资源缺失，未以其他图片替换 |
+| KR称号与CN素材 | KR20059官方路径仍`kr-assets/startapp/honor/honor_total_recharge_202609/degree_main.png`，本轮404；20059–20062既有4项缺图结论保留。CN素材3004当前同区路径仍404 | 未发现替代：Toolbox通用material奖励实际只显示文本Badge，无不同素材图片映射证据，不宣称修复 |
+| 排名迁移状态 | 3d29a53已修角色筛选及identityMismatch、review/44项测试通过，并部署与CI成功，见顶部 | Miku/Len列表数据与图片已有新证据；trace0/周回source-unavailable及rank-detail/tiers仍待接，不算完整迁移 |
+
+官方依据为Toolbox提交`f2ec28930e2b9f79e166e1235f95b2a6bb4a52da`的[服装缩略图构造函数](https://github.com/Team-Haruki/Haruki-Toolbox/blob/f2ec28930e2b9f79e166e1235f95b2a6bb4a52da/src/modules/costumes/lib/costume-options.ts#L55)、[角色registry读取](https://github.com/Team-Haruki/Haruki-Toolbox/blob/f2ec28930e2b9f79e166e1235f95b2a6bb4a52da/src/modules/costumes/composables/useCostumeRoleData.ts#L54)及`src/shared/sekai/data-sources.ts:246`。构造使用真实costume3dId/partType/colorId与override；master连接键为`costume3ds.costume3dGroupId → costume3dGroups.groupId`。公开CN role11/street与role1/light_sound registry分别提供男/女服装的明确outfitId关联，不能使用Moe派生gender判断，也没有将展示ID与group按算式归一当作通用官方规则。
+
+完整20件逐行证据为`plan-content-audit/missing-cn-costume-mapping-proof.json`：含registry URL、展示outfitId、真实costume3dId/groupId、角色、body/color1、master原行、HTTP/字节/尺寸/SHA256；源master Git blob为`c8a21abbf473bf35dbf3830c906765721249d0a5`，groups为`a7aaef93b71fd0c34c0593e997a700df827c553e`。18件可修ID：260821、260811、260621、260611、260421、260411、260221、260211、251221、251211、251121、251111、251021、251011、250921、250911、250821、250811。正常/CN男女/色2/真实同名歧义的规划fixture为`plan-content-audit/costume-association-fixtures.json`，仅测试输入方案，不是已执行的产品测试。
+
 ## 2026-09-18 预测窗口增量修复：a946971 已部署并实测
 
 - 实际问题：网页选近1h后，10秒排名刷新闭包仍请求全部样本，覆盖摘要为417条/约6.92h；生产数据库近1h查询本身正确（60–61条/0.98–0.99h）。
 - a946971让三条预测/历史请求统一读取最新窗口快照，回写时校验窗口、区服和请求编号；只提交数据请求相关差异，保留工作树既有UI改动。部署前服务器App.tsx与原HEAD内容核对一致。
 - 本地及正式站各完成延迟旧all响应、至少两个10秒刷新周期、快速1h→3h→1h的真实浏览器验收。12档摘要跨度始终≤1.00h，没有后续无windowHours的错误轮询；正式站截图已目视。证据：forecast-window-local-fixed/report.json、forecast-window-prod-a946971/report.json及summary.png。
 - 本地、GitHub修复提交a946971一致，服务器归档部署API/Caddy健康；CI35325713809全部success。浏览器在finally中关闭，专用Vite5191进程已关闭。
-- 本增量关闭下文旧“预测线摘要6.92h”疑点；上游长期停更时forecast按最新样本回溯、history按当前时间过滤的不同定义尚不在本修复范围。排名Haruki子接口迁移仍未部署，不以本窗口修复替代其验收。
+- 本增量关闭下文旧“预测线摘要6.92h”疑点；上游长期停更时forecast按最新样本回溯、history按当前时间过滤的不同定义尚不在本修复范围。此增量当时未部署排名迁移；后续3d29a53列表/图片进展见顶部，不以窗口修复替代排名验收。
 
-## 当前权威状态：48698e3 已部署，Exact与单句语音样本复验通过
+## 当前验收状态：603ed80已部署，CN18件服装图片通过，完整排名子功能待完成
 
-本表优先于下方样本表和全部历史记录；仅把实际证据覆盖的入口记为通过。旧版本的失败保留为历史，不重复当作当前待办。
+本表与上方最新增量共同优先于下方样本表和全部历史记录；仅把实际证据覆盖的入口记为通过。旧版本的失败保留为历史，不重复当作当前待办。
 
 | 项目 | 当前结论 | 下一步 / 证据 |
 | --- | --- | --- |
-| 最新部署 | `48698e3`已推送GitHub并完成服务器归档部署，snapshot marker为48698e3、API healthy；包括0e3cc88的parser v3及48698e3单句语音修复 | 已有下列真实线上样本；不外推全部谱面、故事或来源已完成迁移 |
-| CI与定向测试 | `48698e3`的CI35307671673现已completed/success，全部checks通过；此前`0b737ef`的CI35304365082也全部success，证据`ci-0b737ef.json` | parser本地/真实Haruki测试24项、语音修复3项controller及28项Web测试均经主代理确认；CI通过不替代各入口的实际验收 |
+| 最新部署 | `603ed80` GitHub推送、服务器marker及API healthy均已确认，CN18件缩略图修复正式验收通过 | API-only沿用原正式APK；服装Moe元数据/gender问题、排名详情trace/周回等未完成 |
+| CI与定向测试 | 603ed80的CI35335803358成功；3d29a53三组44/44及CI35332875697、其他前序成功记录保留 | CI通过不替代真实分支验收，CN服装与Miku/Len范围分别见顶部 |
 | 窄屏及来源标签修复 | `1606cc8`的舞台`static → relative`/`top: auto`与真实URL来源标签已部署；正式Android重新加载后教室、一歌、对白可见 | `android-1606cc8-stage.png`、`android-1606cc8-resumed-stage.png`主代理已目视；后者60步一歌与遥均非T姿 |
 | Android版本 | `78fda34` unit、Debug/Release、签名及发布已完成；公开下载保存包SHA256为 `074582213b1782a537e7c925bf9f2bea12f1021b92709d87f70703b2060ffcf0` | `78fda34`与`7b68d48`的Android tree同为 `82ef9a06911ff627d053934ea7b25ed4f701e73c`，**不需要仅为这次API提交重打包**；设备行为仍分别验收 |
 | 分享已通过样本 | 7b68d48生日卡1464真实卡面1200×630已目视；Android活动217于2e89c90重新生成后封面已目视 | `share-7b68d48/card1464.png`、`android-event217-share-2e89c90.png`；关闭这两个旧缺图待办，其他分享类型另验 |
 | Android故事播放/生命周期 | 正式APK加载后篇完整到115/115；暂停42步两次dump不变；真实Home→recent返回35→39继续，手动暂停60步后同路返回仍60步且显示播放；返回目录后无App音频player，退出释放通过 | 排除`am start`重开Activity那次；AAudio启动证明音频流建立，不能用保留流推定后台静音。任务模拟器5558已`emu kill`；本章通过不能覆盖全部章节/逐帧资源 |
-| 五区九类图鉴样本 | 两批均exit0：六类1440项＋歌曲/卡牌/往期活动720项，共2160列表项，2135实际显示（2035 Haruki＋100旧Moe漫画）、25缺图；90次抽样详情首条均显示 | `catalog-1606cc8-summary.json`、`core-catalog-2e89c90-summary.json`；这是五区九类各两页样本，不是全库。详情抽样不能覆盖全部缺图项；旧漫画不得记Haruki通过 |
+| 五区九类图鉴累计样本 | 原2160项为2135显示/25缺；603ed80同ID18件CN列表及详情增量复验通过后，累计2153显示（2053 Haruki＋100旧Moe漫画）、7缺；原90次详情样本保留 | **不是整批重扫或全库覆盖**；增量证据`cn-costume-mapping-603ed80/report.json`，原两批summary保留。7项为CN future2、KR4、CN素材1 |
 | HTTP资产批次 | `.runtime/audit-prod-assets.log`共720主URL初检，673符合HTTP/MIME或文件头条件、47个卡池主URL404 | **不是页面显示验收**；未检查完整候选或解码。与真实页面通过不冲突，也不据此宣称47条资源全部缺失 |
 | Haruki补迁移 | 内容master优先、五区music meta与缓存隔离、Exact SUS来源校验、通用/奖励角色头像已部署；TW计算来源及EN六头像实际显示已有证据 | 其余入口、外部回退、排名子功能与legacy依赖仍未收口；Exact源正确不等于解析语义正确 |
 | TW/KR/CN master区服核对 | 独立审查确认当前各服数据与各自Haruki registry对齐，没有本轮疑似串区或旧cache问题 | TW `6.0.0.51`：gacha61/cards1249；KR `6.0.1.22`：gacha63/cards1249；CN `6.0.0.58`：gacha63/cards1249。限已核对数据，不能外推全字段、全资产或完全Haruki |
-| EN WorldLink稳定结果 | 2e89c90等待settle后真实显示T100的100条、24档线、六Haruki头像128×128 | `worldlink-2e89c90-settled/report.json`；列表只上屏部分玩家图，未全滚动。1606cc8第一次仅等5秒仍刷新中0条不构成有效失败；数据接口本身迁移仍待核实 |
+| EN WorldLink最新结果 | 3d29a53的Miku21/Len23公开overview为Haruki、各100条/六角色；浏览器两角色各100卡图及详情队长128px通过，source时间保留9月15日 | Miku取首报告对应部分，Len以第三次verified passed=true为准；此前73行/导航超时不标绿。trace0/周回source-unavailable不通过，完整详情仍待接 |
 | TW Exact v3线上样本 | `exact-v3-48698e3/deck.json`真实TW1expert：961 notes、6 skills、Haruki SUS、missingFields空；旧缓存失效后source状态matched。页面A1579655分/9180PT，B1688202分/9480PT，主代理目视`tw-deck.png` | 4d06ca9方向误判被独立review拦下；0e3cc88修复tapFlags/方向1–6并提升v3缓存，24项测试已确认。该谱面真实计算通过，不外推所有类型和谱面 |
 | 首句/单句语音 | `voice-once-48698e3/report.json`中card与Parallel均before为空；关闭自动继续后点击，真实首句分别只启动一次2.2204s/3.1608s，previewSilent与singleFirstVoice均true，runtime errors为空 | 48698e3的previewTalk/单句播放修复已有线上证据；极短unlock音源另计。特殊故事背景/视觉仍未通过 |
 | 新版卡牌剧情连续回归 | `story-postdeploy-48698e3-card-full/report.json`完成85/85；pause12→12、resume到14、手动pause14→14且音频start数不变，离页停止循环BGM，requestfailed为空 | 单句修复没有破坏本章连续播放/暂停；console有匿名会话401 error，非故事资源失败，**不是零console error**。不是逐帧/全库扫描 |
-| 预测线近1h交互 | `forecast-window-2e89c90/report.json`实际tab切换aria=true，三个windowHours=1端点200，页面显示window=1h、12档、61样本 | 关闭旧按钮选择器失败待办；摘要仍显示6.92h是独立窗口过滤疑点，尚不能判摘要逻辑正确 |
+| 预测线近1h交互/摘要 | a946971已修旧刷新闭包覆盖；本地及正式站延迟旧all、双10秒poll、1h→3h→1h真实验收通过 | 摘要6.92h旧问题已关闭；上方增量证据优先。停更时forecast/history时间锚点定义差异另计 |
 
 ### 当前简明待办（按优先顺序）
 
-1. 完成排名公开接口后续迁移：WorldLink overview/details与tier最新点有官方替代；churn须完整trace派生并注明口径，parking无已证公开同构接口。继续其余外部依赖/fallback，不以已通过头像或总榜外推完成。
-2. 处理九类图鉴样本中的25个缺图及100个旧源漫画；名单见下。2160列表项/90次详情都是样本，不能作全库完成结论。
+1. 在已部署3d29a53列表迁移基础上接入Haruki rank-detail/tiers，解决详情trace0及周回source-unavailable；churn须完整trace派生并注明口径，parking无已证公开同构接口。角色筛选/identityMismatch旧blocker已修，不重复列为未完成。
+2. CN18件服装图片603ed80已关闭待办；保留未发布CN2、KR4称号、CN素材1缺失，继续100个旧源漫画及服装Moe元数据来源核查。男款260221的wrapper gender=female独立待查，不能无证顺手改。累计2160项统计为同ID增量，非整批重扫。
 3. 继续特殊故事`specialStories/69/74`视觉、`specialStories/2/4`旧模型/背景；剩余分享类型、筛选角色图、推荐卡图和MySekai制作素材独立补验。首句重复语音、Android后篇115步、退出释放及活动217分享已有后续通过证据，不重复列为未验。
-4. 检查预测线摘要6.92h与近1h选择的范围是否一致。CI35307671673已全部success；Exact v3保留已证明的测试/线上样本范围，其他谱面语义不得泛化。真实登录/个人数据仍缺测试会话。
+4. 预测窗口a946971已验收、CI35325713809全部success，不再重复6.92h旧待办。Exact v3保留已证明的测试/线上样本范围，其他谱面语义不得泛化；真实登录/个人数据仍缺测试会话。
 
 ### 窄屏舞台修复证据（1606cc8部署前）
 
@@ -49,7 +85,9 @@
 
 后续`core-catalog-2e89c90-summary.json`补齐五区歌曲、卡牌、往期活动各两页，每类每区48项，720列表图片全部实际显示且URL为Haruki、无legacy；另30次首条详情均显示。两批合计九类2160项、2135显示（2035 Haruki＋100旧源）、25缺图，以及90次详情抽样。两次均exit0、浏览器finally关闭；不能把两页样本写成全库或全部详情通过。
 
-25张缺图为KR称号20059–20062、CN素材3004，以及CN服装20件：261021、261011、260821、260811、260621、260611、260421、260411、260221、260211、251221、251211、251121、251111、251021、251011、250921、250911、250821、250811。前十件有既有直接路径404核查；后十件是本次页面缺图证据，未自动扩大成全部上游路径不存在。261021/261011尚未到2026-09-30发布时间。保留正式名称，不跨区替图、不隐藏缺失项。
+603ed80正式Web对原缺失的同18件已发布CN服装逐一补验列表及详情均通过，主代理目视Web260221与Android251221/260211代表图。原2160项按同ID更新为2153显示（2053 Haruki＋100旧源）、7未显示；这是增量累计，不是将2160项重新扫描。服装元数据仍Moe wrapper，缩略图为同CN Haruki，不能混为全部元数据迁移。
+
+当时25张页面缺图为KR称号20059–20062、CN素材3004及CN服装20件：261021、261011、260821、260811、260621、260611、260421、260411、260221、260211、251221、251211、251121、251111、251021、251011、250921、250911、250821、250811。官方关联调查纠正了18件已发布服装的错误路径，随后603ed80产品部署及页面增量复验关闭这18项；不能继续称其上游缺失。剩余261021/261011正确路径404且未到2026-09-30、KR4及素材1共7项未显示。保留名称，不跨区替图。
 
 ### Exact v3已部署与真实基准（保留前序问题）
 
@@ -75,7 +113,13 @@
 
 官方[Haruki-Event-Tracker router](https://github.com/Team-Haruki/Haruki-Event-Tracker/blob/5f77a7f9e606a9b7b9aeb6deaf7f53cd7bacecc3/src/api/router.rs)提供公开web WorldBloom overview、rank/user details。本轮无登录GET：EN179/角色21 overview200、100人＋17档线；同角色rank1 detail200、rankTrace/playerTrace各100条；JP217/T1000 detail200、有metrics与100历史点；角色榜追加cursor第二页也200。证据`plan-content-audit/haruki-wl-*.json`、`haruki-tier-detail.json`及官方`tracker-*.txt`。未调用private/cloud受保护接口。
 
-现有tier-series仅取各档最后点，可由overview的topRankings＋borderLines替代；WorldLink选项可由同区worldBlooms master构建、按选中角色请求。trace的interval只管指标窗口，历史仍需按末timestamp分页；公共userId为64hex匿名ID，不可送数字UID档案接口。角色章已停更时不能拿全局tracker新时间伪装fresh。churn没有同构公开批量端点，官方前端按正分数变化计数，可从完整playerTrace派生但需注明窗口、采样覆盖及口径；rankTrace跟名次换人，仅适合档线。parkingPeriods尚无已证公开等价。方案已直接交实现代理，未将源码可用/API200写成产品迁移完成。
+tier-series最新点可由overview的topRankings＋borderLines替代；3d29a53已实现角色榜overview与master全角色选择，并有Miku/Len列表数据及图片证据，rank-detail/tiers剩余接入仍待完成。trace的interval只管指标窗口，历史需按末timestamp分页；公共userId为64hex匿名ID，不可送数字UID档案接口。角色章已停更时不能拿tracker新时间伪装fresh。churn无同构公开批量端点，可从完整playerTrace按正分数变化派生但须注明窗口、覆盖及口径；rankTrace跟名次换人，仅适合档线。parkingPeriods尚无已证公开等价，不能以列表完成概括完整排名迁移。
+
+### 卡牌识别指纹溯源：旧清单404，仓内无端到端消费者
+
+只读研究`fingerprint-legacy-research.md`确认：`storage.sekai.best/sekai-best-assets/chara_hash.json`本轮返回404/XML；当前`/api/master/:region/cards/import-manifest`保留catalog并标记fingerprint source-unavailable。仓内Web/Android没有import-manifest或fingerprints消费逻辑，只有API实现和契约，**不能称已经存在完整卡图识别功能**。
+
+旧Sekai-Viewer截图匹配算法可从官方dev提交`7359c32960ab3dc47945ad1719cda32462d1074d`及历史实现还原：截图卡片中心round裁剪、32×32灰度DCT，取去掉第0行/列的8×8系数、中位数阈值，64位bit串与Hamming匹配。旧清单生成器及canonical图预处理未找到，因此用Haruki缩略图生成新指纹只能作为待设计/验证的版本化新算法，不能声称与旧清单逐位兼容或识别迁移已完成。
 
 ### 三服master来源复核（独立审查2026-09-18）
 
@@ -106,10 +150,10 @@
 | 分享卡 | 7b68d48生日卡1464真实卡面1200×630已目视；2e89c90 Android活动217重新生成的封面已目视。活动素材及song/1文字/字体旧样本保留 | `share-7b68d48/card1464.png`、`android-event217-share-2e89c90.png`；这两个旧问题已关闭，其他类型/score不能外推 |
 | Web预测线公开计算 | 合成输入显示差683503/需28局/每小时227835pt旧样本保留；后续实际近1h tab选中、三接口200、1h/12档/61样本交互通过 | `forecast-window-2e89c90/report.json`取代旧按钮选择器失败；摘要6.92h为独立范围疑点，不外推摘要过滤正确 |
 | Web卡组比较公开计算 | TW aggregate Haruki meta-tc已证；48698e3的TW1expert Exact v3为961notes/6skills/missing[]，A1579655分/9180PT、B1688202分/9480PT真实显示 | `exact-v3-48698e3/deck.json`、`tw-deck.png`；旧parser失败已由方向修复及v3缓存失效取代，仅对测试与线上样本作结论。公式`Moesekai.MultiLivePTCalculator`真实归属保留 |
-| Web World Link EN | 2e89c90稳定等待后显示T100的100条、24档线，6/6角色头像均实际Haruki URL、128×128 | `worldlink-2e89c90-settled/report.json`。第一次5秒未settle的0条不记失败；玩家图只覆盖已上屏部分。角色榜数据来源仍另核查，不能由头像替换外推全部 |
+| Web World Link EN | 3d29a53 Miku21/Len23列表均Haruki overview、各100条及六角色选项；两角色100卡图Haruki与详情队长128px有实际显示证据，时间保持2026-09-15 | `worldlink-haruki-3d29a53/report.json`的Miku部分、`worldlink-len-3d29a53-verified/report.json`的Len passed=true；Len前两次超时保留。详情trace0/周回source-unavailable，完整详情迁移未通过 |
 | Android其他已通过样本 | 原生Live2D clb01_21miku首纹理可见、计数1；卡1473技能说明；JP排名第2名队长1003；活动216关联歌曲、5张卡和前4卡池图 | 证据 `android-live2d-final-detail.png`、`android-card1473-skill.png/xml`、`android-rank-detail.png/xml`、`android-event216-related*.png`。Live2D动作/表情0不能算动画通过 |
 | 保留的原生内容样本 | JP811 HARD冷载真实谱面、VirtualLive1音频至EOS、MySekai家具/素材/蓝图各首3项；JP兑换50210奖励卡1331/成本47、称号任务101奖励105、公告6485正文宣传图显示 | 这些是已记录具体样本；无需因历史表写“未覆盖”而重复全测，也不能外推所有ID/区服 |
-| 缺图与上游证据 | 最终页面批次25项缺图：CN服装20、KR称号4、CN素材1；CN前十件服装及称号/素材原有路径404保留，新增十件是页面缺图 | 完整ID见上方批次专项；261011/261021尚未到2026-09-30发布时间。不隐藏名称、不跨区替图，也不将新页面缺图扩大为所有上游路径不存在 |
+| 缺图与上游证据 | 原25项历史缺图中的CN18件已由603ed80正式列表/详情验收关闭；累计剩CN未发布2、KR4、CN素材1共7项 | 18项是同ID增量复验，不是全批次重扫；男款gender仍来自错误wrapper字段，另列数据待查，不计图片失败或无证改写 |
 | 登录及个人数据入口 | **未覆盖**：本任务没有可用真实测试会话、收藏记录、绑定快照或已上传suite证据 | 收藏、绑定头像、个人资产计算需对应真实数据；score分享需实际已保存成绩ID，不能使用歌曲ID代替。未检查或提取个人浏览器凭据 |
 
 ### 数据源剩余状态：仍未达到“完全替换为Haruki”
@@ -120,15 +164,15 @@
 | --- | --- | --- |
 | Haruki优先，但保留外部master回退 | `masterData.ts`、`referenceMaster.ts`：配置Haruki后优先，失败仍请求metadata.exmeaning.com、metadata.pjsk.moe，再同区Team-Haruki raw及本地旧缓存 | 不是纯Haruki模式；需逐组确认回退是否仍实际触发与缓存来源。不能把整个metadata层一概写已迁移 |
 | Haruki优先，但保留外部图片回退 | `assets.ts:getAssetCandidates`、`externalData.ts:regionAssetCandidates`：Haruki后仍有storage.exmeaning.com、storage.pjsk.moe、storage.sekai.best及代理；旧漫画另有Sekai-comics/Moe静态候选 | 可能仍产生外部真实图片请求；本轮部分Haruki404不能靠旧源命中写Haruki通过。需有同一资源证据再收口，不删除正常入口凑比例 |
-| **内容master补迁移已部署** | 7b68d48的`externalData.ts:fetchMetadataFile`复用`fetchHarukiMasterJson`，配置Haruki时普通master优先走Haruki；失败仍回旧metadata | 故事、VirtualLive、MySekai、任务/兑换关联的真实source仍需逐组核对。**moe_costume.json是派生对象 `{costumes:...}`**，明确保持原分支；暂无已证Haruki等价文件，不将costume3ds数组冒充它 |
+| **内容master补迁移已部署** | 普通master优先Haruki、失败仍回旧metadata；603ed80服装缩略图按Haruki真实关联修复，但catalog基础仍来自Moe wrapper | **moe_costume.json是派生对象 `{costumes:...}`**，不能称服装元数据全Haruki或用costume3ds数组冒充；男款260221 gender=female待独立核查。其他内容真实source仍逐组验收 |
 | **Music meta补迁移已部署** | 7b68d48按region选择官方Haruki五区JSON，缓存隔离并校验source和时间；旧未分区文件不再读取 | 官方五份已GET/解析，TW真实aggregate的Haruki meta-tc来源已证；其他入口/区服运行结果不能外推 |
 | **Exact SUS与v3样本通过** | 0e3cc88修复方向1–6与tap属性混淆并升级v3；48698e3真实TW1expert从Haruki重新解析961notes/6skills、missing[]，两队分数/PT显示通过 | 24项本地/真实Haruki测试已确认；旧同URL坏缓存已失效。保留覆盖边界，不能将该样本或count对齐外推全库计分语义 |
 | **角色/奖励头像补迁移已部署** | 通用`getCharacterIconCandidates`与character_rank_exp奖励均使用Haruki官方映射，并精确允许代理host | WorldLink六头像均实际Haruki、128×128显示通过；筛选/奖励分支另验，不能外推所有角色 |
 | **谱面音符皮肤真实外部请求** | `chartRenderer.ts:NOTE_HOST=asset3.pjsekai.moe/live/note/custom01`，冷渲染会下载音符图并内联到SVG/PNG | SUS已Haruki不等于整张图所有依赖Haruki。此项是渲染资源，非npm库；当前未查到可证同款Haruki路径，保留未迁移结论，不猜替图 |
-| **卡片识别指纹真实外部请求** | `/api/master/:region/cards/import-manifest` → `cardImportManifest.ts` → storage.sekai.best/sekai-best-assets/chara_hash.json | 与卡面URL迁移独立；当前无已证Haruki同一指纹文件。不能用卡面GET成功代替识别哈希迁移，也不删除导入入口 |
+| **卡片识别指纹失效外部依赖** | API import-manifest仍引用旧chara_hash.json，本轮404/XML，返回source-unavailable；仓内Web/Android无消费者 | 旧截图DCT64匹配算法已溯源，清单生成/预处理未找到；新Haruki指纹须版本化和真实识别验证。不能称完整识别已存在或迁移完成，也不删除API凑完成率 |
 | **Live2D目录及动作bridge** | `externalData.ts:getLive2dModels`读取storage.sekai.best的model_list.json；动作/表情manifest及motion3仍来自Sekai-Viewer资产库；Haruki BuildModelData/moc3/texture/physics已接入 | 是已注明但仍存在的真实外部依赖，不是Cubism SDK本体。缺少可证完整Haruki模型索引/同格式动作导出替代，不能声称全Haruki |
 | **公告列表/正文/宣传图** | JP/CN列表经baijing.exmeaning.com；正文与宣传图使用游戏官方production-web.sekai.colorfulpalette.org或lf3-mkcncdn-tos.dailygn.com | 列表Moe数据与游戏官方正文都不是Haruki；此前显示通过仅是功能通过。当前无已核实Haruki等价公告接口/完整正文路径，不以猜名替换 |
-| 排名：公开替代已查明，迁移工作中 | 已部署调用链的WorldLink/churn/tier-series仍可直接请求rks-n，非仅失败备用；官方公开Haruki角色榜与rank/user trace已源码及实际GET验证 | WorldLink overview/details、tier最新点具备替代；churn需完整trace派生及口径确认、parking无已证等价。后续实现中，不能把可接入方案记成已部署迁移 |
+| 排名：WorldLink列表已部署迁移，子功能未全完成 | 3d29a53角色榜overview改用Haruki并取master全角色，Miku/Len实际列表来源及100图已验证；identityMismatch检查已修并审查通过 | 详情trace0、周回source-unavailable；Haruki rank-detail/tiers仍待接，churn/parking口径与剩余rks-n依赖未收口。列表与队长图不能作为完整排名迁移证据 |
 | 本地旧派生数据/公式参考 | WorldBloom支持卡组bonus等可读refer/Moesekai本地JSON；`Moesekai.MultiLivePTCalculator`、源码归属说明是公式标签 | 本地JSON是仍需说明出处的运行数据；公式标签本身不发网络请求，不应为了迁移改写真实归属。两者都不能直接称Haruki原创 |
 
 `assets.ts`仍有 `moeChartBase` 等诊断字符串，但当前图鉴的chartSvgUrl/chartPngUrl指向本地Haruki SUS渲染API；**单看源码URL字面量不算运行请求**。上表noteHost、指纹及fallback则有实际消费者；Exact SUS与普通内容master已于7b68d48补迁移，下一步是核对真实运行来源，不再重复列为尚未改代码。没有证据的接口及fallback覆盖仍需审查，不通过删除功能或泛化屏蔽请求宣称100%。
