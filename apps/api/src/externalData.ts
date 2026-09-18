@@ -284,6 +284,11 @@ function proxyUrl(url?: string) {
   return url ? `/api/assets/proxy?url=${encodeURIComponent(url)}` : undefined;
 }
 
+function live2dProxyUrl(url: string, value: string) {
+  const suffix = value.split(/[\\/]/).pop()?.replace(/[^A-Za-z0-9._-]/g, "") || "asset.bin";
+  return `/api/assets/proxy?url=${encodeURIComponent(url)}&__asset=${suffix}`;
+}
+
 function regionAssetBase(region: RegionId) {
   return `${sekaiBestAssetBase}/${regionAssetDir[region]}`;
 }
@@ -507,7 +512,7 @@ function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {
     // Haruki's asset CDN explicitly permits cross-origin reads and preserves
     // binary model headers/content length; keep those URLs direct so Cubism
     // can identify and stream the .moc3 file correctly.
-    if (resolved?.includes("sekai-assets.haruki.seiunx.com")) return resolved;
+    if (resolved?.includes("sekai-assets.haruki.seiunx.com")) return live2dProxyUrl(resolved, resolved);
     return proxyUrl(resolved) ?? value;
   }
   if (Array.isArray(value)) return value.map((entry) => rewriteLive2dFileReference(baseUrl, entry));
@@ -517,7 +522,7 @@ function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {
     if (["Name", "name", "Group", "group"].includes(key)) return [key, entry];
     if (["File", "file", "Path", "path"].includes(key) && typeof entry === "string") {
       const resolved = absoluteUrl(baseUrl, entry);
-      return [key, resolved?.includes("sekai-assets.haruki.seiunx.com") ? resolved : proxyUrl(resolved) ?? entry];
+      return [key, resolved?.includes("sekai-assets.haruki.seiunx.com") ? live2dProxyUrl(resolved, resolved) : proxyUrl(resolved) ?? entry];
     }
     return [key, rewriteLive2dFileReference(baseUrl, entry)];
   }));
