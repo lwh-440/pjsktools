@@ -2,7 +2,7 @@ process.env.HARUKI_ASSET_BASE_URL = "https://sekai-assets.haruki.seiunx.com";
 
 import { describe, expect, it } from "vitest";
 
-const { getAssetCandidates, getCardAssetDetail, getCharacterIconCandidates, getCollectionItemAssetDetail } = await import("./assets.js");
+const { getAssetCandidates, getAssetSourceLabel, getCardAssetDetail, getCharacterIconCandidates, getCollectionItemAssetDetail, getEventAssetDetail, getMusicAssetDetail, proxiedAssetUrl } = await import("./assets.js");
 
 const harukiJp = "https://sekai-assets.haruki.seiunx.com/jp-assets";
 
@@ -29,6 +29,24 @@ describe("Haruki asset mappings", () => {
 
     expect(assets.normalUrl).toBe(`${harukiJp}/startapp/character/member/res003_no012/card_normal.png`);
     expect(assets.normalUrl).not.toContain("thumbnail");
+  });
+
+  it("attributes selected Haruki assets and preserves legacy mirror labels", () => {
+    const music = getMusicAssetDetail("jp", {
+      id: "1", title: "Tell Your World", unit: "virtual_singer", difficulties: ["expert"], publishedAt: "2020-01-01T00:00:00Z", assetbundleName: "music_0001", jacketAssetbundleName: "jacket_s_001"
+    });
+    const material = getCollectionItemAssetDetail("jp", "materials", { id: "281", raw: { id: 281 } });
+    const event = getEventAssetDetail("jp", {
+      id: "1", name: "Test event", eventType: "marathon", startAt: "2020-01-01T00:00:00Z", endAt: "2020-01-08T00:00:00Z", assetbundleName: "event_test"
+    });
+
+    expect(music.sources.jacketUrl).toBe("Haruki asset storage");
+    expect(material.source).toBe("Haruki asset storage");
+    expect(event.bannerUrl).toBe(`${harukiJp}/ondemand/event_story/event_test/screen_image/banner_event_story.png`);
+    expect(event.assetSourceTrace.priority[0]).toBe("haruki");
+    expect(event.sources.bannerUrl).toBe("Haruki asset storage");
+    expect(getAssetSourceLabel("https://storage.sekai.best/sekai-jp-assets/music/jacket/jacket_s_001/jacket_s_001.webp", "unknown")).toBe("Sekai Viewer asset mirror");
+    expect(getAssetSourceLabel(proxiedAssetUrl("https://storage.exmeaning.com/sekai-jp-assets/music/jacket/jacket_s_001/jacket_s_001.webp"), "unknown")).toBe("Moesekai asset mirror");
   });
 
   it("uses verified Haruki paths for material 281 and stamp 125261", () => {

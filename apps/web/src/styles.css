@@ -4198,7 +4198,7 @@ small {
   .story-filterbar { grid-template-columns: 1fr 1fr; }
   .story-filterbar label { grid-column: 1 / -1; }
   .story-player-v3 { grid-template-columns: minmax(0, 1fr); }
-  .story-player-v3 .story-stage { position: static; }
+  .story-player-v3 .story-stage { position: relative; top: auto; }
 }
 
 @media (max-width: 520px) {

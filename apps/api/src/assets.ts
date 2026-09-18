@@ -119,6 +119,29 @@ export function proxiedAssetUrl(url: string) {
   return `/api/assets/proxy?url=${encodeURIComponent(url)}`;
 }
 
+function unproxiedAssetUrl(url: string) {
+  if (!url.startsWith("/api/assets/proxy?")) return url;
+  try {
+    return new URL(url, "https://pjsk-tools.local").searchParams.get("url") || url;
+  } catch {
+    return url;
+  }
+}
+
+export function getAssetSourceLabel(url: string, fallback: string) {
+  try {
+    const hostname = new URL(unproxiedAssetUrl(url)).hostname.toLowerCase();
+    if (hostname === "sekai-assets.haruki.seiunx.com") return "Haruki asset storage";
+    if (hostname === "images.haruki.seiunx.com") return "Haruki Toolbox static assets";
+    if (hostname === "storage.exmeaning.com" || hostname === "moe.exmeaning.com") return "Moesekai asset mirror";
+    if (hostname === "storage.pjsk.moe") return "pjsk.moe asset mirror";
+    if (hostname === "storage.sekai.best") return "Sekai Viewer asset mirror";
+  } catch {
+    // Keep the established label when a legacy or relative URL cannot identify its host.
+  }
+  return fallback;
+}
+
 export function getAssetCandidates(region: RegionId, assetPath: string) {
   const path = assetPath.replace(/^\/+/, "");
   const direct = [...harukiAssetCandidates(region, path), moeAssetUrl(region, path), moeOverseasAssetUrl(region, path), sekaiBestAssetUrl(region, path)];
@@ -190,17 +213,18 @@ export function getMusicJacketUrl(region: RegionId, song: Song) {
 export function getMusicAssetDetail(region: RegionId, song: Song) {
   const assetName = song.jacketAssetbundleName ?? song.assetbundleName;
   const imageCandidates = assetName ? getAssetCandidates(region, `music/jacket/${assetName}/${assetName}.webp`) : [];
+  const jacketUrl = imageCandidates[0] ?? getMusicJacketUrl(region, song);
   return {
     region,
     musicId: song.id,
     title: song.title,
-    jacketUrl: imageCandidates[0] ?? getMusicJacketUrl(region, song),
+    jacketUrl,
     imageCandidates,
     assetSourceTrace: { region, assetDirectory: regionAssetDir[region], priority: ["haruki", "exmeaning", "pjsk.moe", "sekai.best", "proxy"] },
     assetbundleName: song.assetbundleName,
     jacketAssetbundleName: song.jacketAssetbundleName,
     sources: {
-      jacketUrl: "Sekai Viewer asset mirror"
+      jacketUrl: getAssetSourceLabel(jacketUrl, "Sekai Viewer asset mirror")
     }
   };
 }
@@ -291,16 +315,17 @@ export function getEventAssetDetail(region: RegionId, event: EventInfo) {
       ...getAssetCandidates(region, `ondemand/event/${event.assetbundleName}/screen/banner.png`)
     ])
     : [];
+  const bannerUrl = imageCandidates[0] ?? getEventBannerUrl(region, event);
   return {
     region,
     eventId: event.id,
     name: event.name,
-    bannerUrl: imageCandidates[0] ?? getEventBannerUrl(region, event),
+    bannerUrl,
     imageCandidates,
-    assetSourceTrace: { region, assetDirectory: regionAssetDir[region], priority: ["exmeaning", "pjsk.moe", "sekai.best", "proxy"] },
+    assetSourceTrace: { region, assetDirectory: regionAssetDir[region], priority: ["haruki", "exmeaning", "pjsk.moe", "sekai.best", "proxy"] },
     assetbundleName: event.assetbundleName,
     sources: {
-      bannerUrl: "Sekai Viewer asset mirror"
+      bannerUrl: getAssetSourceLabel(bannerUrl, "Sekai Viewer asset mirror")
     }
   };
 }
@@ -472,9 +497,12 @@ export function getCollectionItemAssetDetail(region: RegionId, type: string, ite
     scrollUrl: type === "honors" && assetbundleName ? assetUrl(region, `${honorRoot}/${assetbundleName}/scroll.webp`) : undefined,
     frameUrl: type === "honors" ? imageCandidates.find((url) => url.includes("/honor_frame/")) : undefined,
     source: imageUrl
-      ? type === "gachas" || type === "costumes"
-        ? "moe-sekai/Moesekai metadata + asset rules"
-        : "Sekai Viewer / Moesekai asset mirror"
+      ? getAssetSourceLabel(
+          imageUrl,
+          type === "gachas" || type === "costumes"
+            ? "moe-sekai/Moesekai metadata + asset rules"
+            : "Sekai Viewer / Moesekai asset mirror"
+        )
       : "真实资源路径暂不可用"
   };
 }
