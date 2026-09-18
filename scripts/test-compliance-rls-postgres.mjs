@@ -199,7 +199,8 @@ async function runPreMigrationBootstrap() {
     DATABASE_MIGRATION_PASSWORD:runtimePassword,
     APP_RUNTIME_ROLE:runtimeRole,
     AUTH_RUNTIME_ROLE:authRuntimeRole,
-    COMPLIANCE_RUNTIME_ROLE:complianceRuntimeRole
+    COMPLIANCE_RUNTIME_ROLE:complianceRuntimeRole,
+    HARUKI_RUNTIME_ROLE:harukiRuntimeRole
   };
   const args=["run","--rm","--network","host","--user","0:0","--mount",`type=bind,source=${path.resolve("deploy/compliance/bootstrap-pre-migration-roles.sh")},target=/bootstrap.sh,readonly`];
   for(const [key,value] of Object.entries(bashEnvironment)){args.push("--env",`${key}=${value}`);}
