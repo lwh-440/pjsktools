@@ -289,6 +289,10 @@ function live2dProxyUrl(url: string, value: string) {
   return `/api/assets/proxy?url=${encodeURIComponent(url)}&__asset=${suffix}`;
 }
 
+function proxiedLive2dAsset(url?: string) {
+  return url ? live2dProxyUrl(url, url) : undefined;
+}
+
 function regionAssetBase(region: RegionId) {
   return `${sekaiBestAssetBase}/${regionAssetDir[region]}`;
 }
@@ -480,7 +484,7 @@ async function harukiLive2dModel3(model: Live2dModelSummary) {
   return model3FromHarukiBuildModelData(buildModelData, legacyModel3Json, model.motionBaseUrl ?? "", motionReferences);
 }
 
-async function resolveLive2dModelAssetRegion(model: Live2dModelSummary) {
+export async function resolveLive2dModelAssetRegion(model: Live2dModelSummary) {
   if (!model.buildModelDataUrl) return model;
   try {
     await fetchJsonUrl<unknown>(model.buildModelDataUrl);
@@ -498,6 +502,7 @@ async function resolveLive2dModelAssetRegion(model: Live2dModelSummary) {
         ...model,
         buildModelDataUrl: fallbackBuild,
         modelBaseUrl: replaceBase(model.modelBaseUrl),
+        motionBaseUrl: replaceBase(model.motionBaseUrl),
         modelAssetSource: "haruki-buildmodeldata-jp-shared" as const
       } satisfies Live2dModelSummary;
     } catch {
@@ -509,9 +514,8 @@ async function resolveLive2dModelAssetRegion(model: Live2dModelSummary) {
 function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {
   if (typeof value === "string") {
     const resolved = absoluteUrl(baseUrl, value);
-    // Haruki's asset CDN explicitly permits cross-origin reads and preserves
-    // binary model headers/content length; keep those URLs direct so Cubism
-    // can identify and stream the .moc3 file correctly.
+    // Route Haruki binary assets through the proxy with a stable filename suffix
+    // so browser loaders retain the resource type and response headers.
     if (resolved?.includes("sekai-assets.haruki.seiunx.com")) return live2dProxyUrl(resolved, resolved);
     return proxyUrl(resolved) ?? value;
   }
@@ -565,7 +569,7 @@ function live2dFilesFromArray(baseUrl: string, value: unknown, group?: string): 
     .filter((entry): entry is Live2dFileRef => Boolean(entry));
 }
 
-function parseLive2dModel3(model: Live2dModelSummary, model3Json: unknown) {
+export function parseLive2dModel3(model: Live2dModelSummary, model3Json: unknown) {
   const baseUrl = model.modelBaseUrl ?? "";
   const root = model3Json && typeof model3Json === "object" ? model3Json as Record<string, unknown> : {};
   const fileReferences = root.FileReferences && typeof root.FileReferences === "object"
@@ -579,19 +583,19 @@ function parseLive2dModel3(model: Live2dModelSummary, model3Json: unknown) {
   const expressions = live2dFilesFromArray(baseUrl, fileReferences.Expressions, "expressions");
   return {
     modelFileUrl: absoluteUrl(baseUrl, fileReferences.Moc) ?? model.model3JsonUrl,
-    proxiedModelFileUrl: proxyUrl(absoluteUrl(baseUrl, fileReferences.Moc)),
+    proxiedModelFileUrl: proxiedLive2dAsset(absoluteUrl(baseUrl, fileReferences.Moc)),
     textureFiles: textures,
-    proxiedTextureFiles: textures.map((item) => ({ ...item, url: proxyUrl(item.url) ?? item.url })),
+    proxiedTextureFiles: textures.map((item) => ({ ...item, url: proxiedLive2dAsset(item.url) ?? item.url })),
     motionFiles: motionGroups,
-    proxiedMotionFiles: motionGroups.map((item) => ({ ...item, url: proxyUrl(item.url) ?? item.url })),
+    proxiedMotionFiles: motionGroups.map((item) => ({ ...item, url: proxiedLive2dAsset(item.url) ?? item.url })),
     expressionFiles: expressions,
-    proxiedExpressionFiles: expressions.map((item) => ({ ...item, url: proxyUrl(item.url) ?? item.url })),
+    proxiedExpressionFiles: expressions.map((item) => ({ ...item, url: proxiedLive2dAsset(item.url) ?? item.url })),
     physicsFileUrl: absoluteUrl(baseUrl, fileReferences.Physics),
-    proxiedPhysicsFileUrl: proxyUrl(absoluteUrl(baseUrl, fileReferences.Physics)),
+    proxiedPhysicsFileUrl: proxiedLive2dAsset(absoluteUrl(baseUrl, fileReferences.Physics)),
     poseFileUrl: absoluteUrl(baseUrl, fileReferences.Pose),
-    proxiedPoseFileUrl: proxyUrl(absoluteUrl(baseUrl, fileReferences.Pose)),
+    proxiedPoseFileUrl: proxiedLive2dAsset(absoluteUrl(baseUrl, fileReferences.Pose)),
     displayInfoFileUrl: absoluteUrl(baseUrl, fileReferences.DisplayInfo),
-    proxiedDisplayInfoFileUrl: proxyUrl(absoluteUrl(baseUrl, fileReferences.DisplayInfo)),
+    proxiedDisplayInfoFileUrl: proxiedLive2dAsset(absoluteUrl(baseUrl, fileReferences.DisplayInfo)),
     model3Json
   };
 }
@@ -1756,13 +1760,13 @@ export async function getLive2dModelDetail(region: RegionId, modelId: string) {
         group,
         count: Array.isArray(files) ? files.length : 0
       })),
-      expressionCandidates: model.modelBaseUrl ? [
-        `${model.modelBaseUrl}expressions/`,
-        `${model.modelBaseUrl}expression/`
+      expressionCandidates: resolvedModel.modelBaseUrl ? [
+        `${resolvedModel.modelBaseUrl}expressions/`,
+        `${resolvedModel.modelBaseUrl}expression/`
       ] : [],
-      motionCandidates: model.motionBaseUrl ? [
-        model.motionBaseUrl,
-        `${model.modelBaseUrl ?? ""}motions/`
+      motionCandidates: resolvedModel.motionBaseUrl ? [
+        resolvedModel.motionBaseUrl,
+        `${resolvedModel.modelBaseUrl ?? ""}motions/`
       ].filter(Boolean) : []
     },
     playbackStatus,

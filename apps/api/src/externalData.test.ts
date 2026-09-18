@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { config } from "./config.js";
-import { applyCnCostumeThumbnailMappings, buildCnCostumeThumbnailAssetbundleName, createCnCostumeThumbnailIndex, getExternalCollection, getOptionalMetadata, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData } from "./externalData.js";
+import { applyCnCostumeThumbnailMappings, buildCnCostumeThumbnailAssetbundleName, createCnCostumeThumbnailIndex, getExternalCollection, getOptionalMetadata, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData, parseLive2dModel3, resolveLive2dModelAssetRegion } from "./externalData.js";
 import { resetHarukiMasterClientStateForTests } from "./harukiMasterClient.js";
 
 describe("Haruki Live2D BuildModelData adapter", () => {
@@ -55,6 +55,51 @@ describe("Haruki Live2D BuildModelData adapter", () => {
         FadeOutTime: 1
       }]
     });
+  });
+
+  it("adds stable asset suffixes to every proxied Cubism resource", () => {
+    const base = "https://sekai-assets.haruki.seiunx.com/en-assets/startapp/live2d/model/v1/collabo/21_miku/clb01_21miku/";
+    const parsed = parseLive2dModel3({ modelBaseUrl: base, model3JsonUrl: `${base}model.model3.json` } as any, {
+      FileReferences: {
+        Moc: "model.moc3",
+        Textures: ["texture_00.png"],
+        Physics: "model.physics3",
+        Pose: "model.pose3.json",
+        DisplayInfo: "model.cdi3.json",
+        Motions: { Idle: [{ File: "motions/idle.motion3.json" }] },
+        Expressions: [{ Name: "smile", File: "expressions/smile.exp3.json" }]
+      }
+    });
+
+    expect(parsed.proxiedModelFileUrl).toContain("&__asset=model.moc3");
+    expect(parsed.proxiedTextureFiles[0]?.url).toContain("&__asset=texture_00.png");
+    expect(parsed.proxiedPhysicsFileUrl).toContain("&__asset=model.physics3");
+    expect(parsed.proxiedPoseFileUrl).toContain("&__asset=model.pose3.json");
+    expect(parsed.proxiedDisplayInfoFileUrl).toContain("&__asset=model.cdi3.json");
+    expect(parsed.proxiedMotionFiles[0]?.url).toContain("&__asset=idle.motion3.json");
+    expect(parsed.proxiedExpressionFiles[0]?.url).toContain("&__asset=smile.exp3.json");
+  });
+
+  it("falls back an unavailable EN BuildModelData URL to the JP shared asset", async () => {
+    const model = {
+      buildModelDataUrl: "https://sekai-assets.haruki.seiunx.com/en-assets/startapp/live2d/model/v1/collabo/21_miku/clb01_21miku/buildmodeldata.json",
+      modelBaseUrl: "https://sekai-assets.haruki.seiunx.com/en-assets/startapp/live2d/model/v1/collabo/21_miku/clb01_21miku/",
+      motionBaseUrl: "https://sekai-assets.haruki.seiunx.com/en-assets/live2d/motion/v1/collabo/21_miku/"
+    };
+    const fetchMock = vi.fn(async (input: string | URL) => String(input).includes("/en-assets/")
+      ? new Response("missing", { status: 404 })
+      : new Response("{}", { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const resolved = await resolveLive2dModelAssetRegion(model as any);
+
+    expect(resolved.buildModelDataUrl).toContain("/jp-assets/");
+    expect(resolved.modelBaseUrl).toContain("/jp-assets/");
+    expect(resolved.motionBaseUrl).toContain("/jp-assets/");
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      model.buildModelDataUrl,
+      model.buildModelDataUrl.replace("/en-assets/", "/jp-assets/")
+    ]);
   });
 });
 

@@ -22,7 +22,11 @@ export class Live2DRuntimeStage {
     onProgress?.({ stage: "runtime", message: "正在初始化 Cubism 运行时" });
     if (signal?.aborted || this.destroyed) throw new DOMException("Live2D load cancelled", "AbortError");
     onProgress?.({ stage: "model", message: "正在加载模型与纹理" });
-    const model = await (Live2DModel as any).from(url, { autoInteract: false });
+    const model = await (Live2DModel as any).from(url, {
+      autoHitTest: false,
+      autoFocus: false,
+      ticker: this.app.ticker
+    });
     if (signal?.aborted || this.destroyed) {
       model.destroy?.({ children: true });
       throw new DOMException("Live2D load cancelled", "AbortError");
