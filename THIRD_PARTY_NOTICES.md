@@ -35,6 +35,15 @@ public network deployment under AGPL-3.0-or-later.
 
 ## MIT-licensed projects
 
+### SekaiCalculator
+
+- Project: `cc004/SekaiCalculator`
+- Repository: https://github.com/cc004/SekaiCalculator
+- Local reference revision: `b63e23d4c7d45cd20fe29790e574a2bd9c084e6e`
+- License: MIT
+- Use in this project: independently reimplemented SUS timing and hold-score
+  semantics in `apps/api/src/musicScoreParser.ts`, based on the behavior of
+  `Program.cs` and `SusParser.cs`.
 ### Team-Haruki projects
 
 - `Team-Haruki/Haruki-Sekai-API`
