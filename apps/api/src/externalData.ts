@@ -1764,8 +1764,9 @@ export async function getLive2dModel3Proxy(region: RegionId, modelId: string) {
   const list = await getLive2dModels(region);
   const model = list.models.find((item) => item.id === modelId || item.modelPath === modelId || item.name === modelId);
   if (!model) return null;
-  if (!model.buildModelDataUrl) throw new Error("Haruki BuildModelData URL is unavailable");
-  return rewriteLive2dModel3(model, await harukiLive2dModel3(model));
+  const resolvedModel = await resolveLive2dModelAssetRegion(model);
+  if (!resolvedModel.buildModelDataUrl) throw new Error("Haruki BuildModelData URL is unavailable");
+  return rewriteLive2dModel3(resolvedModel, await harukiLive2dModel3(resolvedModel));
 }
 
 export async function getExternalContext(region: RegionId, kind: "exchanges" | "missions" | "virtualLives" | "mysekai") {
