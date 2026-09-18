@@ -135,6 +135,28 @@ describe("Exact-score SUS parser", () => {
     expect(score.notes).toEqual([{ time: 0, type: 4 }]);
   });
 
+  it.each([1, 2, 3, 4, 5, 6])("treats directional value %i as a flick without inheriting tap attributes", (direction) => {
+    const score = parsedScore([
+      "#BPM 120",
+      "#00012:13",
+      `#00052:${direction}3`
+    ].join("\n"));
+
+    expect(score.notes).toEqual([{ time: 0, type: 4 }]);
+  });
+
+  it("keeps a directional value 5 from turning the real 23520-tick long start into a friction hold", () => {
+    const score = parsedScore([
+      '#REQUEST "ticks_per_beat 480"',
+      "#BPM 120",
+      "#01212:00130000",
+      "#01252:00530000",
+      "#01232a:00130000",
+      "#01332a:00000023"
+    ].join("\n"));
+
+    expect(score.notes.find((note) => note.time === 24.5)).toMatchObject({ type: 2, longId: 1 });
+  });
   it("scores modern critical and friction taps while omitting cancel variants", () => {
     const score = parsedScore([
       "#BPM 120",
@@ -242,5 +264,8 @@ describe.skipIf(!runLiveHarukiValidation)("live Haruki Exact-score acceptance", 
     const score = parsedScore(await response.text());
     expect(score.skills.map((marker) => marker.time)).toEqual([12.8, 27.2, 43.2, 62.4, 81.6, 110.4]);
     expect(score.fevers.map((marker) => marker.time)).toEqual([65.6, 78.4]);
+    // Haruki TW 0001: tick 23520 has tap 13 + directional 53 + a long start 13.
+    expect(score.notes.filter((note) => note.time === 19.6).map((note) => note.type)).toContain(2);
+    expect(score.notes.filter((note) => note.time === 19.6).map((note) => note.type)).not.toContain(11);
   });
 });

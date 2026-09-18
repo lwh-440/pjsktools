@@ -12,7 +12,7 @@ export type MusicScoreNote = MusicScoreNoteBase & { type: number; longId?: numbe
 export type MusicScore = { notes: MusicScoreNote[]; skills: MusicScoreNoteBase[]; fevers: MusicScoreNoteBase[] };
 
 /** Bump whenever parsed score semantics change, so stale cache entries are rejected. */
-export const musicScoreParserVersion = "sus-exact-v2";
+export const musicScoreParserVersion = "sus-exact-v3";
 
 type TimedPayload = {
   measure: number;
@@ -68,7 +68,7 @@ function removeScoreEntriesAtLaneTick(entries: Map<string, InternalScoreNote>, t
   }
 }
 
-function parseFlags(valueKind: number): Omit<Flags, "flick"> | undefined {
+function parseTapFlags(valueKind: number): Omit<Flags, "flick"> | undefined {
   switch (valueKind) {
     case 1:
       return { critical: false, friction: false };
@@ -223,6 +223,7 @@ export function parseSusMusicScore(susText: string): { score?: MusicScore; warni
       }
       continue;
     }
+// Haruki channel 9 is a decorative slide: it contributes no independent start/end/auto score event. Its attached 1xx/5xx attributes remain available through the separately parsed tap and directional channels.
     const note = line.match(/^#(\d{3})([1-5])([0-9A-G])([0-9A-Z])?\s*:\s*(.+)$/i);
     if (!note) continue;
     const type = note[2];
@@ -313,14 +314,20 @@ export function parseSusMusicScore(susText: string): { score?: MusicScore; warni
     }
   }
 
-  // Both short and directional channels can carry critical/friction state. A direction only
-  // produces a score event when it shares an exact lane/width coordinate with a short/end note.
-  for (const position of [...shortPositions, ...directionalPositions]) {
+  // Tap values control critical/friction. Channel 5 stores only flick direction (1-6),
+  // so it attaches to an equal tick/lane/width without changing the tap attributes.
+  const directionalCoordinates = new Set<string>();
+  for (const position of shortPositions) {
     if (position.lane < playableLaneMin || position.lane > playableLaneMax) continue;
-    const parsed = parseFlags(position.valueKind);
+    const parsed = parseTapFlags(position.valueKind);
     if (!parsed) continue;
     const key = coordinateKey(position.tick, position.lane, position.width);
-    coordinateFlags.set(key, mergeFlags(coordinateFlags.get(key), { ...parsed, flick: position.kind === "direction" }));
+    coordinateFlags.set(key, mergeFlags(coordinateFlags.get(key), { ...parsed, flick: false }));
+  }
+  for (const position of directionalPositions) {
+    if (position.lane < playableLaneMin || position.lane > playableLaneMax) continue;
+    if (position.valueKind < 1 || position.valueKind > 6) continue;
+    directionalCoordinates.add(coordinateKey(position.tick, position.lane, position.width));
   }
 
   const scoreEntries = new Map<string, InternalScoreNote>();
@@ -329,7 +336,7 @@ export function parseSusMusicScore(susText: string): { score?: MusicScore; warni
     if (position.lane < playableLaneMin || position.lane > playableLaneMax) continue;
     const coordinate = coordinateKey(position.tick, position.lane, position.width);
     const key = laneTickKey(position.tick, position.lane);
-    const ownFlags = parseFlags(position.valueKind);
+    const ownFlags = parseTapFlags(position.valueKind);
     // Modern SUS uses 7/8 to cancel or hide a tap. They remove a coincident event.
     if (!ownFlags && (position.valueKind === 7 || position.valueKind === 8)) {
       suppressedShortLaneTicks.add(laneTickKey(position.tick, position.lane));
@@ -338,7 +345,12 @@ export function parseSusMusicScore(susText: string): { score?: MusicScore; warni
     }
     const flags = coordinateFlags.get(coordinate);
     if (!flags || !ownFlags) continue;
-    scoreEntries.set(key, { time: timeForTick(position.tick), tick: position.tick, type: scoreType(flags), order: position.order });
+    scoreEntries.set(key, {
+      time: timeForTick(position.tick),
+      tick: position.tick,
+      type: scoreType({ ...flags, flick: directionalCoordinates.has(coordinate) }),
+      order: position.order
+    });
   }
 
   let nextLongId = 1;
@@ -376,7 +388,11 @@ export function parseSusMusicScore(susText: string): { score?: MusicScore; warni
       scoreEntries.set(lastKey, {
         time: timeForTick(last.tick),
         tick: last.tick,
-        type: scoreType({ ...lastFlags, critical: firstFlags.critical || lastFlags.critical }),
+        type: scoreType({
+          ...lastFlags,
+          critical: firstFlags.critical || lastFlags.critical,
+          flick: directionalCoordinates.has(coordinateKey(last.tick, last.lane, last.width))
+        }),
         longId,
         order: last.order
       });
