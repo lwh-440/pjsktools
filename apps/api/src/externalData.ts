@@ -502,13 +502,21 @@ async function resolveLive2dModelAssetRegion(model: Live2dModelSummary) {
 }
 
 function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {
-  if (typeof value === "string") return proxyUrl(absoluteUrl(baseUrl, value)) ?? value;
+  if (typeof value === "string") {
+    const resolved = absoluteUrl(baseUrl, value);
+    // Haruki's asset CDN explicitly permits cross-origin reads and preserves
+    // binary model headers/content length; keep those URLs direct so Cubism
+    // can identify and stream the .moc3 file correctly.
+    if (resolved?.includes("sekai-assets.haruki.seiunx.com")) return resolved;
+    return proxyUrl(resolved) ?? value;
+  }
   if (Array.isArray(value)) return value.map((entry) => rewriteLive2dFileReference(baseUrl, entry));
   if (!value || typeof value !== "object") return value;
   const record = value as Record<string, unknown>;
   return Object.fromEntries(Object.entries(record).map(([key, entry]) => {
     if (["File", "file", "Path", "path"].includes(key) && typeof entry === "string") {
-      return [key, proxyUrl(absoluteUrl(baseUrl, entry)) ?? entry];
+      const resolved = absoluteUrl(baseUrl, entry);
+      return [key, resolved?.includes("sekai-assets.haruki.seiunx.com") ? resolved : proxyUrl(resolved) ?? entry];
     }
     return [key, rewriteLive2dFileReference(baseUrl, entry)];
   }));
