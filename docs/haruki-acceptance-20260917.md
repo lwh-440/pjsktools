@@ -501,3 +501,9 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - `141a3d8` 已推送 GitHub 并部署服务器；服务器发布标记为 `141a3d8`，健康检查正常。
 - 正式接口 `GET /api/events/en/live-ranking?boardType=overall` 实际返回 Haruki Toolbox overview，`sourceHealth.primarySource` 为 `https://toolbox-api-direct.haruki.seiunx.com/.../leaderboards/total/overview?interval=3600`，返回 26 条档线/榜线记录且无 warning。
 - `GET /api/events/en/179/ranking-border?page=1&pageSize=100` 实际返回 26 条，记录来源为 `toolbox-api`。因此 overall tier-series 已不再依赖 rks-n；rks-n 仍仅保留为 Haruki 不可用时的兼容回退。
+
+## 2026-09-18 生产剩余来源复核
+
+- `d68f501` 已推送并部署，更新运行状态文字，明确 overall tier-series 已走 Haruki，rks-n 只保留 churn 和旧版回退。
+- WorldLink churn 接口现场复核仍为 `rks-n.exmeaning.com`，100/100 条 `churn1h=0` 且带 active parking；Haruki Toolbox 已公开的 overview/detail 只提供轨迹、增长和分数线，未发现可等价替代的 churn/parking 批量接口，因此不能标为 Haruki 已接通。
+- Haruki JP 旧漫画资源 `comic_0001`–`comic_0040` 的两种官方候选路径共 80 个 URL 全部 404；现有 Moe 漫画图是当前可显示源，未使用替代图冒充 Haruki。
