@@ -429,6 +429,14 @@ function normalizeGrowth(item: any) {
 
 export class HarukiClient {
   async getRankingLatestSnapshot(region: RegionId, eventId: string): Promise<RealtimeRankingSnapshot> {
+    // The official overview carries the complete Haruki tier series. Keep the
+    // older per-rank calls only as a compatibility fallback for older events.
+    try {
+      const overview = await this.getEventTrackerOverallSnapshot(region, eventId);
+      if (overview.entries.some((entry) => Number(entry.rank) > 100)) return overview;
+    } catch {
+      // Fall through to the per-rank endpoint below.
+    }
     const [top100, borders] = await Promise.all([
       this.getRankingTop100(region, eventId),
       this.getRankingBorder(region, eventId)

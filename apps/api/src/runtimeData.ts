@@ -636,13 +636,14 @@ async function refreshLiveRanking(
   if (latest.eventId !== eventId) {
     throw new Error(`Realtime latest event mismatch: expected ${eventId}, got ${latest.eventId}`);
   }
+  const usesHarukiTierSeries = options.boardType === "overall" && latest.sourceUrl.includes("toolbox-api-direct.haruki.seiunx.com");
   const [worldLink, tierSeries] = options.boardType === "worldlink"
     ? [worldLinkResponse ?? noWorldLinkProbe, { lines: [], errors: [] }]
     : await Promise.all([
       isWorldLinkEvent
         ? (knownWorldLink ? Promise.resolve(knownWorldLink) : discoverWorldLinkForEvent(region, eventId, event))
         : Promise.resolve(noWorldLinkProbe),
-      knownTierSeries ? Promise.resolve(knownTierSeries) : fetchRealtimeTierSeries(region, commonBorderRanks)
+      usesHarukiTierSeries ? Promise.resolve({ lines: [], errors: [] }) : knownTierSeries ? Promise.resolve(knownTierSeries) : fetchRealtimeTierSeries(region, commonBorderRanks)
     ]);
   const matchingSnapshot = matchingWorldLinkSnapshot(worldLink, eventId);
   const churn = await getRankingChurnCached(region, eventId, {
