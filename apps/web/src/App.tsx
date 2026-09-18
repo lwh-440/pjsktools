@@ -617,6 +617,8 @@ export function App() {
   const [forecast, setForecast] = useState<Forecast | null>(null);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [forecastWindow, setForecastWindow] = useState<"all" | "1" | "3" | "6">("all");
+  const forecastWindowRef = useRef(forecastWindow);
+  forecastWindowRef.current = forecastWindow;
   const [rankingHistorySummary, setRankingHistorySummary] = useState<RankingHistorySummary | null>(null);
   const [rankingHistory, setRankingHistory] = useState<RankingHistoryResponse | null>(null);
   const [rankingSourceHealth, setRankingSourceHealth] = useState<RankingSourceHealth | null>(null);
@@ -1106,20 +1108,21 @@ export function App() {
   }
 
   async function loadRankingExtras(eventId: string, nextRegion = region) {
+    const requestedWindow = forecastWindowRef.current;
     const requestId = ++forecastRequestId.current;
     if (!eventId || eventId === "none") {
       setForecastLoading(false);
       return;
     }
     setForecastLoading(true);
-    const windowParam = forecastWindow === "all" ? "" : `?windowHours=${forecastWindow}`;
-    const historyQuery = `sampleType=border&limit=5000${forecastWindow === "all" ? "" : `&windowHours=${forecastWindow}`}`;
+    const windowParam = requestedWindow === "all" ? "" : `?windowHours=${requestedWindow}`;
+    const historyQuery = `sampleType=border&limit=5000${requestedWindow === "all" ? "" : `&windowHours=${requestedWindow}`}`;
     const [nextForecast, nextHistorySummary, nextHistory] = await Promise.all([
       apiGet<Forecast>(`/api/events/${nextRegion}/${eventId}/ranking-forecast${windowParam}`).catch(() => null),
-      apiGet<RankingHistorySummary>(`/api/events/${nextRegion}/${eventId}/ranking-history/summary?sampleType=border${forecastWindow === "all" ? "" : `&windowHours=${forecastWindow}`}`).catch(() => null),
+      apiGet<RankingHistorySummary>(`/api/events/${nextRegion}/${eventId}/ranking-history/summary?sampleType=border${requestedWindow === "all" ? "" : `&windowHours=${requestedWindow}`}`).catch(() => null),
       apiGet<RankingHistoryResponse>(`/api/events/${nextRegion}/${eventId}/ranking-history?${historyQuery}`).catch(() => null)
     ]);
-    if (regionRef.current !== nextRegion || requestId !== forecastRequestId.current) return;
+    if (regionRef.current !== nextRegion || requestId !== forecastRequestId.current || requestedWindow !== forecastWindowRef.current) return;
     setForecast(nextForecast);
     setRankingHistorySummary(nextHistorySummary);
     setRankingHistory(nextHistory);
