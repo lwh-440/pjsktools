@@ -436,7 +436,6 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
         `${comicsAssetBase}/comic/${assetbundleName}/${assetbundleName}.webp`,
         sekaiBestAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
         sekaiBestAssetUrl(region, `comic/${assetbundleName}/${assetbundleName}.webp`),
-        numericId ? `${moeStaticBase}/mangas/${numericId}.webp` : undefined
       ] : [
         numericId ? `${moeStaticBase}/mangas/${numericId}.webp` : undefined,
         numericId ? `${moeStaticBase}/assets/mangas/${numericId}.webp` : undefined

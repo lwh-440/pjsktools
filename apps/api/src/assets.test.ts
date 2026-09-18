@@ -142,6 +142,7 @@ describe("Haruki asset mappings", () => {
   it("publishes the current gacha bundle logo without guessed fallback paths and maps comics and nested rank-match art", () => {
     const gacha = getCollectionItemAssetDetail("jp", "gachas", { id: "281", assetbundleName: "ab_gacha_281", raw: { id: 281, assetbundleName: "ab_gacha_281" } });
     const comic = getCollectionItemAssetDetail("jp", "comics", { id: "1", assetbundleName: "comic_0001", raw: { id: 1, assetbundleName: "comic_0001" } });
+    const legacyTip = getCollectionItemAssetDetail("jp", "comics", { id: "2", raw: { id: 2 } });
     const rankMatch = getCollectionItemAssetDetail("jp", "honors", { id: "25", assetbundleName: "common/tier_25", raw: { id: 25, assetbundleName: "common/tier_25", honorGroup: { honorType: "rank_match", backgroundAssetbundleName: "common/tier_25" } } });
 
     expect(gacha.bannerUrl).toBe(`${harukiJp}/startapp/home/banner/banner_gacha281/banner_gacha281.png`);
@@ -150,6 +151,8 @@ describe("Haruki asset mappings", () => {
     const enTicket = getCollectionItemAssetDetail("en", "gachas", { id: "1171", assetbundleName: "ab_gacha_2", raw: { id: 1171, assetbundleName: "ab_gacha_2" } });
     expect(enTicket.imageCandidates).toContain("https://sekai-assets.haruki.seiunx.com/en-assets/ondemand/gacha/ab_gacha_2/logo/logo.png");
     expect(comic.imageCandidates[0]).toBe(`${harukiJp}/startapp/comic/one_frame/comic_0001.png`);
+    expect(comic.imageCandidates.some((url) => url.includes("/mangas/"))).toBe(false);
+    expect(legacyTip.imageCandidates[0]).toBe("https://moe.exmeaning.com/mangas/2.webp");
     expect(rankMatch.rankMainUrl).toBe(`${harukiJp}/startapp/rank_live/honor/common/tier_25/main.png`);
   });
 });

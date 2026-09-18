@@ -103,6 +103,38 @@ describe("Haruki Live2D BuildModelData adapter", () => {
   });
 });
 
+describe("Haruki comic collection", () => {
+  const originalBaseUrl = config.harukiMasterBaseUrl;
+
+  afterEach(() => {
+    Object.assign(config, { harukiMasterBaseUrl: originalBaseUrl });
+    resetHarukiMasterClientStateForTests();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps all master tips and supplies verified legacy Haruki panels in a stable namespace", async () => {
+    Object.assign(config, { harukiMasterBaseUrl: "https://haruki.test" });
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/v1/master/jp/current")) return new Response(JSON.stringify({ files: [] }));
+      if (url.endsWith("/v1/master/jp/files/comics.json")) return new Response("missing", { status: 404 });
+      if (url.includes("/jp/master/comics.json")) return new Response("missing", { status: 404 });
+      if (url.endsWith("/v1/master/jp/files/tips.json")) return new Response(JSON.stringify([
+        { id: 2, title: "legacy help tip" },
+        { id: 1041, title: "bundled comic", assetbundleName: "comic_0041" }
+      ]));
+      return new Response("unexpected", { status: 500 });
+    }));
+
+    const collection = await getExternalCollection("jp", "comics");
+    expect(collection?.items).toHaveLength(42);
+    expect(collection?.items.find((item) => item.id === "haruki-comic_0001")?.assetbundleName).toBe("comic_0001");
+    expect(collection?.items.find((item) => item.id === "haruki-comic_0040")?.assetbundleName).toBe("comic_0040");
+    expect(collection?.items.find((item) => item.id === "1041")?.assetbundleName).toBe("comic_0041");
+    expect(collection?.items.find((item) => item.id === "2")).toMatchObject({ title: "legacy help tip", assetbundleName: undefined });
+    expect(collection?.items.find((item) => item.id === "haruki-comic_0002")).toMatchObject({ title: "Comic 2", assetbundleName: "comic_0002" });
+  });
+});
 describe("CN costume catalog", () => {
   it("excludes only explicit master placeholders and retains released costumes", () => {
     expect(isPublicCostumeItem("cn", { costumeNumber: 271221, name: "12月占位" })).toBe(false);

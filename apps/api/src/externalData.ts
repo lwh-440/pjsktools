@@ -1471,7 +1471,7 @@ async function costumeCollection(region: RegionId): Promise<ResolvedCollectionRe
 
 function staticComicItems(region: RegionId) {
   return oldComicAssetbundleNames.map((assetbundleName, index) => ({
-    id: String(index + 1),
+    id: `haruki-${assetbundleName}`,
     title: `Comic ${index + 1}`,
     assetbundleName,
     imageCandidates: [
@@ -1482,7 +1482,6 @@ function staticComicItems(region: RegionId) {
       `${moeOverseasAssetBase}/${regionAssetDir[region]}/comic/one_frame/${assetbundleName}.webp`,
       `${comicsAssetBase}/comic/${assetbundleName}/${assetbundleName}.webp`,
       `${sekaiBestAssetBase}/${regionAssetDir[region]}/comic/one_frame/${assetbundleName}.webp`,
-      `${moeStaticBase}/mangas/${index + 1}.webp`
     ]
   }));
 }
@@ -1595,14 +1594,26 @@ export async function informationCollection(region: RegionId): Promise<ResolvedC
 async function comicsCollection(region: RegionId): Promise<ResolvedCollectionResult> {
   try {
     const result = await fetchFirstMetadata(region, metadataCollections.comics);
-    if (Array.isArray(result.data) && result.data.length) return toCollection(region, "comics", result.data, result.source);
+    if (Array.isArray(result.data) && result.data.length) {
+      // Haruki's tips master retains legacy records without a bundle. Preserve those records,
+      // then add the verified old comic panels with a disjoint catalog ID range so both remain addressable.
+      const bundledNames = new Set(result.data.flatMap((item) => {
+        const raw = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        return typeof raw.assetbundleName === "string" && raw.assetbundleName.trim() ? [raw.assetbundleName.trim()] : [];
+      }));
+      const legacyComics = staticComicItems(region).filter((item) => !bundledNames.has(item.assetbundleName));
+      return toCollection(region, "comics", [...result.data, ...legacyComics], {
+        ...result.source,
+        sourceProject: `${result.source.sourceProject} + Haruki startapp old comic assets`
+      });
+    }
   } catch {
-    // Fall back to the reference project's known old comic asset list below.
+    // Fall back to the verified old comic asset list below.
   }
   return toCollection(region, "comics", staticComicItems(region), {
     sourceType: "asset-list",
-    primaryUrl: `${comicsAssetBase}/comic/one_frame/{assetbundleName}.webp`,
-    sourceProject: "Sekai-World/sekai-viewer comic asset rules + moe-sekai/Moesekai oldComicTips",
+    primaryUrl: `${config.harukiAssetBaseUrl.replace(/\/+$/, "")}/{region}-assets/startapp/comic/one_frame/{assetbundleName}.png`,
+    sourceProject: "Haruki startapp old comic asset list",
     fetchedAt: nowIso()
   });
 }
