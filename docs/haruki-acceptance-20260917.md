@@ -495,3 +495,9 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 公网实际端点复验：生日卡 `1464` 分享图返回 `image/png`、268427 字节且 PNG 签名有效；活动 `216` 封面主 URL 为 `sekai-assets.haruki.seiunx.com`；歌曲 `1` jacket 主 URL 为 Haruki；歌曲 `1/expert` 的 `susUrl` 和渲染来源均标记 Haruki；卡牌 `1464` 普通卡图和缩略图主 URL 为 Haruki。
 - 定向测试在强制内存存储下 `5` 个测试文件、`33/33` 通过。未强制内存存储的整套运行是 `28` 个文件、`183/186` 通过，剩余 `3` 项是本机 Supabase tenant DNS `ENOTFOUND`，不是本次资源路由测试失败。
 - 返回结构仍保留旧镜像作为失败回退候选；主请求已经切到 Haruki。不能据此把上游明确缺失的背景、部分区域服装/素材、Live2D legacy motion 等记录为已修复。
+
+## 2026-09-18 141a3d8 overall tier-series 生产复验
+
+- `141a3d8` 已推送 GitHub 并部署服务器；服务器发布标记为 `141a3d8`，健康检查正常。
+- 正式接口 `GET /api/events/en/live-ranking?boardType=overall` 实际返回 Haruki Toolbox overview，`sourceHealth.primarySource` 为 `https://toolbox-api-direct.haruki.seiunx.com/.../leaderboards/total/overview?interval=3600`，返回 26 条档线/榜线记录且无 warning。
+- `GET /api/events/en/179/ranking-border?page=1&pageSize=100` 实际返回 26 条，记录来源为 `toolbox-api`。因此 overall tier-series 已不再依赖 rks-n；rks-n 仍仅保留为 Haruki 不可用时的兼容回退。
