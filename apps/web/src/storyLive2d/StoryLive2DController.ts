@@ -73,7 +73,7 @@ export class StoryLive2DController {
     this.resumeWaiters.clear();
   }
 
-  async execute(index: number, generation = this.generation) {
+  async execute(index: number, generation = this.generation, options: { previewTalk?: boolean } = {}) {
     this.assertActive(generation);
     const actions = this.playback.actions ?? [];
     const action = actions[index];
@@ -89,22 +89,22 @@ export class StoryLive2DController {
     this.player.setModelQueue(queuedCostumes);
     await this.wait(Number(action.delay ?? 0) * 1000 / this.settings.fastForward, generation);
     await this.waitUntilResumed(generation);
-    await this.executeAction(action, generation);
+    await this.executeAction(action, generation, options);
   }
 
-  async initializeThrough(index: number) {
+  async initializeThrough(index: number, options: { previewTalk?: boolean } = {}) {
     const generation = this.generation;
     const last = Math.min(Math.max(0, index), Math.max(0, (this.playback.actions?.length ?? 1) - 1));
     for (let current = 0; current <= last; current += 1) {
       this.assertActive(generation);
-      await this.execute(current, generation);
+      await this.execute(current, generation, { previewTalk: Boolean(options.previewTalk && current === last) });
     }
   }
 
   async playFrom(index: number, shouldContinue: () => boolean) {
     const generation = this.generation;
     for (let current = index; current < (this.playback.actions?.length ?? 0); current += 1) {
-      if (!shouldContinue()) return;
+      if (current !== index && !shouldContinue()) return;
       this.assertActive(generation);
       await this.execute(current, generation);
       const action = this.playback.actions?.[current];
@@ -113,10 +113,10 @@ export class StoryLive2DController {
     }
   }
 
-  private async executeAction(action: ScenarioAction, generation: number) {
+  private async executeAction(action: ScenarioAction, generation: number, options: { previewTalk?: boolean } = {}) {
     this.assertActive(generation);
     switch (action.type) {
-      case "Talk": return this.talk(action, generation);
+      case "Talk": return this.talk(action, generation, options);
       case "Sound": return this.sound(action);
       case "CharacterLayout": return this.layout(action, generation);
       case "CharacterMotion": return this.motion(action, generation);
@@ -126,7 +126,7 @@ export class StoryLive2DController {
     }
   }
 
-  private async talk(action: ScenarioAction, generation: number) {
+  private async talk(action: ScenarioAction, generation: number, options: { previewTalk?: boolean } = {}) {
     this.updateOverlay({ speaker: action.windowDisplayName, body: action.body });
     const motions = action.motions ?? [];
     await Promise.all(motions.map(async (motion) => {
@@ -134,6 +134,7 @@ export class StoryLive2DController {
       if (!entry) return;
       await this.player.applyModel(motion.Character2dId, entry.costume, entry.model.x / Math.max(this.player.app.renderer.width, 1) * 100, entry.model.y / Math.max(this.player.app.renderer.height, 1) * 100, true, motion.MotionName, motion.FacialName, this.layoutMode);
     }));
+    if (options.previewTalk) return;
     await this.waitUntilResumed(generation);
     this.assertActive(generation);
     const url = mediaUrl(action.voice);

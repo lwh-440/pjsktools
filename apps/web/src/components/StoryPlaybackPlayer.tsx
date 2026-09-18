@@ -99,7 +99,7 @@ export function StoryPlaybackPlayer({ playback }: { playback: StoryPlaybackConte
       const controller = new StoryLive2DController(player, playback, settings, setOverlay, setStep, (warning) => setWarnings((current) => [...new Set([...current, warning])]));
       controllerRef.current = controller;
       setWarnings((current) => [...new Set([...current, ...modelWarnings])]);
-      await controller.initializeThrough(readable);
+      await controller.initializeThrough(readable, { previewTalk: true });
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       const rendered = player.hasVisiblePixels();
       if (!rendered) setWarnings((current) => [...new Set([...current, "Story canvas rendered no visible pixels"])]);
