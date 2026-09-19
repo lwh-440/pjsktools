@@ -706,6 +706,7 @@ export type CnCostume3dGroup = {
   groupId: number;
   name: string;
   characterId: number;
+  gender?: "female" | "male";
   designer: string;
   publishedAt?: number;
   archivePublishedAt?: number;
@@ -716,11 +717,17 @@ export type CnCostumeThumbnailIndex = {
   rowsByGroupAndPart: Map<number, Map<string, CnCostume3dRow[]>>;
   sourceUrls: string[];
   sourceProjects: string[];
+  genderSourceUnavailable?: boolean;
   stale?: boolean;
 };
 
 const cnCostumeThumbnailIndexCache = new Map<RegionId, { expiresAt: number; value: CnCostumeThumbnailIndex }>();
 const cnCostumeThumbnailIndexRequests = new Map<RegionId, Promise<CnCostumeThumbnailIndex>>();
+
+export function resetCnCostumeThumbnailIndexForTests() {
+  cnCostumeThumbnailIndexCache.clear();
+  cnCostumeThumbnailIndexRequests.clear();
+}
 
 function cnCostumeThumbnailIndexTtlMs() {
   const configured = Number(process.env.CN_COSTUME_THUMBNAIL_INDEX_TTL_MS ?? 30 * 60_000);
@@ -752,7 +759,14 @@ export function buildCnCostumeThumbnailAssetbundleName(row: Pick<CnCostume3dRow,
   return `cos${base}_${partType}${colorSuffix}`;
 }
 
-export function createCnCostumeThumbnailIndex(costume3ds: unknown, costume3dGroups: unknown, sourceUrls: string[]): CnCostumeThumbnailIndex {
+export function createCnCostumeThumbnailIndex(costume3ds: unknown, costume3dGroups: unknown, sourceUrls: string[], gameCharacters: unknown = []): CnCostumeThumbnailIndex {
+  const genderByCharacterId = new Map<number, "female" | "male">();
+  for (const value of Array.isArray(gameCharacters) ? gameCharacters : []) {
+    const raw = asRecord(value);
+    const characterId = numberValue(raw.id);
+    const gender = normalizedCostumeText(raw.gender);
+    if (characterId != null && (gender === "female" || gender === "male")) genderByCharacterId.set(characterId, gender);
+  }
   const groupsByName = new Map<string, CnCostume3dGroup[]>();
   for (const value of Array.isArray(costume3dGroups) ? costume3dGroups : []) {
     const raw = asRecord(value);
@@ -763,6 +777,7 @@ export function createCnCostumeThumbnailIndex(costume3ds: unknown, costume3dGrou
     const group: CnCostume3dGroup = {
       groupId,
       characterId,
+      gender: genderByCharacterId.get(characterId),
       name,
       designer: normalizedCostumeText(raw.designer),
       publishedAt: numberValue(raw.publishedAt),
@@ -806,13 +821,16 @@ async function getCnCostumeThumbnailIndex(region: RegionId) {
   const load = Promise.all([
     fetchMetadataFile<unknown[]>(region, "costume3ds.json"),
     fetchMetadataFile<unknown[]>(region, "costume3dGroups.json")
-  ]).then(([costume3ds, costume3dGroups]) => {
+  ]).then(async ([costume3ds, costume3dGroups]) => {
+    const gameCharacters = await fetchMetadataFile<unknown[]>(region, "gameCharacters.json").catch(() => undefined);
     const index = createCnCostumeThumbnailIndex(
       costume3ds.data,
       costume3dGroups.data,
-      [costume3ds.source.primaryUrl, costume3dGroups.source.primaryUrl]
+      [costume3ds.source.primaryUrl, costume3dGroups.source.primaryUrl, gameCharacters?.source.primaryUrl].filter((url): url is string => Boolean(url)),
+      gameCharacters?.data
     );
-    index.sourceProjects = [costume3ds.source.sourceProject, costume3dGroups.source.sourceProject];
+    index.sourceProjects = [costume3ds.source.sourceProject, costume3dGroups.source.sourceProject, gameCharacters?.source.sourceProject].filter((project): project is string => Boolean(project));
+    index.genderSourceUnavailable = !gameCharacters;
     if (!index.groupsByName.size || !index.rowsByGroupAndPart.size) {
       throw new Error("CN costume thumbnail master index was empty or invalid");
     }
@@ -848,7 +866,8 @@ function matchesCnCostumeGroup(costume: Record<string, unknown>, group: CnCostum
 
 /**
  * Replaces a Moe wrapper part name only when official CN master rows produce one
- * unambiguous thumbnail name across every matching character group.
+ * unambiguous thumbnail name across every matching character group.  It also
+ * accepts a gender only when all matched official groups resolve to one gender.
  */
 export function applyCnCostumeThumbnailMappings(costume: unknown, index: CnCostumeThumbnailIndex) {
   const raw = asRecord(costume);
@@ -876,9 +895,14 @@ export function applyCnCostumeThumbnailMappings(costume: unknown, index: CnCostu
       return variant;
     })];
   }));
+  const groupGenders = groups.map((group) => group.gender);
+  const officialGenders = [...new Set(groupGenders.filter((gender): gender is "female" | "male" => Boolean(gender)))];
+  const hasUnknownOfficialGender = groups.length > 0 && groupGenders.some((gender) => !gender);
+  const resolvedGender = !hasUnknownOfficialGender && officialGenders.length === 1 ? officialGenders[0] : undefined;
   return {
     ...raw,
     parts: mappedParts,
+    ...(resolvedGender ? { gender: resolvedGender } : {}),
     thumbnailAssetbundleMapping: {
       status: ambiguousParts.length ? "ambiguous" : replacements ? "matched" : "no-match",
       source: "CN costume3ds + costume3dGroups master association",
@@ -888,6 +912,17 @@ export function applyCnCostumeThumbnailMappings(costume: unknown, index: CnCostu
       matchedGroupIds: groups.map((group) => group.groupId),
       replacements,
       ambiguousParts: [...new Set(ambiguousParts)]
+    },
+    genderMapping: {
+      status: resolvedGender ? "matched" : officialGenders.length > 1 ? "ambiguous" : "no-match",
+      source: "CN costume3dGroups + gameCharacters master association",
+      sourceUrls: index.sourceUrls,
+      sourceProjects: [...new Set(index.sourceProjects)],
+      stale: Boolean(index.stale),
+      matchedGroupIds: groups.map((group) => group.groupId),
+      genders: officialGenders,
+      unresolvedGroupGender: hasUnknownOfficialGender,
+      sourceUnavailable: Boolean(index.genderSourceUnavailable)
     }
   };
 }
@@ -1451,7 +1486,7 @@ async function costumeCollection(region: RegionId): Promise<ResolvedCollectionRe
     const sourceMetadata = {
       ...costumeSource(result.source),
       sourceProject: region === "cn"
-        ? `${result.source.sourceProject} + CN costume3ds/costume3dGroups thumbnail association${mappingProjects.length ? ` (${mappingProjects.join("; ")})` : ""}${mappingUnavailable ? " (master mapping unavailable; retained original candidates)" : ""}`
+        ? `${result.source.sourceProject} + CN costume3ds/costume3dGroups/gameCharacters master association${mappingProjects.length ? ` (${mappingProjects.join("; ")})` : ""}${mappingUnavailable ? " (master mapping unavailable; retained original candidates)" : ""}`
         : "moe-sekai/Moesekai metadata + asset rules"
     };
     return {

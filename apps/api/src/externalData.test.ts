@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { config } from "./config.js";
-import { applyCnCostumeThumbnailMappings, buildCnCostumeThumbnailAssetbundleName, createCnCostumeThumbnailIndex, getExternalCollection, getOptionalMetadata, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData, parseLive2dModel3, resolveLive2dModelAssetRegion } from "./externalData.js";
+import { applyCnCostumeThumbnailMappings, buildCnCostumeThumbnailAssetbundleName, createCnCostumeThumbnailIndex, getExternalCollection, getOptionalMetadata, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData, parseLive2dModel3, resetCnCostumeThumbnailIndexForTests, resolveLive2dModelAssetRegion } from "./externalData.js";
 import { resetHarukiMasterClientStateForTests } from "./harukiMasterClient.js";
 
 describe("Haruki Live2D BuildModelData adapter", () => {
@@ -108,6 +108,7 @@ describe("Haruki comic collection", () => {
 
   afterEach(() => {
     Object.assign(config, { harukiMasterBaseUrl: originalBaseUrl });
+    resetCnCostumeThumbnailIndexForTests();
     resetHarukiMasterClientStateForTests();
     vi.unstubAllGlobals();
   });
@@ -148,6 +149,11 @@ describe("CN costume catalog", () => {
 describe("CN costume collection runtime association", () => {
   const originalBaseUrl = config.harukiMasterBaseUrl;
 
+  beforeEach(() => {
+    resetCnCostumeThumbnailIndexForTests();
+    resetHarukiMasterClientStateForTests();
+  });
+
   afterEach(() => {
     Object.assign(config, { harukiMasterBaseUrl: originalBaseUrl });
     resetHarukiMasterClientStateForTests();
@@ -162,7 +168,7 @@ describe("CN costume collection runtime association", () => {
       if (url.includes("/master/moe_costume.json")) return new Response(JSON.stringify({
         costumes: [{ costumeNumber: 251221, name: "冲锋苹果狗", characterIds: [11], designer: "代谢灰尘", publishedAt: 1764518400000, parts: { body: [{ colorId: 1, assetbundleName: "existing-candidate" }] } }]
       }));
-      if (url.endsWith("/v1/master/cn/files/costume3ds.json") || url.endsWith("/v1/master/cn/files/costume3dGroups.json")) return new Response("[]");
+      if (url.endsWith("/v1/master/cn/files/costume3ds.json") || url.endsWith("/v1/master/cn/files/costume3dGroups.json") || url.endsWith("/v1/master/cn/files/gameCharacters.json")) return new Response("[]");
       return new Response("unexpected", { status: 500 });
     }));
 
@@ -188,6 +194,9 @@ describe("CN costume collection runtime association", () => {
         { groupId: 251221001, name: "冲锋苹果狗", characterId: 11, designer: "代谢灰尘", publishedAt: 1764518400000 },
         { groupId: 251221002, name: "冲锋苹果狗", characterId: 12, designer: "代谢灰尘", publishedAt: 1764518400000 }
       ]));
+      if (url.endsWith("/v1/master/cn/files/gameCharacters.json")) return new Response(JSON.stringify([
+        { id: 11, gender: "male" }, { id: 12, gender: "male" }
+      ]));
       return new Response("unexpected", { status: 500 });
     }));
 
@@ -199,6 +208,31 @@ describe("CN costume collection runtime association", () => {
       sourceProjects: ["Team-Haruki master registry"],
       stale: false
     });
+    expect(raw.gender).toBe("male");
+    expect(raw.genderMapping).toMatchObject({ status: "matched", genders: ["male"] });
+  });
+
+  it("keeps Haruki thumbnail mapping when optional game character data is unavailable", async () => {
+    Object.assign(config, { harukiMasterBaseUrl: "https://haruki.test" });
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/v1/master/cn/current")) return new Response(JSON.stringify({ files: [] }));
+      if (url.includes("/master/moe_costume.json")) return new Response(JSON.stringify({
+        costumes: [{ costumeNumber: 260221, name: "喵色格调", gender: "female", characterIds: [11], parts: { body: [{ colorId: 1, assetbundleName: "wrapper" }] } }]
+      }));
+      if (url.endsWith("/v1/master/cn/files/costume3ds.json")) return new Response(JSON.stringify([
+        { id: 26022002, costume3dGroupId: 260221001, partType: "body", colorId: 1 }
+      ]));
+      if (url.endsWith("/v1/master/cn/files/costume3dGroups.json")) return new Response(JSON.stringify([
+        { groupId: 260221001, name: "喵色格调", characterId: 11 }
+      ]));
+      return new Response("unavailable", { status: 503 });
+    }));
+
+    const raw = (await getExternalCollection("cn", "costumes"))?.items[0]?.raw as Record<string, any>;
+    expect(raw.parts.body[0].assetbundleName).toBe("cos26022_body");
+    expect(raw.gender).toBe("female");
+    expect(raw.genderMapping).toMatchObject({ status: "no-match", sourceUnavailable: true });
   });
 });
 describe("CN costume thumbnail association", () => {
@@ -264,6 +298,71 @@ describe("CN costume thumbnail association", () => {
     const result = mapCostume(costume, groups, rows);
     expect(result.parts.body[0].assetbundleName).toBe(expected);
     expect(result.thumbnailAssetbundleMapping).toMatchObject({ status: "matched", replacements: 1 });
+  });
+
+  it("corrects a wrapper gender only from a matching official character group", () => {
+    const result = applyCnCostumeThumbnailMappings(
+      { costumeNumber: 260221, name: "喵色格调", gender: "female", characterIds: [11], parts: { body: [{ colorId: 1 }] } },
+      createCnCostumeThumbnailIndex(
+        [{ id: 26022002, costume3dGroupId: 260221001, partType: "body", colorId: 1 }],
+        [{ groupId: 260221001, name: "喵色格调", characterId: 11 }],
+        ["https://haruki.test/costume3ds.json", "https://haruki.test/costume3dGroups.json", "https://haruki.test/gameCharacters.json"],
+        [{ id: 11, gender: "male", figure: "mens", unit: "street" }]
+      )
+    ) as Record<string, any>;
+
+    expect(result.gender).toBe("male");
+    expect(result.genderMapping).toMatchObject({
+      status: "matched",
+      matchedGroupIds: [260221001],
+      genders: ["male"],
+      source: "CN costume3dGroups + gameCharacters master association"
+    });
+  });
+
+  it("retains the wrapper gender when the matching official groups are mixed", () => {
+    const result = applyCnCostumeThumbnailMappings(
+      { name: "共享服装", gender: "female", characterIds: [1, 11], parts: {} },
+      createCnCostumeThumbnailIndex(
+        [],
+        [{ groupId: 1, name: "共享服装", characterId: 1 }, { groupId: 2, name: "共享服装", characterId: 11 }],
+        ["https://haruki.test/costume3dGroups.json", "https://haruki.test/gameCharacters.json"],
+        [{ id: 1, gender: "female" }, { id: 11, gender: "male" }]
+      )
+    ) as Record<string, any>;
+
+    expect(result.gender).toBe("female");
+    expect(result.genderMapping).toMatchObject({ status: "ambiguous", genders: ["female", "male"] });
+  });
+
+  it("corrects a wrapper gender from a uniform official female group", () => {
+    const result = applyCnCostumeThumbnailMappings(
+      { name: "甜心天使", gender: "male", characterIds: [1], parts: {} },
+      createCnCostumeThumbnailIndex(
+        [],
+        [{ groupId: 260211001, name: "甜心天使", characterId: 1 }],
+        ["https://haruki.test/costume3dGroups.json", "https://haruki.test/gameCharacters.json"],
+        [{ id: 1, gender: "female" }]
+      )
+    ) as Record<string, any>;
+
+    expect(result.gender).toBe("female");
+    expect(result.genderMapping).toMatchObject({ status: "matched", genders: ["female"] });
+  });
+
+  it("retains the wrapper gender when any matching official group has no gender", () => {
+    const result = applyCnCostumeThumbnailMappings(
+      { name: "未完整资料", gender: "female", characterIds: [1, 11], parts: {} },
+      createCnCostumeThumbnailIndex(
+        [],
+        [{ groupId: 1, name: "未完整资料", characterId: 1 }, { groupId: 2, name: "未完整资料", characterId: 11 }],
+        ["https://haruki.test/costume3dGroups.json", "https://haruki.test/gameCharacters.json"],
+        [{ id: 1, gender: "female" }]
+      )
+    ) as Record<string, any>;
+
+    expect(result.gender).toBe("female");
+    expect(result.genderMapping).toMatchObject({ status: "no-match", genders: ["female"], unresolvedGroupGender: true });
   });
 
   it("keeps the existing candidate when same-name official groups resolve to different bundles", () => {
