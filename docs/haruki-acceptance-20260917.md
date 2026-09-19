@@ -179,6 +179,12 @@ Comic 40详情原图也已由主代理目视，证据 `comics-e5e8116-detail-40.
 | 五区九类图鉴累计样本 | 原2160项为2135显示/25缺；603ed80同ID18件CN列表及详情增量复验通过后，累计2153显示（2053 Haruki＋100旧Moe tips页面样本）、7缺；原90次详情样本保留 | **不是整批重扫或全库覆盖**；增量证据`cn-costume-mapping-603ed80/report.json`，JP新增40漫画另批实际显示证据见 `comics-e5e8116-browser-complete.json`，不冲销原tips样本。7项为CN future2、KR4、CN素材1 |
 | HTTP资产批次 | `.runtime/audit-prod-assets.log`共720主URL初检，673符合HTTP/MIME或文件头条件、47个卡池主URL404 | **不是页面显示验收**；未检查完整候选或解码。与真实页面通过不冲突，也不据此宣称47条资源全部缺失 |
 | Haruki补迁移 | 内容master优先、五区music meta与缓存隔离、Exact SUS来源校验、通用/奖励角色头像已部署；TW计算来源及EN六头像实际显示已有证据；JP新增40漫画已全部Haruki实际显示；3b6b6c5单个Live2D模型画布与两个表情动作实际显示 | 其余入口、外部回退、旧tips来源、排名churn/parking与Live2D完整目录/动作legacy依赖仍未收口；Exact源正确不等于解析语义正确 |
+
+## 2026-09-20 旧 JP tips 漫画来源复核：无可替换的 Haruki 图片
+
+对 Team-Haruki 官方 `master/tips.json` 做了完整核对：共91条记录，其中原有63条 legacy tips 没有 `assetbundleName`，Haruki 没有对应图片资源；另外28条记录是 `1041–1068`，分别明确对应 `comic_0041–comic_0068`，已由当前 API 走 Haruki 图源。不能把数字相同的 legacy tip 与 comic 编号拼接，否则会错配：例如 `comic_0047` 属于 tip 1047「特訓・超えるために」，不是 legacy tip 47「MVPとSUPER STARとは」。
+
+生产 API 已抽查 tip 2、47、119，均保留原数字 ID、标题和可加载的 Moe 镜像图片；网页列表及 tip 119 详情图片也已实际显示。证据为 `.runtime/asset-acceptance-20260917/jp-tips-haruki-audit.json`、`comics-live.png`、`comics-existing-haruki.png`、`jp-comics-p2-detail23.png`。因此这一项不做错误的 Haruki 替换，当前不需要代码提交或部署。
 | TW/KR/CN master区服核对 | 独立审查确认当前各服数据与各自Haruki registry对齐，没有本轮疑似串区或旧cache问题 | TW `6.0.0.51`：gacha61/cards1249；KR `6.0.1.22`：gacha63/cards1249；CN `6.0.0.58`：gacha63/cards1249。限已核对数据，不能外推全字段、全资产或完全Haruki |
 | EN WorldLink最新结果 | 3d29a53的Miku21/Len23公开overview为Haruki、各100条/六角色；3e9d23e再验 Miku21 详情 playerTrace1405/rankTrace1384 complete，玩家/档线折线图实际显示，队长图Haruki | 详情证据只覆盖 Miku21；churn/parking仍非Haruki完整迁移。Len列表/图片以第三次verified passed=true为准 |
 | TW Exact v3线上样本 | `exact-v3-48698e3/deck.json`真实TW1expert：961 notes、6 skills、Haruki SUS、missingFields空；旧缓存失效后source状态matched。页面A1579655分/9180PT，B1688202分/9480PT，主代理目视`tw-deck.png` | 4d06ca9方向误判被独立review拦下；0e3cc88修复tapFlags/方向1–6并提升v3缓存，24项测试已确认。该谱面真实计算通过，不外推所有类型和谱面 |
