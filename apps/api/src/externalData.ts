@@ -148,7 +148,7 @@ const metadataCollections: Record<string, string[]> = {
     "mysekaiFixtureMainGenres.json",
     "mysekaiFixtureSubGenres.json",
     "mysekaiBlueprints.json",
-    "mysekaiBlueprintMaterialCosts.json",
+    "mysekaiBlueprintMysekaiMaterialCosts.json",
     "mysekaiMaterials.json",
     "mysekaiFixtureTags.json",
     "mysekaiCharacterTalks.json",

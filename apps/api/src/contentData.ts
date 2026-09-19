@@ -964,9 +964,11 @@ export async function getMysekaiDetail(region: RegionId, kind: CatalogKind, item
   const raw = catalogSource(groups, kind).map(rawItem).find((item) => String(item.id) === itemId);
   if (!raw) return null;
   const item = normalizeMysekaiItem(region, kind, raw, groups);
-  const blueprints = array(groups.mysekaiBlueprints).map(rawItem).filter((entry) => kind === "fixtures" && String(entry.craftTargetId) === itemId);
+  const blueprints = kind === "blueprints"
+    ? [raw]
+    : array(groups.mysekaiBlueprints).map(rawItem).filter((entry) => kind === "fixtures" && String(entry.craftTargetId) === itemId);
   const blueprintIds = new Set(blueprints.map((entry) => String(entry.id)));
-  const costs = array(groups.mysekaiBlueprintMaterialCosts).map(rawItem).filter((entry) => blueprintIds.has(String(entry.mysekaiBlueprintId)));
+  const costs = array(groups.mysekaiBlueprintMysekaiMaterialCosts).map(rawItem).filter((entry) => blueprintIds.has(String(entry.mysekaiBlueprintId)));
   const materials = new Map(array(groups.mysekaiMaterials).map(rawItem).map((entry) => [String(entry.id), entry]));
   return {
     region,
@@ -977,7 +979,7 @@ export async function getMysekaiDetail(region: RegionId, kind: CatalogKind, item
       return { ...cost, material: material ? normalizeMysekaiItem(region, "materials", material, groups) : undefined };
     }),
     relatedFixtures: kind === "materials"
-      ? array(groups.mysekaiBlueprintMaterialCosts).map(rawItem).filter((cost) => String(cost.mysekaiMaterialId) === itemId)
+      ? array(groups.mysekaiBlueprintMysekaiMaterialCosts).map(rawItem).filter((cost) => String(cost.mysekaiMaterialId) === itemId)
       : [],
     sourceHealth: context.sourceHealth
   };
