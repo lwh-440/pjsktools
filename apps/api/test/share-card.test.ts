@@ -59,7 +59,7 @@ async function expectMetadataAndPng(type: "profile" | "event" | "score" | "card"
   expect(metadata.statusCode).toBe(200);
   const payload = metadata.json();
   expect(payload).toMatchObject({ type, id, region: "jp", mimeType: "image/png", width: 1200, height: 630 });
-  expect(payload.imageUrl).toBe(`/api/share/cards/${type}/${id}.png?region=jp`);
+  expect(payload.imageUrl).toBe(`/api/share/cards/${type}/${id}.png?region=jp&v=source-v2`);
   expect(payload.title).toBeTruthy();
   expect(payload.summary).toBeTruthy();
 

@@ -82,7 +82,7 @@ import { writeSecurityEvent } from "./securityEvents.js";
 import { currentPrivacyVersion, currentTermsVersion, isCurrentLegalAcceptance, legalDocumentUrls } from "./legal.js";
 import { loadPlayerDisplayBlocker, type PlayerDisplayBlocker } from "./playerDisplayControls.js";
 import { paginate, withPaginationFlags } from "./pagination.js";
-import { renderShareCardPng, shareCardMetadata, type ShareCardData } from "./shareCard.js";
+import { renderShareCard, shareCardCacheControl, shareCardMetadata, type ShareCardData } from "./shareCard.js";
 import { assertIfMatch, createWriteControls, setEntityTag, withEntityVersion } from "./writeControls.js";
 import {
   getContentStatus,
@@ -386,6 +386,10 @@ async function resolveShareCardData(
 ): Promise<ShareCardData | null> {
   if (!(["profile", "score", "event", "card", "song"] as string[]).includes(typeValue)) return null;
   const type = typeValue as ShareCardData["type"];
+  const sourceImageUrls = (primary: unknown, candidates: unknown) => [
+    primary,
+    ...(Array.isArray(candidates) ? candidates : [])
+  ].filter((value): value is string => typeof value === "string" && Boolean(value));
   if (type === "profile") {
     const profile = await profileResolver(region, id).catch(() => null);
     if (!profile || profile.userId !== id) return null;
@@ -410,12 +414,15 @@ async function resolveShareCardData(
       title: event.name,
       subtitle: event.storyOutline || event.eventType,
       detail: `${event.startAt} - ${event.endAt}`,
-      sourceImageUrl: assets.bannerUrl
+      sourceImageUrl: assets.bannerUrl,
+      sourceImageUrls: sourceImageUrls(assets.bannerUrl, assets.imageCandidates)
     };
   }
   if (type === "card") {
     const card = await getCardDetail(region, id).catch(() => null);
     if (!card) return null;
+    const cardSourceImageUrls = sourceImageUrls(card.assets?.afterTrainingUrl, card.assets?.afterTrainingImageCandidates);
+    cardSourceImageUrls.push(...sourceImageUrls(card.assets?.normalUrl, card.assets?.normalImageCandidates));
     return {
       type,
       id,
@@ -423,7 +430,8 @@ async function resolveShareCardData(
       title: card.title,
       subtitle: [card.character, card.attribute, `星级 ${card.rarity}`].filter(Boolean).join(" · "),
       detail: `卡牌 ID ${card.id}`,
-      sourceImageUrl: card.assets?.afterTrainingUrl || card.assets?.normalUrl
+      sourceImageUrl: cardSourceImageUrls[0],
+      sourceImageUrls: cardSourceImageUrls
     };
   }
   if (type === "song") {
@@ -436,7 +444,8 @@ async function resolveShareCardData(
       title: song.title,
       subtitle: song.unit || "Project Sekai 歌曲资料",
       detail: [song.durationSeconds ? `${song.durationSeconds} 秒` : undefined, `歌曲 ID ${song.id}`].filter(Boolean).join(" · "),
-      sourceImageUrl: song.assets?.jacketUrl
+      sourceImageUrl: song.assets?.jacketUrl,
+      sourceImageUrls: sourceImageUrls(song.assets?.jacketUrl, (song.assets as { imageCandidates?: unknown } | undefined)?.imageCandidates)
     };
   }
   const score = await store.getScoreById(id);
@@ -450,7 +459,8 @@ async function resolveShareCardData(
     title: song.title,
     subtitle: `${score.difficulty.toUpperCase()} · ${score.clearStatus.toUpperCase()} · ${score.score.toLocaleString("en-US")}`,
     detail: [score.targetScore == null ? undefined : `目标 ${score.targetScore.toLocaleString("en-US")}`, score.note].filter(Boolean).join(" · ") || `成绩记录 ${score.id}`,
-    sourceImageUrl: song.assets?.jacketUrl
+    sourceImageUrl: song.assets?.jacketUrl,
+    sourceImageUrls: sourceImageUrls(song.assets?.jacketUrl, (song.assets as { imageCandidates?: unknown } | undefined)?.imageCandidates)
   };
 }
 
@@ -3468,12 +3478,13 @@ export async function buildApp(options: {
     const region = query.region && isRegion(query.region) ? query.region : "jp";
     const data = await resolveShareCardData(type, id, region, options.shareCardProfileResolver);
     if (!data) return reply.notFound("Share card source not found");
-    const image = await renderShareCardPng(data);
+    const rendered = await renderShareCard(data);
+    const image = rendered.image;
     const etag = `"${createHash("sha256").update(image).digest("base64url")}"`;
     if (request.headers["if-none-match"] === etag) return reply.code(304).send();
     reply.header("content-type", "image/png");
     reply.header("content-length", image.length);
-    reply.header("cache-control", "public, max-age=3600, stale-while-revalidate=86400");
+    reply.header("cache-control", shareCardCacheControl(rendered));
     reply.header("etag", etag);
     reply.header("content-disposition", `inline; filename="pjsktools-${type}-${id}.png"`);
     return reply.send(image);
@@ -3489,7 +3500,7 @@ export async function buildApp(options: {
     const data = await resolveShareCardData(type, id, region, options.shareCardProfileResolver);
     if (!data) return reply.notFound("Share card source not found");
     reply.header("cache-control", "public, max-age=60, stale-while-revalidate=300");
-    return shareCardMetadata(data, `/api/share/cards/${encodeURIComponent(type)}/${encodeURIComponent(id)}.png?region=${region}`);
+    return shareCardMetadata(data, `/api/share/cards/${encodeURIComponent(type)}/${encodeURIComponent(id)}.png?region=${region}&v=source-v2`);
   });
 
   app.get("/openapi.json", async (_request, reply) => {

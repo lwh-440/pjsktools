@@ -9,6 +9,7 @@ export type ShareCardData = {
   detail?: string;
   accent?: string;
   sourceImageUrl?: string;
+  sourceImageUrls?: string[];
 };
 
 const typeLabels: Record<ShareCardData["type"], string> = {
@@ -129,29 +130,60 @@ function cardSvg(data: ShareCardData, cardOpacity = 1, opaqueBackground = true) 
     </svg>`);
 }
 
-export async function renderShareCardPng(data: ShareCardData, fetchImpl: typeof fetch = fetch) {
-  const sourceImage = await fetchSourceImage(data.sourceImageUrl, fetchImpl);
-  const base = sharp(cardSvg(data));
-  if (!sourceImage) return base.png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer();
+export type ShareCardRenderResult = {
+  image: Buffer;
+  sourceImageRequested: boolean;
+  sourceImageUsed: boolean;
+};
 
-  try {
-    const visual = await sharp(sourceImage)
-      .resize(1064, 482, { fit: "cover", position: "attention" })
-      .modulate({ brightness: 0.78, saturation: 0.85 })
-      .blur(0.8)
-      .png()
-      .toBuffer();
-    const overlay = await sharp(cardSvg(data, 0.72, false)).png().toBuffer();
-    return sharp({ create: { width: 1200, height: 630, channels: 4, background: "#f7fbfc" } })
-      .composite([
-        { input: visual, left: 68, top: 74 },
-        { input: overlay, left: 0, top: 0 }
-      ])
-      .png({ compressionLevel: 9, adaptiveFiltering: true })
-      .toBuffer();
-  } catch {
-    return base.png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer();
+function sourceImageCandidates(data: ShareCardData) {
+  return [...new Set([data.sourceImageUrl, ...(data.sourceImageUrls ?? [])].filter((value): value is string => Boolean(value)))];
+}
+
+export async function renderShareCard(data: ShareCardData, fetchImpl: typeof fetch = fetch): Promise<ShareCardRenderResult> {
+  const candidates = sourceImageCandidates(data);
+  const base = sharp(cardSvg(data));
+  for (const candidate of candidates) {
+    const sourceImage = await fetchSourceImage(candidate, fetchImpl);
+    if (!sourceImage) continue;
+    try {
+      const visual = await sharp(sourceImage)
+        .resize(1064, 482, { fit: "cover", position: "attention" })
+        .modulate({ brightness: 0.78, saturation: 0.85 })
+        .blur(0.8)
+        .png()
+        .toBuffer();
+      const overlay = await sharp(cardSvg(data, 0.72, false)).png().toBuffer();
+      return {
+        image: await sharp({ create: { width: 1200, height: 630, channels: 4, background: "#f7fbfc" } })
+          .composite([
+          { input: visual, left: 68, top: 74 },
+          { input: overlay, left: 0, top: 0 }
+          ])
+          .png({ compressionLevel: 9, adaptiveFiltering: true })
+          .toBuffer(),
+        sourceImageRequested: true,
+        sourceImageUsed: true
+      };
+    } catch {
+      // A fetched payload can still be corrupt or unsupported by Sharp; try the next real candidate.
+    }
   }
+  return {
+    image: await base.png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer(),
+    sourceImageRequested: candidates.length > 0,
+    sourceImageUsed: false
+  };
+}
+
+export async function renderShareCardPng(data: ShareCardData, fetchImpl: typeof fetch = fetch) {
+  return (await renderShareCard(data, fetchImpl)).image;
+}
+
+export function shareCardCacheControl(rendered: ShareCardRenderResult) {
+  return rendered.sourceImageRequested && !rendered.sourceImageUsed
+    ? "no-store"
+    : "public, max-age=3600, stale-while-revalidate=86400";
 }
 
 export function shareCardMetadata(data: ShareCardData, imageUrl: string) {
