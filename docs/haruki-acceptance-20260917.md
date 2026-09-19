@@ -1,12 +1,20 @@
 # Haruki 资产验收矩阵（更新至2026-09-20）
 
-## 2026-09-20 Android bfdbfdc已发布：模型实显通过，故事1背景503未通过
+## 2026-09-20 Android final c5de19d：公网包与故事1背景修复通过
+
+`c5de19d`已推送并同步服务器`101.35.21.48`。服务器与公网完整APK均为2797933字节、SHA256 `1f02e2a93bc69d6644d2541d5e3fb2fb9c185f350bbf63350f75cfa09125f498`；四文件源码SHA256为`c0a4b7acb9b6cb6d044c4843a609ad4a0d645eb1b337cc090381e3ac1ef3129f`，与提交一致，marker为完整`c5de19d` snapshot `android-c5de19d-final`。旧bfdbfdc包与故事503失败保留为历史，当前final包发布与来源校验通过。
+
+新包安装后，JP故事1原生背景`bg_a002201`实际显示，503消失；旧两张图是raw/proxy重复，现按一张正确背景计。证据为`.runtime/asset-acceptance-20260917/android-story1-background-fixed.png`，定向2/2、正式build/sign/review均通过。
+
+bfdbfdc WebView故事1另有完整时间线证据：自动推进到`ready 85/85`并恢复播放，截图`.runtime/asset-acceptance-20260917/android-bfdbfdc-story1-complete85.png`；此前暂停38、恢复42的证据仍保留。该结论覆盖故事运行时推进与暂停恢复样本，不等于每句语音亲听、全故事库或全部动作通过。
+
+## 2026-09-20 Android bfdbfdc历史包：模型实显通过，故事1背景503（已由c5de19d修复）
 
 `bfdbfdc`已提交并推送。修复包正式脚本构建完成，SHA256为`1666322272821962048e3e525b60ee248ede3e1fea9d5cbd87ff316530f92f66`，主代理在`emulator-5554`执行`install -r`成功。新版`clb01_21miku`舞台实际显示完整人物，包括头部、长发、身体和裙装，证据`.runtime/asset-acceptance-20260917/android-bfdbfdc-live2d-render.png`；该模型样本的运行地址缺失阻塞已由新包实显关闭。
 
 点击`s-common-angry01`后UI显示“正在播放Motion/s-common-angry01”，但尚未连续采样人物动作变化，不能据此记全部动作通过。bfdbfdc发布现已完成：服务器`101.35.21.48`的APK与公网完整下载均为2797933字节，SHA256均为`1666322272821962048e3e525b60ee248ede3e1fea9d5cbd87ff316530f92f66`。服务器Gradle源码SHA256为`c0a4b7acb9b6cb6d044c4843a609ad4a0d645eb1b337cc090381e3ac1ef3129f`，与提交一致，snapshot marker为`bfdbfdce30830774d305ca42b619672c5f016c76`；GitHub推送和服务器源码同步已分别确认。
 
-新版JP卡牌故事1原生播放区实测两张背景HTTP503，停在`1/85`、`SpecialEffect bg_a002201`，证据`.runtime/asset-acceptance-20260917/android-bfdbfdc-story1-background503.png`。实现代理正在定位，**该故事未通过，整个release验收仍未完成**；旧包故事通过不能覆盖这一新包失败。
+该段记录bfdbfdc历史：新版JP卡牌故事1原生播放区曾实测两张raw/proxy背景HTTP503，停在`1/85`、`SpecialEffect bg_a002201`，证据`.runtime/asset-acceptance-20260917/android-bfdbfdc-story1-background503.png`；后续c5de19d已修复，当前final包单一正确背景实际显示，见顶部。
 
 原包`f9e4aaf`的CN260221详情也已由主代理目视真实服装图、名称“暗色格调”、性别男性及适用角色11/12/13/16/23/26，证据`android-f9e4aaf-cn260221-gender.png`。关闭该Android gender条目样本待办，不外推全部服装元数据。
 
@@ -14,7 +22,7 @@
 
 已公开的`f9e4aaf`正式包由主代理实测EN `clb01_21miku`：纹理实际显示，详情统计动作为20、贴图为1，但Live2D舞台显示红字`WEB_RUNTIME_BASE_URL未配置`，证据`.runtime/asset-acceptance-20260917/android-f9e4aaf-live2d-runtime-missing.png`。构建漏配公网运行地址，**f9e4aaf未通过整个release验收**；纹理或动作数量不等于舞台运行通过。
 
-后续bfdbfdc修复包已安装且该模型完整人物实显，见顶部；新包发布与公网完整包校验已确认，故事1背景503尚未通过。f9e4aaf的JP Comic1及MySekai家具1816样本通过结论保持；旧包故事播放通过仅适用于原版本，不能覆盖新版故事验收或全部模型动作。
+后续bfdbfdc修复包已安装且该模型完整人物实显，见顶部；其故事1背景503已由c5de19d修复，当前final包背景通过。f9e4aaf的JP Comic1及MySekai家具1816样本通过结论保持；旧包故事播放通过仅适用于原版本，不能覆盖新版故事验收或全部模型动作。
 
 ## 2026-09-19 Android f9e4aaf实显增量：JP Comic1与家具1816
 
@@ -165,7 +173,7 @@ Comic 40详情原图也已由主代理目视，证据 `comics-e5e8116-detail-40.
 | 最新部署 | `093978d`已推送/部署healthy，resolve镐图HTTP200/9488B/x-asset-source Haruki、浏览器152px实图通过；d380d93缓存首次miss/再次hit证据保留；`78db345`已推送/部署healthy，4/4 tests/build/review通过，wall2正确成本、八工具列表及普通镐/电锯详情实图通过；`04b4b2f`已推送/部署healthy，CN card4分享1200×630实图与source-v2链接通过；`d51769b`已推送/部署、API healthy，MySekai JP家具/蓝图1816各四张Haruki图及三项成本通过；`da3e90a`已推送/部署且API healthy，260221 gender生产API为male/matched，Web详情male/Haruki128图与Android260221男性/服装图均通过；`e5e8116`本地/GitHub/服务器已同步，deploy-assets成功、API healthy，新增40漫画并保留63条tips，JP新增40图已全部Haruki实际显示；`3b6b6c5`已推送并部署，EN Live2D `clb01_21miku`画布及两个表情动作样本实际显示；`3e9d23e` EN179 Miku21详情接口与玩家/档线轨迹正式验收通过；`141a3d8` overall档线生产复验为Haruki overview；603ed80服装修复仍有效 | Live2D证据只覆盖单模型样本，不计Android或全库；详情证据只覆盖该公开角色；churn/parking、旧tips来源、服装Moe元数据来源仍未完成，260221 Android gender样本已通过 |
 | CI与定向测试 | 603ed80的CI35335803358成功；3d29a53三组44/44及CI35332875697、其他前序成功记录保留 | CI通过不替代真实分支验收，CN服装与Miku/Len范围分别见顶部 |
 | 窄屏及来源标签修复 | `1606cc8`的舞台`static → relative`/`top: auto`与真实URL来源标签已部署；正式Android重新加载后教室、一歌、对白可见 | `android-1606cc8-stage.png`、`android-1606cc8-resumed-stage.png`主代理已目视；后者60步一歌与遥均非T姿 |
-| Android版本 | 修复包`bfdbfdc`已推送并安装，hash `1666322272821962048e3e525b60ee248ede3e1fea9d5cbd87ff316530f92f66`，clb01_21miku完整人物实显；新包已公开发布，服务器/公网完整包2797933B同hash，服务器Gradle源码与GitHub提交一致 | 旧公开f9e4aaf的运行地址缺失保留历史；该版Comic1、家具1816主图与CN260221 gender样本通过。bfdbfdc动作仅有点击后播放状态，连续动作变化与其他MySekai类别待验；新版故事1背景503未通过 |
+| Android版本 | `c5de19d` final已推送、发布并同步服务器/公网，APK2797933B SHA256 `1f02e2a93bc69d6644d2541d5e3fb2fb9c185f350bbf63350f75cfa09125f498`；源码SHA256与提交一致；故事1背景修复实显通过 | 旧f9e4aaf运行地址缺失、bfdbfdc背景503保留历史；当前final故事1背景通过。Comic1、家具1816主图、CN260221 gender样本与完整人物样本保留；动作连续变化及其他MySekai类别待验 |
 | 分享已通过样本 | CN song1的1200×630初音曲绘背景已目视（`share-song-cn1-browser.json/png`）；CN card4已在04b4b2f显示1200×630真实卡面，image/保存href均source-v2（`share-card-cn4-04b4b2f-browser.json/png`）；7b68d48生日卡1464真实卡面1200×630已目视；Android活动217于2e89c90重新生成后封面已目视 | `share-7b68d48/card1464.png`、`android-event217-share-2e89c90.png`；关闭这两个旧缺图待办，其他分享类型另验 |
 | Android故事播放/生命周期 | 正式APK加载后篇完整到115/115；暂停42步两次dump不变；真实Home→recent返回35→39继续，手动暂停60步后同路返回仍60步且显示播放；返回目录后无App音频player，退出释放通过 | 排除`am start`重开Activity那次；AAudio启动证明音频流建立，不能用保留流推定后台静音。任务模拟器5558已`emu kill`；本章通过不能覆盖全部章节/逐帧资源 |
 | 五区九类图鉴累计样本 | 原2160项为2135显示/25缺；603ed80同ID18件CN列表及详情增量复验通过后，累计2153显示（2053 Haruki＋100旧Moe tips页面样本）、7缺；原90次详情样本保留 | **不是整批重扫或全库覆盖**；增量证据`cn-costume-mapping-603ed80/report.json`，JP新增40漫画另批实际显示证据见 `comics-e5e8116-browser-complete.json`，不冲销原tips样本。7项为CN future2、KR4、CN素材1 |
@@ -180,7 +188,7 @@ Comic 40详情原图也已由主代理目视，证据 `comics-e5e8116-detail-40.
 
 ### 当前简明待办（按优先顺序）
 
-1. Android bfdbfdc已安装且clb01_21miku完整人物实显，APK/服务器源码同步及公网完整包验证已完成；故事1两背景HTTP503、1/85 bg_a002201为当前失败待定位，动作连续变化与其他MySekai类别仍待验。f9e4aaf的Comic1、家具1816主图及CN260221 gender样本通过保留，1816成本只文本；旧包故事通过不覆盖新版，不用播放状态文字替代动作变化证据。
+1. Android c5de19d final已发布并通过服务器/公网hash、源码和故事1背景实显校验；bfdbfdc故事1 WebView时间线85/85、暂停/恢复样本保留，但不等于每句语音亲听。动作连续变化、其他MySekai类别、全故事库与新版全release仍待验。Comic1、家具1816主图及CN260221 gender样本通过保留，1816成本只文本。
 2. 排名churn/parking仍未完成Haruki迁移：churn需完整playerTrace派生并注明口径，parking无已证公开同构接口。已验收的列表、Miku21详情与overall tier-series不重复列入。
 3. 来源缺口仍有原63条tips、CN服装Moe wrapper（无等价Haruki表，9条历史缺失、15条歧义）、Live2D目录/动作bridge，以及下文来源表中已记录的公告、note skin、识别指纹和外部回退。CN future2、KR称号4、CN素材1仍有上游缺图证据；不以其他内容替换凑完成率。
 4. 实显缺口保留特殊故事`specialStories/69/74`视觉与`specialStories/2/4`旧模型/背景；公开组卡推荐五图与Web卡牌筛选26头像已通过，Android/奖励头像不外推；profile/score分享及个人数据入口缺真实可用数据。JP兑换3112/任务1536均无工具蓝图奖励，维持代码+tests、无生产UI样本，不造样本。其他已通过的MySekai、漫画、分享与预测样本以当前表为准；Exact v3结论限已测谱面，不外推全库。
@@ -252,7 +260,7 @@ tier-series最新点可由overview的topRankings＋borderLines替代；141a3d8�
 | 范围 | 最新可证明状态 | 剩余问题 / 证据 |
 | --- | --- | --- |
 | Web/API版本 | 最新`48698e3`已推送并归档部署，snapshot marker一致、API healthy；包含parser v3及首句语音修复，旧截图按版本保留 | CI35307671673已completed/success、全部checks通过。正式APK仍为已验证78fda34构建 |
-| Android公开下载 | 当前正式公网包基于`bfdbfdc`，**2797933字节**；完整下载与服务器SHA256均为**`1666322272821962048e3e525b60ee248ede3e1fea9d5cbd87ff316530f92f66`** | bfdbfdc发布及源码校验证据见顶部；旧`android-f9e4aaf-public.apk` hash `beb690b442d34e4bfcbf1978ddda9aa8a1e4954bb029c62a5061906c6c15b937`、旧`android-public-78fda34.apk` hash `074582213b1782a537e7c925bf9f2bea12f1021b92709d87f70703b2060ffcf0`、0bf6947 hash `27cac4c84113d9be4dd63bb6b6004138043dfe8b14c2461dae36b1c3fa81518e`保留历史。新包已安装，Comic1与家具1816主图已实显；其余内容仍按具体入口验收 |
+| Android公开下载 | 当前正式公网包基于`c5de19d`，**2797933字节**；完整下载与服务器SHA256均为**`1f02e2a93bc69d6644d2541d5e3fb2fb9c185f350bbf63350f75cfa09125f498`** | c5de19d发布及源码校验证据见顶部；旧bfdbfdc hash `1666322272821962048e3e525b60ee248ede3e1fea9d5cbd87ff316530f92f66`、旧`android-f9e4aaf-public.apk` hash `beb690b442d34e4bfcbf1978ddda9aa8a1e4954bb029c62a5061906c6c15b937`、旧`android-public-78fda34.apk` hash `074582213b1782a537e7c925bf9f2bea12f1021b92709d87f70703b2060ffcf0`、0bf6947 hash `27cac4c84113d9be4dd63bb6b6004138043dfe8b14c2461dae36b1c3fa81518e`保留历史。新包已安装，Comic1与家具1816主图已实显；其余内容仍按具体入口验收 |
 | Web卡牌剧情 cardEpisodes/1/1 | `48698e3`新线上85/85完成；pause12→12、resume14、手动pause14→14且音频start数不变，离页停止循环BGM。78fda34及前序模型/motion样本保留 | 最新`story-postdeploy-48698e3-card-full/report.json` requestfailed=[]，console有匿名会话401，非故事资源失败且不能说零console error。**这是该章播放/交互验收，不是逐帧或全库资源扫描** |
 | Web活动剧情 eventStories/1/1000001 | 稳定加载后，一歌与咲希均可见；一歌model3/texture/moc3/physics及motion均200，没有requestfailed | 约45秒完整加载后 `story-postdeploy-1ae255e-event-stable/action-059.png`。ScenarioAction.index稀疏，不应与modelQueue数组下标混同；此样本没有模型队列缺口。不代表整章或所有事件通过 |
 | Web团体剧情 unitStories/idol/30000 | 场景/对白由15推进至41/226，BGM与多句语音解码播放，记录无失败媒体请求 | `plan-content-audit/story-other-types-1ae255e/`。只通过本段样本，不覆盖完整226步或所有团体剧情 |
