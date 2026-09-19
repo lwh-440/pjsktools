@@ -340,7 +340,9 @@ private fun PlaybackPanel(baseUrl: String, playback: PlaybackState) {
         playback.diagnostics.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
         playback.unavailableReason?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         playback.warnings.take(12).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-        playback.mediaImages.take(3).forEachIndexed { index, url -> RemoteContentImage(baseUrl, listOf(url), "场景图 ${index + 1}", height = 220) }
+        playback.mediaImages.take(3).forEachIndexed { index, url ->
+            RemoteContentImage(baseUrl, listOf(url), "场景图 ${index + 1}", height = 220, useAssetResolver = false)
+        }
         if (playback.actions.isNotEmpty()) {
             val current = playback.actions[actionIndex.coerceIn(0, playback.actions.lastIndex)]
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -81,7 +81,8 @@ internal fun RemoteContentImage(
     candidates: List<String>,
     description: String,
     modifier: Modifier = Modifier,
-    height: Int = 170
+    height: Int = 170,
+    useAssetResolver: Boolean = true
 ) {
     var retryGeneration by remember(baseUrl, candidates) { mutableIntStateOf(0) }
     val state by produceState<ImageState>(ImageState.Loading, baseUrl, candidates, retryGeneration) {
@@ -97,7 +98,7 @@ internal fun RemoteContentImage(
             value = ImageState.Failed("当前 Android 原生解码器不支持 SVG，后端未提供 PNG 候选")
             return@produceState
         }
-        val url = resolveAssetUrl(baseUrl, supportedCandidates)
+        val url = contentImageRequestUrl(baseUrl, supportedCandidates, useAssetResolver)
         if (url == null) {
             value = ImageState.Failed("后端地址或图片候选无效")
             return@produceState
@@ -336,6 +337,17 @@ internal fun WebParityRuntime(
             }) { Text("重新加载交互运行时") }
         }
         Text("允许运行时来源：${runtime.origin}", style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+internal fun contentImageRequestUrl(baseUrl: String, candidates: List<String>, useAssetResolver: Boolean): String? {
+    if (useAssetResolver) return resolveAssetUrl(baseUrl, candidates)
+    val backend = baseUrl.toHttpUrlOrNull() ?: return null
+    return candidates.firstNotNullOfOrNull { candidate ->
+        resolveUrl(baseUrl, candidate)?.toHttpUrlOrNull()?.takeIf { resolved ->
+            resolved.scheme == backend.scheme && resolved.host == backend.host && resolved.port == backend.port &&
+                resolved.encodedPath == "/api/assets/proxy"
+        }?.toString()
     }
 }
 

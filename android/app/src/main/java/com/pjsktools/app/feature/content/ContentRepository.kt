@@ -326,7 +326,7 @@ private fun playback(body: JSONObject): PlaybackState {
     }).distinctBy { it.url }
     val snippets = body.array("snippets").objects().mapNotNull { it.text("text") ?: it.text("serif") ?: it.text("message") }
     val images = mediaAssets.filter { it.text("kind") in setOf("background", "card-still", "image", "scenario-effect") }
-        .flatMap { listOfNotNull(it.text("proxiedUrl"), it.text("url")) }
+        .mapNotNull { it.text("proxiedUrl") }
     val actions = body.array("actions").objects().mapIndexed { index, action ->
         ScenarioAction(action.int("index") ?: index, action.text("type") ?: "unknown",
             action.text("windowDisplayName") ?: action.text("speaker"), action.text("body") ?: action.text("text"),
