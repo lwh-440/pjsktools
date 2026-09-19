@@ -1527,6 +1527,7 @@ export async function buildApp(options: {
       reply.header("content-length", String(asset.size));
       reply.header("cache-control", "public, max-age=31536000, immutable");
       reply.header("x-asset-cache", asset.cacheHit ? "hit" : "miss");
+      reply.header("x-asset-source", new URL(asset.url).hostname);
       if (asset.etag) reply.header("etag", asset.etag);
       if (asset.lastModified) reply.header("last-modified", asset.lastModified);
       return reply.send(asset.body);

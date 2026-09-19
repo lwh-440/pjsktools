@@ -36,39 +36,35 @@ export class AssetResolver {
     const candidates = [...new Set(urls)].slice(0, 6);
     if (!candidates.length) throw new AssetResolveError(400, "No asset candidates supplied");
 
-    const controllers = candidates.map(() => new AbortController());
-    const overall = setTimeout(() => controllers.forEach((controller) => controller.abort()), overallTimeoutMs);
+    const overallController = new AbortController();
+    const overall = setTimeout(() => overallController.abort(), overallTimeoutMs);
     try {
-      return await new Promise<ResolvedAsset>((resolve, reject) => {
-        let failures = 0;
-        let settled = false;
-        const fail = (error: unknown) => {
-          failures += 1;
-          if (!settled && failures === candidates.length) {
-            settled = true;
-            reject(error);
+      let lastError: unknown = new AssetResolveError(503, "Asset candidates unavailable");
+      for (const url of candidates) {
+        if (overallController.signal.aborted) {
+          throw new AssetResolveError(503, "Asset resolution timed out");
+        }
+        try {
+          const asset = await this.fetchCached(url, candidateTimeoutMs, overallController.signal);
+          if (overallController.signal.aborted) {
+            throw new AssetResolveError(503, "Asset resolution timed out");
           }
-        };
-        candidates.forEach((url, index) => {
-          setTimeout(() => {
-            if (settled) return;
-            this.fetchCached(url, candidateTimeoutMs, controllers[index].signal).then((asset) => {
-              if (settled) return;
-              settled = true;
-              controllers.forEach((controller, controllerIndex) => {
-                if (controllerIndex !== index) controller.abort();
-              });
-              resolve(asset);
-            }).catch(fail);
-          }, index * 400);
-        });
-      });
+          return asset;
+        } catch (error) {
+          if (overallController.signal.aborted) {
+            throw new AssetResolveError(503, "Asset resolution timed out");
+          }
+          lastError = error;
+        }
+      }
+      throw lastError;
     } finally {
       clearTimeout(overall);
     }
   }
 
   private async fetchCached(url: string, timeoutMs: number, externalSignal: AbortSignal): Promise<ResolvedAsset> {
+    if (externalSignal.aborted) throw new AssetResolveError(503, "Asset resolution timed out");
     const negative = this.negative.get(url);
     if (negative && negative.expiresAt > Date.now()) throw new AssetResolveError(negative.status, "Asset candidate is negatively cached");
     if (negative) this.negative.delete(url);
@@ -84,6 +80,7 @@ export class AssetResolver {
   }
 
   private async fetchAndStore(url: string, timeoutMs: number, externalSignal: AbortSignal): Promise<ResolvedAsset> {
+    if (externalSignal.aborted) throw new AssetResolveError(503, "Asset resolution timed out");
     const controller = new AbortController();
     const abort = () => controller.abort();
     externalSignal.addEventListener("abort", abort, { once: true });

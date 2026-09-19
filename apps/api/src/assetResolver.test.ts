@@ -21,7 +21,21 @@ function image(body: string, status = 200) {
 }
 
 describe("AssetResolver", () => {
-  it("races candidates and returns the first successful image", async () => {
+  it("uses a slow first candidate without starting the fallback", async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request) => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return image("haruki");
+    });
+    const resolver = new AssetResolver(await cacheDirectory(), 1024 * 1024, fetcher as typeof fetch);
+
+    const result = await resolver.resolve(["https://haruki.test/first", "https://legacy.test/second"], 100, 500);
+
+    expect(result.body.toString()).toBe("haruki");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith("https://haruki.test/first", expect.anything());
+  });
+
+  it("uses the next candidate after a missing first image", async () => {
     const fetcher = vi.fn(async (url: string | URL | Request) => {
       const value = String(url);
       if (value.endsWith("first")) return new Response("missing", { status: 404 });
@@ -33,6 +47,59 @@ describe("AssetResolver", () => {
 
     expect(result.body.toString()).toBe("winner");
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the next candidate after a non-image response", async () => {
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith("first")) return new Response("not an image", { status: 200, headers: { "content-type": "text/plain" } });
+      return image("winner");
+    });
+    const resolver = new AssetResolver(await cacheDirectory(), 1024 * 1024, fetcher as typeof fetch);
+
+    const result = await resolver.resolve(["https://example.test/first", "https://example.test/second"], 1_000, 2_000);
+
+    expect(result.body.toString()).toBe("winner");
+    expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual(["https://example.test/first", "https://example.test/second"]);
+  });
+
+  it("uses the next candidate after the first candidate times out", async () => {
+    const fetcher = vi.fn((url: string | URL | Request, options?: RequestInit) => {
+      if (String(url).endsWith("first")) {
+        return new Promise<Response>((_, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+      }
+      return Promise.resolve(image("winner"));
+    });
+    const resolver = new AssetResolver(await cacheDirectory(), 1024 * 1024, fetcher as typeof fetch);
+
+    const result = await resolver.resolve(["https://example.test/first", "https://example.test/second"], 20, 500);
+
+    expect(result.body.toString()).toBe("winner");
+    expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual(["https://example.test/first", "https://example.test/second"]);
+  });
+
+  it("does not begin a fallback after the overall deadline", async () => {
+    const fetcher = vi.fn((_url: string | URL | Request, options?: RequestInit) => new Promise<Response>((_, reject) => {
+      options?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    }));
+    const resolver = new AssetResolver(await cacheDirectory(), 1024 * 1024, fetcher as typeof fetch);
+
+    await expect(resolver.resolve(["https://example.test/first", "https://example.test/second"], 500, 20)).rejects.toThrow("Asset resolution timed out");
+
+    expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual(["https://example.test/first"]);
+  });
+
+  it("rejects a late primary response after the overall deadline", async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request) => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return image("late");
+    });
+    const resolver = new AssetResolver(await cacheDirectory(), 1024 * 1024, fetcher as typeof fetch);
+
+    await expect(resolver.resolve(["https://example.test/first", "https://example.test/second"], 500, 20)).rejects.toThrow("Asset resolution timed out");
+
+    expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual(["https://example.test/first"]);
   });
 
   it("deduplicates concurrent requests and serves later requests from disk", async () => {
