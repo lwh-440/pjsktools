@@ -10,9 +10,11 @@
 | 工具列表 | 八个工具名称正确，八张图均Haruki、152×152 | `mysekai-78db345-tools-list.json/png` |
 | tool100001详情 | 普通镐主图与wood×5、stone×3共三图均Haruki、152×152 | `mysekai-78db345-tool100001-browser.json/png` |
 | tool100010详情 | 电锯主图与铁×5、马达×5、电池×5共四图均Haruki、152×152，主代理已目视；取代此前两图loading的未完成状态 | `mysekai-78db345-tool100010-browser.json/png` |
-| floor3详情 | 三图均实际显示152×152，成本wood×30、linen×3正确；材料图为Haruki，但主图currentSrc为`https://storage.exmeaning.com/sekai-jp-assets/mysekai/thumbnail/surface_appearance/mis0001/tex_mis0001_floor_appearance_1.png` | `mysekai-78db345-floor3-browser.json/png`；仅显示通过，主图迁移未通过，原因由实现代理核实中 |
+| floor3详情 | 三图均实际显示152×152，成本wood×30、linen×3正确；材料图为Haruki，但主图currentSrc为`https://storage.exmeaning.com/sekai-jp-assets/mysekai/thumbnail/surface_appearance/mis0001/tex_mis0001_floor_appearance_1.png` | `mysekai-78db345-floor3-browser.json/png`；仅显示通过，主图迁移未通过；后续证实Haruki路径200，会话回退缓存与刷新复验阻塞见下文 |
 
-兑换/任务奖励关联虽已在代码中修正，本轮UI尚未验证；floor3显示通过但主图回退旧源，仍待定位，不计Haruki迁移通过。Android本轮新增入口仍待验，不以这些Web样本外推。
+兑换/任务奖励关联虽已在代码中修正，本轮UI尚未验证；floor3显示通过但主图回退旧源，Haruki路径已确认可取、刷新后实显仍待验，不计Haruki迁移通过。Android本轮新增入口仍待验，不以这些Web样本外推。
+
+floor3后续定位：正确Haruki URL为`https://sekai-assets.haruki.seiunx.com/jp-assets/ondemand/mysekai/thumbnail/surface_appearance/mis0001/tex_mis0001_floor_appearance_1.png`，实现代理连续三次GET均200、PNG、9772字节，路径并未缺失。Web `ArtImage`在一次`onerror`回退成功后，由会话内`successfulImageSources`记住旧fallback。主代理刷新原tab3复验遇到`ERR_CONNECTION_CLOSED`，新开生产首页又遇到60秒工具超时及kernel reset，因此尚未取得刷新后Haruki主图实际显示证据，不能记为迁移完成。
 
 ## 2026-09-19 CN card4分享：04b4b2f已部署并实际显示卡面
 
@@ -136,7 +138,7 @@ Comic 40详情原图也已由主代理目视，证据 `comics-e5e8116-detail-40.
 
 1. 保留overall tier-series的141a3d8 Haruki生产结论；churn须完整trace派生并注明口径，parking无已证公开同构接口。角色筛选/identityMismatch旧blocker及 Miku21 player/rank 轨迹已验收，不重复列为未完成。
 2. CN18件服装图片603ed80已关闭待办；保留未发布CN2、KR4称号、CN素材1缺失。JP新增40张漫画本轮全部Haruki实际显示，关闭该批页面待办；原63条tips及其旧源迁移待办保留，两者内容不同。服装Moe元数据来源仍待收口；男款260221 gender修复da3e90a已部署、生产API为male/matched，Web260221详情通过、Android待验，260211为female/no-match保留wrapper。累计2160项统计为同ID增量，非整批重扫，新增漫画不冲销原tips样本。
-3. 继续特殊故事`specialStories/69/74`视觉、`specialStories/2/4`旧模型/背景；筛选角色图、推荐卡图独立补验。MySekai JP家具/蓝图1816主图与三制作素材已通过，78db345类型关联修复已部署，wall2正确成本/八工具列表/普通镐与电锯详情通过；兑换与任务奖励尚未本轮UI验收；floor3三图显示通过、主图旧源回退导致Haruki迁移未通过，待定位；CN song1与04b4b2f CN card4分享实图已通过，profile与score分享仍缺真实可用数据。Android本轮新增入口仍待验。首句重复语音、Android后篇115步、退出释放及活动217分享已有后续通过证据，不重复列为未验。
+3. 继续特殊故事`specialStories/69/74`视觉、`specialStories/2/4`旧模型/背景；筛选角色图、推荐卡图独立补验。MySekai JP家具/蓝图1816主图与三制作素材已通过，78db345类型关联修复已部署，wall2正确成本/八工具列表/普通镐与电锯详情通过；兑换与任务奖励尚未本轮UI验收；floor3三图显示通过、Haruki路径已证200，但会话曾缓存旧源回退；刷新复验因连接/工具错误未完成，Haruki主图实显仍待验；CN song1与04b4b2f CN card4分享实图已通过，profile与score分享仍缺真实可用数据。Android本轮新增入口仍待验。首句重复语音、Android后篇115步、退出释放及活动217分享已有后续通过证据，不重复列为未验。
 4. 预测窗口a946971已验收、CI35325713809全部success，不再重复6.92h旧待办。Exact v3保留已证明的测试/线上样本范围，其他谱面语义不得泛化；真实登录/个人数据仍缺测试会话。
 
 ### 窄屏舞台修复证据（1606cc8部署前）
