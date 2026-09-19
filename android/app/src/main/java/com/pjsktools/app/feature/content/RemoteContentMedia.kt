@@ -3,6 +3,7 @@ import com.pjsktools.app.feature.display.P3Button
 import com.pjsktools.app.feature.display.P3OutlinedButton
 import com.pjsktools.app.feature.display.P3OutlinedTextField
 import com.pjsktools.app.feature.display.P3TextButton
+import com.pjsktools.core.network.resolveAssetUrl
 
 import android.graphics.BitmapFactory
 import android.content.Context
@@ -84,25 +85,32 @@ internal fun RemoteContentImage(
 ) {
     var retryGeneration by remember(baseUrl, candidates) { mutableIntStateOf(0) }
     val state by produceState<ImageState>(ImageState.Loading, baseUrl, candidates, retryGeneration) {
-        var reason = "暂无图片资源"
         value = ImageState.Loading
-        for (candidate in candidates.distinct()) {
-            if (candidate.substringBefore('?').endsWith(".svg", true)) continue
-            val url = resolveUrl(baseUrl, candidate)
-            if (url == null) { reason = "图片地址无效"; continue }
-            val result = try {
-                val bytes = downloadImage(url)
-                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("图片解码失败")
-                Result.success(ImageState.Ready(bitmap.asImageBitmap()))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Throwable) {
-                Result.failure(failure)
-            }
-            result.getOrNull()?.let { value = it; return@produceState }
-            reason = result.exceptionOrNull()?.message ?: reason
+        if (candidates.isEmpty()) {
+            value = ImageState.Failed("暂无图片资源")
+            return@produceState
         }
-        value = ImageState.Failed(reason)
+        val supportedCandidates = candidates.distinct().filterNot {
+            it.substringBefore('?').endsWith(".svg", true)
+        }
+        if (supportedCandidates.isEmpty()) {
+            value = ImageState.Failed("当前 Android 原生解码器不支持 SVG，后端未提供 PNG 候选")
+            return@produceState
+        }
+        val url = resolveAssetUrl(baseUrl, supportedCandidates)
+        if (url == null) {
+            value = ImageState.Failed("后端地址或图片候选无效")
+            return@produceState
+        }
+        value = try {
+            val bytes = downloadImage(url)
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("图片解码失败")
+            ImageState.Ready(bitmap.asImageBitmap())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            ImageState.Failed(failure.message ?: "图片加载失败")
+        }
     }
     val compactFailure = height <= 96
     Box(

@@ -3,6 +3,7 @@ import com.pjsktools.app.feature.display.P3Button
 import com.pjsktools.app.feature.display.P3OutlinedButton
 import com.pjsktools.app.feature.display.P3OutlinedTextField
 import com.pjsktools.app.feature.display.P3TextButton
+import com.pjsktools.core.network.resolveAssetUrl
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -140,40 +141,32 @@ internal fun catalogListContentScale(type: CatalogType): ContentScale = when (ty
 private suspend fun loadFirstImage(baseUrl: String, candidates: List<String>): RemoteImageState =
     withContext(Dispatchers.IO) {
         if (candidates.isEmpty()) return@withContext RemoteImageState.Failed("暂无图片资源")
-        val root = baseUrl.trimEnd('/').toHttpUrlOrNull()
-            ?: return@withContext RemoteImageState.Failed("后端地址无效")
-        var lastReason = "所有图片候选均不可用"
-        for (candidate in candidates.distinct()) {
-            if (candidate.substringBefore('?').endsWith(".svg", ignoreCase = true)) {
-                lastReason = "当前 Android 原生解码器不支持 SVG，正在尝试 PNG 候选"
-                continue
-            }
-            val resolved = candidate.toHttpUrlOrNull() ?: root.resolve(candidate)
-            if (resolved == null) {
-                lastReason = "图片地址无效"
-                continue
-            }
-            catalogBitmapCache.get(resolved.toString())?.let {
-                return@withContext RemoteImageState.Ready(it.asImageBitmap())
-            }
-            val result = runCatching {
-                val bytes = downloadBoundedImage(Request.Builder().url(resolved).get().build())
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) error("图片格式不受支持")
-                var sample = 1
-                while (bounds.outWidth / sample > maxDecodedDimension || bounds.outHeight / sample > maxDecodedDimension) sample *= 2
-                val bitmap = BitmapFactory.decodeByteArray(
-                    bytes, 0, bytes.size,
-                    BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888 }
-                ) ?: error("图片解码失败")
-                catalogBitmapCache.put(resolved.toString(), bitmap)
-                RemoteImageState.Ready(bitmap.asImageBitmap())
-            }
-            result.getOrNull()?.let { return@withContext it }
-            lastReason = result.exceptionOrNull()?.message ?: lastReason
+        val supportedCandidates = candidates.distinct().filterNot {
+            it.substringBefore('?').endsWith(".svg", ignoreCase = true)
         }
-        RemoteImageState.Failed("图片加载失败：$lastReason")
+        if (supportedCandidates.isEmpty()) {
+            return@withContext RemoteImageState.Failed("当前 Android 原生解码器不支持 SVG，后端未提供 PNG 候选")
+        }
+        val resolved = resolveAssetUrl(baseUrl, supportedCandidates)?.toHttpUrlOrNull()
+            ?: return@withContext RemoteImageState.Failed("后端地址或图片候选无效")
+        catalogBitmapCache.get(resolved.toString())?.let {
+            return@withContext RemoteImageState.Ready(it.asImageBitmap())
+        }
+        val result: Result<RemoteImageState> = runCatching {
+            val bytes = downloadBoundedImage(Request.Builder().url(resolved).get().build())
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) error("图片格式不受支持")
+            var sample = 1
+            while (bounds.outWidth / sample > maxDecodedDimension || bounds.outHeight / sample > maxDecodedDimension) sample *= 2
+            val bitmap = BitmapFactory.decodeByteArray(
+                bytes, 0, bytes.size,
+                BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888 }
+            ) ?: error("图片解码失败")
+            catalogBitmapCache.put(resolved.toString(), bitmap)
+            RemoteImageState.Ready(bitmap.asImageBitmap())
+        }
+        result.getOrElse { RemoteImageState.Failed("图片加载失败：${it.message ?: "未知错误"}") }
     }
 
 private suspend fun downloadBoundedImage(request: Request): ByteArray = suspendCancellableCoroutine { continuation ->

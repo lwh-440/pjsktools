@@ -37,7 +37,11 @@ internal fun proxyUrl(baseUrl: String, value: String?): String? {
 }
 private fun proxyUrls(baseUrl: String, values: List<String?>): List<String> = values.mapNotNull { proxyUrl(baseUrl, it) }.distinct()
 
-internal fun resolveAssetUrl(baseUrl: String, values: List<String?>): String? {
+/**
+ * Routes image candidates through the API resolver so clients never fetch a third-party asset
+ * directly. Candidate order is preserved in the resolver request.
+ */
+fun resolveAssetUrl(baseUrl: String, values: List<String?>): String? {
     val backend = baseUrl.toHttpUrlOrNull() ?: return null
     val upstream = values.mapNotNull { value ->
         val normalized = value?.trim()?.takeIf(String::isNotEmpty) ?: return@mapNotNull null

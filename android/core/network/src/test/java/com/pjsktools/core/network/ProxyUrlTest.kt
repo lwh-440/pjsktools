@@ -22,6 +22,9 @@ class ProxyUrlTest {
             "https://backup.example/thumb.webp"
         ))
         assertTrue(value!!.startsWith("http://10.0.2.2:4000/api/assets/resolve?"))
-        assertEquals(2, value.toHttpUrl().queryParameterValues("url").size)
+        assertEquals(
+            listOf("https://storage.example/thumb.webp", "https://backup.example/thumb.webp"),
+            value.toHttpUrl().queryParameterValues("url")
+        )
     }
 }
