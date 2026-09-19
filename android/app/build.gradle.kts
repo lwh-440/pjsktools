@@ -9,7 +9,12 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
-val webRuntimeBaseUrl = providers.gradleProperty("PJSKTOOLS_WEB_RUNTIME_BASE_URL").orElse("")
+val webRuntimeBaseUrl = providers.gradleProperty("PJSKTOOLS_WEB_RUNTIME_BASE_URL")
+    .orNull
+    ?.trim()
+    ?.trimEnd('/')
+    ?.takeIf { it.isNotEmpty() }
+    ?: "https://sekai-tools.cn"
 val configuredApiBaseUrl = providers.gradleProperty("PJSKTOOLS_API_BASE_URL")
     .orElse(providers.environmentVariable("PJSKTOOLS_API_BASE_URL"))
     .orElse("https://api.sekai-tools.cn/")
@@ -46,7 +51,7 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-        buildConfigField("String", "WEB_RUNTIME_BASE_URL", quotedBuildConfig(webRuntimeBaseUrl.get()))
+        buildConfigField("String", "WEB_RUNTIME_BASE_URL", quotedBuildConfig(webRuntimeBaseUrl))
         buildConfigField("String", "TEMPORARY_HTTP_HOST", quotedBuildConfig(temporaryHttpHost))
         buildConfigField("boolean", "HARUKI_FEATURE_ENABLED", "false")
     }
