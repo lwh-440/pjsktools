@@ -10,6 +10,8 @@ describe("harukiAssetPath", () => {
       .toBe("ondemand/mysekai/thumbnail/material/item_wood_1.png");
     expect(harukiAssetPath("mysekai/thumbnail/fixture/mdl_mis0001_house_house1_1.webp"))
       .toBe("ondemand/mysekai/thumbnail/fixture/mdl_mis0001_house_house1_1.png");
+    expect(harukiAssetPath("mysekai/thumbnail/tool/pickax0001.png"))
+      .toBe("ondemand/mysekai/thumbnail/tool/pickax0001.png");
     expect(harukiAssetPath("event_story/event_drive_2026/screen_image/banner_event_story.webp"))
       .toBe("ondemand/event_story/event_drive_2026/screen_image/banner_event_story.png");
     expect(harukiAssetPath("event_story/event_stella_2020/scenario/event_01_01.asset"))

@@ -384,6 +384,11 @@ function materialCandidates(region: RegionId, material: Record<string, any>) {
   return bundle ? getAssetCandidates(region, `mysekai/thumbnail/material/${bundle}.png`) : [];
 }
 
+function toolCandidates(region: RegionId, tool: Record<string, any>) {
+  const bundle = String(tool.assetbundleName ?? "");
+  return bundle ? getAssetCandidates(region, `mysekai/thumbnail/tool/${bundle}.png`) : [];
+}
+
 function uniqueStrings(values: string[]) {
   return values.filter(Boolean).filter((value, index, all) => all.indexOf(value) === index);
 }
@@ -400,6 +405,7 @@ function exchangeMaterialCandidates(region: RegionId, resourceType: string, reso
   if (resourceType === "mysekai_material" && item?.iconAssetbundleName) {
     return getAssetCandidates(region, `mysekai/thumbnail/material/${item.iconAssetbundleName}.png`);
   }
+  if (resourceType === "mysekai_tool" && item) return toolCandidates(region, item);
   if (["coin", "jewel", "virtual_coin"].includes(resourceType)) {
     return getAssetCandidates(region, `thumbnail/common_material/${resourceType}.webp`);
   }
@@ -439,7 +445,7 @@ const exchangeLookupPaths: Record<string, string> = {
 
 const exchangeReferenceImageTypes = new Set([
   "card", "material", "mysekai_material", "stamp", "costume_3d", "mysekai_blueprint",
-  "mysekai_fixture", "practice_ticket", "skill_practice_ticket", "character_rank_exp",
+  "mysekai_fixture", "mysekai_tool", "practice_ticket", "skill_practice_ticket", "character_rank_exp",
   "coin", "jewel", "virtual_coin", "honor"
 ]);
 
@@ -533,13 +539,19 @@ function resolveExchangeResource(
         : resourceId != null
           ? lookupMaps.get(resourceType)?.get(resourceId)
           : undefined;
-  const resolvedItem = resourceType === "mysekai_blueprint" && item?.craftTargetId != null
-    ? lookupMaps.get("mysekai_fixture")?.get(Number(item.craftTargetId)) ?? item
-    : item;
+  const blueprintTarget = resourceType === "mysekai_blueprint" ? resolveMysekaiBlueprintTarget(item, {
+    mysekaiFixtures: Array.from(lookupMaps.get("mysekai_fixture")?.values() ?? []),
+    mysekaiTools: Array.from(lookupMaps.get("mysekai_tool")?.values() ?? [])
+  }) : undefined;
+  const resolvedItem = blueprintTarget?.item ?? item;
   const imageCandidates = resourceType === "card"
     ? array(asRecord(item?.assets).normalThumbnailCandidates).map(String)
     : resourceType === "character_rank_exp" && resourceId != null
       ? getCharacterIconCandidates(region, resourceId)
+      : resourceType === "mysekai_blueprint" && blueprintTarget?.kind === "fixture"
+        ? fixtureCandidates(region, blueprintTarget.item)
+        : resourceType === "mysekai_blueprint" && blueprintTarget?.kind === "tool"
+          ? toolCandidates(region, blueprintTarget.item)
       : exchangeMaterialCandidates(region, resourceType, resourceId, resolvedItem);
   const lookupRequired = Boolean(exchangeLookupPaths[resourceType]) || resourceType === "honor";
   const lookupStatus = lookupRequired ? (item ? "matched" : "missing-data") : "not-required";
@@ -645,7 +657,10 @@ export async function getMissionCatalog(region: RegionId) {
         }
       }
     }
-    if (rewardTypes.has("mysekai_blueprint")) rewardTypes.add("mysekai_fixture");
+    if (rewardTypes.has("mysekai_blueprint")) {
+      rewardTypes.add("mysekai_fixture");
+      rewardTypes.add("mysekai_tool");
+    }
     const { maps: lookupMaps, diagnostics: lookupDiagnostics } = await loadExchangeLookups(region, rewardTypes);
     const honors = honorCollection?.items ?? [];
     if (rewardTypes.has("honor")) {
@@ -800,7 +815,10 @@ export async function getExchangeCatalog(region: RegionId) {
         for (const cost of array(exchange.costs)) resourceTypes.add(String(rawItem(cost).resourceType ?? "unknown"));
       }
     }
-    if (resourceTypes.has("mysekai_blueprint")) resourceTypes.add("mysekai_fixture");
+    if (resourceTypes.has("mysekai_blueprint")) {
+      resourceTypes.add("mysekai_fixture");
+      resourceTypes.add("mysekai_tool");
+    }
     const { maps: lookupMaps, diagnostics: lookupDiagnostics } = await loadExchangeLookups(region, resourceTypes);
     const items = summaries.flatMap((summary) => array(summary.materialExchanges).map((value) => {
       const exchange = rawItem(value);
@@ -899,20 +917,38 @@ function catalogSource(groups: Record<string, any>, kind: CatalogKind) {
   return array(groups.mysekaiBlueprints);
 }
 
+type MysekaiBlueprintTarget = { kind: "fixture" | "tool"; item: Record<string, any> };
+
+export function resolveMysekaiBlueprintTarget(value: unknown, groups: Record<string, any>): MysekaiBlueprintTarget | undefined {
+  const blueprint = rawItem(value);
+  const targetId = String(blueprint.craftTargetId ?? "");
+  if (!targetId) return undefined;
+  if (blueprint.mysekaiCraftType === "mysekai_tool") {
+    const item = array(groups.mysekaiTools).map(rawItem).find((entry) => String(entry.id) === targetId);
+    return item ? { kind: "tool", item } : undefined;
+  }
+  if (blueprint.mysekaiCraftType === "mysekai_fixture" || blueprint.mysekaiCraftType === "mysekai_canvas") {
+    const item = array(groups.mysekaiFixtures).map(rawItem).find((entry) => String(entry.id) === targetId);
+    return item ? { kind: "fixture", item } : undefined;
+  }
+  return undefined;
+}
+
 function normalizeMysekaiItem(region: RegionId, kind: CatalogKind, value: unknown, groups: Record<string, any>) {
   const raw = rawItem(value);
   const id = String(raw.id ?? "");
-  const fixture = kind === "fixtures" ? raw : kind === "blueprints"
-    ? array(groups.mysekaiFixtures).map(rawItem).find((item) => String(item.id) === String(raw.craftTargetId))
-    : undefined;
+  const blueprintTarget = kind === "blueprints" ? resolveMysekaiBlueprintTarget(raw, groups) : undefined;
+  const fixture = kind === "fixtures" ? raw : blueprintTarget?.kind === "fixture" ? blueprintTarget.item : undefined;
+  const tool = blueprintTarget?.kind === "tool" ? blueprintTarget.item : undefined;
   const imageCandidates = kind === "materials"
     ? materialCandidates(region, raw)
-    : fixture ? fixtureCandidates(region, fixture) : [];
+    : fixture ? fixtureCandidates(region, fixture)
+      : tool ? toolCandidates(region, tool) : [];
   return {
     id,
     kind,
-    name: String(raw.name ?? fixture?.name ?? `${kind} ${id}`),
-    description: raw.description ?? raw.flavorText ?? fixture?.flavorText,
+    name: String(raw.name ?? fixture?.name ?? tool?.name ?? `${kind} ${id}`),
+    description: raw.description ?? raw.flavorText ?? fixture?.flavorText ?? tool?.description,
     imageCandidates,
     imageUrl: imageCandidates[0],
     category: raw.mysekaiFixtureType ?? raw.mysekaiMaterialType ?? raw.mysekaiCraftType,
@@ -966,7 +1002,9 @@ export async function getMysekaiDetail(region: RegionId, kind: CatalogKind, item
   const item = normalizeMysekaiItem(region, kind, raw, groups);
   const blueprints = kind === "blueprints"
     ? [raw]
-    : array(groups.mysekaiBlueprints).map(rawItem).filter((entry) => kind === "fixtures" && String(entry.craftTargetId) === itemId);
+    : array(groups.mysekaiBlueprints).map(rawItem).filter((entry) => kind === "fixtures"
+      && (entry.mysekaiCraftType === "mysekai_fixture" || entry.mysekaiCraftType === "mysekai_canvas")
+      && String(entry.craftTargetId) === itemId);
   const blueprintIds = new Set(blueprints.map((entry) => String(entry.id)));
   const costs = array(groups.mysekaiBlueprintMysekaiMaterialCosts).map(rawItem).filter((entry) => blueprintIds.has(String(entry.mysekaiBlueprintId)));
   const materials = new Map(array(groups.mysekaiMaterials).map(rawItem).map((entry) => [String(entry.id), entry]));
