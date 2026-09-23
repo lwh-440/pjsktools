@@ -185,6 +185,12 @@ Comic 40详情原图也已由主代理目视，证据 `comics-e5e8116-detail-40.
 对 Team-Haruki 官方 `master/tips.json` 做了完整核对：共91条记录，其中原有63条 legacy tips 没有 `assetbundleName`，Haruki 没有对应图片资源；另外28条记录是 `1041–1068`，分别明确对应 `comic_0041–comic_0068`，已由当前 API 走 Haruki 图源。不能把数字相同的 legacy tip 与 comic 编号拼接，否则会错配：例如 `comic_0047` 属于 tip 1047「特訓・超えるために」，不是 legacy tip 47「MVPとSUPER STARとは」。
 
 生产 API 已抽查 tip 2、47、119，均保留原数字 ID、标题和可加载的 Moe 镜像图片；网页列表及 tip 119 详情图片也已实际显示。证据为 `.runtime/asset-acceptance-20260917/jp-tips-haruki-audit.json`、`comics-live.png`、`comics-existing-haruki.png`、`jp-comics-p2-detail23.png`。因此这一项不做错误的 Haruki 替换，当前不需要代码提交或部署。
+
+## 2026-09-23 WorldLink入口修复：Haruki角色榜不再被旧 rks-n状态阻断
+
+提交 `aa2322a` 已推送 GitHub，并同步服务器 API。修复前，Haruki 总榜能正常返回角色列表，但旧 rks-n 的 404 会把 `worldLinkAvailable` 置为 false，导致网页入口把 WorldLink隐藏，并将详情请求挡成 503。现在以当前 `world_bloom` 活动的角色 master 与 Haruki Toolbox 为准，入口生产复验返回 `eventId=179`、`worldLinkAvailable=true`、6个角色，角色图候选均为 Haruki。
+
+生产复验 URL：`https://api.sekai-tools.cn/api/events/en/live-ranking`，HTTP 200。活动 179 已于 2026-09-20 结束，因此随后详情/周回接口返回“无活动 World Link”404是生命周期保护，不是图片或 Haruki 资源失败；活动进行期间的详情与轨迹实显证据仍以 3e9d23e 记录为准。服务器容器健康，部署 marker 为 `aa2322a`。
 | TW/KR/CN master区服核对 | 独立审查确认当前各服数据与各自Haruki registry对齐，没有本轮疑似串区或旧cache问题 | TW `6.0.0.51`：gacha61/cards1249；KR `6.0.1.22`：gacha63/cards1249；CN `6.0.0.58`：gacha63/cards1249。限已核对数据，不能外推全字段、全资产或完全Haruki |
 | EN WorldLink最新结果 | 3d29a53的Miku21/Len23公开overview为Haruki、各100条/六角色；3e9d23e再验 Miku21 详情 playerTrace1405/rankTrace1384 complete，玩家/档线折线图实际显示，队长图Haruki | 详情证据只覆盖 Miku21；churn/parking仍非Haruki完整迁移。Len列表/图片以第三次verified passed=true为准 |
 | TW Exact v3线上样本 | `exact-v3-48698e3/deck.json`真实TW1expert：961 notes、6 skills、Haruki SUS、missingFields空；旧缓存失效后source状态matched。页面A1579655分/9180PT，B1688202分/9480PT，主代理目视`tw-deck.png` | 4d06ca9方向误判被独立review拦下；0e3cc88修复tapFlags/方向1–6并提升v3缓存，24项测试已确认。该谱面真实计算通过，不外推所有类型和谱面 |
