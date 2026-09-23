@@ -67,7 +67,10 @@ export async function validateRankingBoardContext(
   } catch {
     return { ok: false, statusCode: 503, message: "World Link ranking source is unavailable" };
   }
-  if (!discovery.worldLinkAvailable || !discovery.worldLinkCharacters.length) {
+  // Haruki Toolbox is the authoritative World Link source. The overview may
+  // be available while the legacy rks-n discovery flag is stale/unavailable;
+  // character metadata is enough to validate the selected chapter here.
+  if (!discovery.worldLinkCharacters.length) {
     return { ok: false, statusCode: 503, message: "World Link ranking source is unavailable" };
   }
   if (!discovery.worldLinkCharacters.some((character) => character.id === gameCharacterId)) {

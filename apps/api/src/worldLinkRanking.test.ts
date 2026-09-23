@@ -218,6 +218,10 @@ describe("World Link ranking isolation", () => {
       currentEvent: vi.fn(async () => ({ id: "211", eventType: "world_bloom" })),
       overallLiveRanking: vi.fn(async () => live([], false))
     } as any);
+    const harukiOnly = await validateRankingBoardContext("jp", { boardType: "worldlink", gameCharacterId: "5" }, "211", {
+      currentEvent: vi.fn(async () => ({ id: "211", eventType: "world_bloom" })),
+      overallLiveRanking: vi.fn(async () => live([5], false))
+    } as any);
     const valid = await validateRankingBoardContext("jp", { boardType: "worldlink", gameCharacterId: "5" }, "211", {
       currentEvent: vi.fn(async () => ({ id: "211", eventType: "world_bloom" })),
       overallLiveRanking: vi.fn(async () => live([5, 8]))
@@ -227,6 +231,7 @@ describe("World Link ranking isolation", () => {
     expect(wrongEvent).toMatchObject({ ok: false, statusCode: 400 });
     expect(wrongCharacter).toMatchObject({ ok: false, statusCode: 400 });
     expect(unavailable).toMatchObject({ ok: false, statusCode: 503 });
+    expect(harukiOnly).toMatchObject({ ok: true, boardType: "worldlink", gameCharacterId: 5 });
     expect(valid).toMatchObject({ ok: true, boardType: "worldlink", gameCharacterId: 5, event: { id: "211" } });
   });
 

@@ -313,6 +313,7 @@ export function selectRankingDetailChurnEntry(churn: RankingChurnResult | null, 
   return (resolvedUserId ? churn?.entries.find((entry) => entry.userId && String(entry.userId) === resolvedUserId) : undefined)
     ?? churn?.entries.find((entry) => entry.isTierLine && entry.rank === rank);
 }
+
 async function normalizeTop100(region: RegionId, entries: RealtimeRankingEntry[]) {
   return enrichRankingAssets(region, entries.filter((entry) => entry.rank >= 1 && entry.rank <= 100).sort((a, b) => a.rank - b.rank));
 }
@@ -320,6 +321,8 @@ async function normalizeTop100(region: RegionId, entries: RealtimeRankingEntry[]
 async function rehydrateLiveRankingSnapshot(region: RegionId, snapshot: LiveRankingSnapshot): Promise<LiveRankingSnapshot> {
   return {
     ...snapshot,
+    worldLinkAvailable: snapshot.worldLinkAvailable
+      || (snapshot.currentEvent?.eventType === "world_bloom" && snapshot.worldLinkCharacters.length > 0),
     top100: await normalizeTop100(region, snapshot.top100 as RealtimeRankingEntry[])
   };
 }
@@ -665,6 +668,7 @@ async function refreshLiveRanking(
     ? attachRankingBorderHourlyGrowth(region, eventId, rawBorderLines, borderGrowths)
     : rawBorderLines;
   const sampledAt = latest.updatedAt;
+  const resolvedWorldLinkCharacters = await worldLinkCharacters(region, eventId, event, matchingSnapshot?.groups.map((group) => group.gameCharacterId) ?? []);
   const snapshot: LiveRankingSnapshot = {
     region,
     eventId,
@@ -687,8 +691,8 @@ async function refreshLiveRanking(
     },
     boardType: options.boardType,
     gameCharacterId: options.gameCharacterId,
-    worldLinkCharacters: await worldLinkCharacters(region, eventId, event, matchingSnapshot?.groups.map((group) => group.gameCharacterId) ?? []),
-    worldLinkAvailable: Boolean(matchingSnapshot?.groups.length),
+    worldLinkCharacters: resolvedWorldLinkCharacters,
+    worldLinkAvailable: Boolean(matchingSnapshot?.groups.length) || (isWorldLinkEvent && resolvedWorldLinkCharacters.length > 0),
     staleRanks: [],
     warnings: [
       ...(harukiPrimaryError ? [options.boardType === "worldlink" ? "Haruki World Link overview unavailable; using rks-n World Link fallback" : "Haruki total overview unavailable; using rks-n overall fallback"] : []),
