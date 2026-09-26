@@ -27,4 +27,15 @@ class ProxyUrlTest {
             value.toHttpUrl().queryParameterValues("url")
         )
     }
+    @Test fun keepsTheSixthFallbackCandidateReachable() {
+        val value = resolveAssetUrl("http://10.0.2.2:4000/", listOf(
+            "https://haruki.example/primary.png",
+            "https://legacy-a.example/second.webp",
+            "https://legacy-b.example/third.webp",
+            "https://legacy-c.example/fourth.webp",
+            "https://legacy-d.example/fifth.webp",
+            "https://legacy-e.example/sixth.webp"
+        ))
+        assertEquals(6, value!!.toHttpUrl().queryParameterValues("url").size)
+    }
 }

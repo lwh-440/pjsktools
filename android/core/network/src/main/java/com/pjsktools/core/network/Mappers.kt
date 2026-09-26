@@ -56,7 +56,7 @@ fun resolveAssetUrl(baseUrl: String, values: List<String?>): String? {
             parsed != null && parsed.host != backend.host -> absolute
             else -> null
         }
-    }.distinct().take(3)
+    }.distinct().take(6)
     if (upstream.isEmpty()) return values.firstNotNullOfOrNull { proxyUrl(baseUrl, it) }
     return backend.newBuilder().encodedPath("/api/assets/resolve").query(null).apply {
         upstream.forEach { addQueryParameter("url", it) }

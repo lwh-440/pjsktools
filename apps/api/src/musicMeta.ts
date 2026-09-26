@@ -1,15 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { config } from "./config.js";
 import type { RegionId } from "./config.js";
 import type { MusicMeta } from "./types.js";
 
-const musicMetaSources: Record<RegionId, string> = {
-  jp: "https://sekai-master-cdn.haruki.seiunx.com/music_metas.json",
-  en: "https://sekai-master-cdn.haruki.seiunx.com/music_metas-en.json",
-  tw: "https://sekai-master-cdn.haruki.seiunx.com/music_metas-tc.json",
-  kr: "https://sekai-master-cdn.haruki.seiunx.com/music_metas-kr.json",
-  cn: "https://sekai-master-cdn.haruki.seiunx.com/music_metas-cn.json"
-};
+const defaultHarukiMasterBase = "https://sekai-api-cdn.haruki.seiunx.com";
 const refreshMs = 24 * 60 * 60 * 1000;
 const memoryCache = new Map<RegionId, { loadedAt: number; rows: MusicMeta[]; source: string }>();
 
@@ -91,7 +86,8 @@ async function fetchRemote(region: RegionId) {
 }
 
 export function musicMetaSource(region: RegionId = "jp") {
-  return musicMetaSources[region];
+  const base = (process.env.HARUKI_MASTER_BASE_URL?.trim() || config.harukiMasterBaseUrl.trim() || defaultHarukiMasterBase).replace(/\/+$/, "");
+  return `${base}/v1/metas/${region}/music_metas.json`;
 }
 
 export async function getMusicMetas(region: RegionId = "jp") {

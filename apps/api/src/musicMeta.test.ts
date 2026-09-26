@@ -26,11 +26,11 @@ afterEach(() => {
 
 describe("Haruki music metadata sources", () => {
   it("uses the official region-specific CDN documents", () => {
-    expect(musicMetaSource("jp")).toBe("https://sekai-master-cdn.haruki.seiunx.com/music_metas.json");
-    expect(musicMetaSource("en")).toBe("https://sekai-master-cdn.haruki.seiunx.com/music_metas-en.json");
-    expect(musicMetaSource("tw")).toBe("https://sekai-master-cdn.haruki.seiunx.com/music_metas-tc.json");
-    expect(musicMetaSource("kr")).toBe("https://sekai-master-cdn.haruki.seiunx.com/music_metas-kr.json");
-    expect(musicMetaSource("cn")).toBe("https://sekai-master-cdn.haruki.seiunx.com/music_metas-cn.json");
+    expect(musicMetaSource("jp")).toBe("https://sekai-api-cdn.haruki.seiunx.com/v1/metas/jp/music_metas.json");
+    expect(musicMetaSource("en")).toBe("https://sekai-api-cdn.haruki.seiunx.com/v1/metas/en/music_metas.json");
+    expect(musicMetaSource("tw")).toBe("https://sekai-api-cdn.haruki.seiunx.com/v1/metas/tw/music_metas.json");
+    expect(musicMetaSource("kr")).toBe("https://sekai-api-cdn.haruki.seiunx.com/v1/metas/kr/music_metas.json");
+    expect(musicMetaSource("cn")).toBe("https://sekai-api-cdn.haruki.seiunx.com/v1/metas/cn/music_metas.json");
   });
 
   it("retries the Haruki source after falling back to an expired cache", async () => {
