@@ -7,13 +7,13 @@
 - master registry current 清单按 ETag 条件重验证，304 时复用内存清单；清单顶层 `contentHash` 透传，文件 sha256 用于 immutable blob 地址。
 - blob 内容按 sha256 地址缓存；blob 返回 404 时回退 `/files/{name}.json`，并发请求共享同一回退结果；raw GitHub 模式不把 `music_metas.json` 错映射成 `musics.json`。
 - `/v1/metas/{region}/music_metas.json` 独立接口按区域缓存并支持 ETag；`/api/master/:region/information` 也接入 API 的 ETag/304 响应。
-- Web API 与 Android asset proxy 的候选上限统一为 6，OpenAPI 约束同步为 6；Android network 单测通过。
+- Web API、API resolver、Android asset proxy 的候选上限统一为 12，OpenAPI 约束同步为 12；Android network 单测通过。这样事件封面在 Haruki 直链、代理和旧 `.webp` 候选中不会在第 6 项提前截断。
 
 生产证据：`/api/master/jp/status` 返回 `synced=true`、`repository=Team-Haruki/haruki-sekai-master`，cards 1452、songs 719、events 218；核心 reference collections 的 `sourceUrl` 全部为 `https://sekai-api-cdn.haruki.seiunx.com/v1/master/jp/blob/...`。生产 `POST /api/tools/deck-compare` 返回 `musicMetaTrace.status=matched`、`rowCount=3730`、`source=https://sekai-api-cdn.haruki.seiunx.com/v1/metas/jp/music_metas.json`、`missingFields=[]`。生产公告接口首个请求为 200 且带 ETag，带同一 `If-None-Match` 的第二个请求实际返回 304。上游 CDN 的 current 与 music metas 均已核对有 ETag；当前服务器网络实测上游对条件请求仍返回 200，因此客户端 304 分支以本地测试覆盖，不能把 200 记成上游 304。
 
 旧源回退按“先确认 Haruki 404，再使用旧候选”执行。复查发现 CN costume `261011`、`261021` 的 Haruki PNG 已恢复为 HTTP 200；KR honor `20059`–`20062` 和 CN material `3004` 的当前 Haruki 主图及已列旧候选均为 HTTP 404，仍保留“无可用图”的未通过状态，不能伪称已接入。JP tips 的 Moe 旧源以及其他已确认 Haruki 缺失的资源继续作为显式 fallback；API 的 `source` 字段仍记录实际候选来源。
 
-Android 正式包已重新构建并签名，`testDebugUnitTest` 与 `assembleRelease` 通过，签名证书 SHA-256 为 `0e02a9f1468ec3d378bbbd0eb3d7c807bbe5e31c135ba6838d64dc230d05e0e9`。本轮 APK 2797933 字节、SHA-256 `a457f277a94486b1a8189e6bdb0faf58cf5c58165fe1451c77f7d53487ce79dd`，服务器文件与公网下载字节一致；当前没有启动中的 Android 模拟器，所以本轮只记构建、签名和公网字节验收，不虚构新包的设备画面验收。
+Android 正式包已重新构建并签名，`testDebugUnitTest`、`assembleRelease` 与 network 单测通过，签名证书 SHA-256 为 `0e02a9f1468ec3d378bbbd0eb3d7c807bbe5e31c135ba6838d64dc230d05e0e9`。本轮 APK 2797933 字节、SHA-256 `7354bbd91f0f425c67da2fb068317b7e875c5360b17ca05f568a135919f2c540`，服务器文件与公网下载字节一致；当前没有启动中的 Android 模拟器，所以本轮只记构建、签名和公网字节验收，不虚构新包的设备画面验收。
 
 ## 2026-09-20 Android final c5de19d：公网包与故事1背景修复通过
 
