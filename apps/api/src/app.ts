@@ -1724,7 +1724,7 @@ export async function buildApp(options: {
   app.get("/api/master/:region/information", async (request, reply) => {
     const { region } = request.params as { region: string };
     if (!isRegion(region)) return reply.badRequest("Unsupported region");
-    return getInformationCollection(region);
+    return catalogResponse(reply, request, await getInformationCollection(region));
   });
 
   app.get("/api/master/:region/information-view/*", async (request, reply) => {

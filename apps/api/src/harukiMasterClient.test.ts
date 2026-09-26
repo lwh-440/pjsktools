@@ -98,4 +98,60 @@ describe("Haruki master registry client", () => {
     expect(result.sourceUrl).toBe("https://haruki.test/v1/metas/jp/music_metas.json");
     expect(headers.every((value) => value.Authorization === "Bearer registry-token")).toBe(true);
   });
+
+  it("revalidates the manifest with ETag and reuses immutable blob content", async () => {
+    const digest = "b".repeat(64);
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requested.push(`${url} ${(init?.headers as Record<string, string> | undefined)?.["If-None-Match"] ?? ""}`);
+      if (url.endsWith("/v1/master/jp/current")) {
+        if ((init?.headers as Record<string, string> | undefined)?.["If-None-Match"] === '"manifest-1"') {
+          return new Response(null, { status: 304, headers: { etag: '"manifest-1"' } });
+        }
+        return new Response(JSON.stringify({ contentHash: "f".repeat(64), files: [{ name: "cards.json", sha256: digest }] }), { status: 200, headers: { etag: '"manifest-1"' } });
+      }
+      if (url.endsWith(`/v1/master/jp/blob/${digest}`)) return new Response(JSON.stringify([{ id: 2 }]), { status: 200 });
+      return new Response("missing", { status: 404 });
+    }));
+    const { fetchHarukiMasterJson } = await import("./harukiMasterClient.js");
+    const first = await fetchHarukiMasterJson("jp", ["cards.json"]);
+    expect(first.contentHash).toBe("f".repeat(64));
+    await fetchHarukiMasterJson("jp", ["cards.json"]);
+    expect(requested).toEqual([
+      "https://haruki.test/v1/master/jp/current ",
+      `https://haruki.test/v1/master/jp/blob/${digest} `,
+      'https://haruki.test/v1/master/jp/current "manifest-1"'
+    ]);
+  });
+
+  it("falls back to files when a published blob is missing", async () => {
+    const digest = "c".repeat(64);
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/v1/master/jp/current")) return new Response(JSON.stringify({ contentHash: "e".repeat(64), files: [{ name: "events.json", sha256: digest }] }), { status: 200 });
+      if (url.endsWith(`/v1/master/jp/blob/${digest}`)) return new Response("missing", { status: 404 });
+      if (url.endsWith("/v1/master/jp/files/events.json")) return new Response(JSON.stringify([{ id: 3 }]), { status: 200 });
+      return new Response("missing", { status: 404 });
+    }));
+    const { fetchHarukiMasterJson } = await import("./harukiMasterClient.js");
+    const result = await fetchHarukiMasterJson<Array<{ id: number }>>("jp", ["events.json"]);
+    expect(result.value).toEqual([{ id: 3 }]);
+    expect(result.contentHash).toBe("e".repeat(64));
+    expect(result.sourceUrl).toBe("https://haruki.test/v1/master/jp/files/events.json");
+  });
+
+  it("does not map music_metas to musics.json in raw GitHub mode", async () => {
+    process.env.HARUKI_MASTER_BASE_URL = "https://raw.githubusercontent.com";
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      requested.push(url);
+      return new Response(JSON.stringify([{ music_id: 4 }]), { status: 200 });
+    }));
+    const { fetchHarukiMasterJson } = await import("./harukiMasterClient.js");
+    await fetchHarukiMasterJson("jp", ["music_metas.json"]);
+    expect(requested.some((url) => url.endsWith("/musics.json"))).toBe(false);
+    expect(requested.at(-1)).toContain("/music_metas.json");
+  });
 });
