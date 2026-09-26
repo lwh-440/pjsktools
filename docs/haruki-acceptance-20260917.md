@@ -1,4 +1,17 @@
-# Haruki 资产验收矩阵（更新至2026-09-20）
+# Haruki 资产验收矩阵（更新至2026-09-26）
+
+## 2026-09-26 Team Haruki registry 公告适配：5394d81 已同步并生产复验
+
+`5394d81` 已提交到本地 `main`、GitHub `main`，并部署到 `101.35.21.48` 的 `/opt/pjsktools`；服务器 marker 为 `5394d81`，API 容器重建后为 `healthy`。本次包含：
+
+- master registry current 清单按 ETag 条件重验证，304 时复用内存清单；清单顶层 `contentHash` 透传，文件 sha256 用于 immutable blob 地址。
+- blob 内容按 sha256 地址缓存；blob 返回 404 时回退 `/files/{name}.json`，并发请求共享同一回退结果；raw GitHub 模式不把 `music_metas.json` 错映射成 `musics.json`。
+- `/v1/metas/{region}/music_metas.json` 独立接口按区域缓存并支持 ETag；`/api/master/:region/information` 也接入 API 的 ETag/304 响应。
+- Web API 与 Android asset proxy 的候选上限统一为 6，OpenAPI 约束同步为 6；Android network 单测通过。
+
+生产证据：`/api/master/jp/status` 返回 `synced=true`、`repository=Team-Haruki/haruki-sekai-master`，cards 1452、songs 719、events 218；核心 reference collections 的 `sourceUrl` 全部为 `https://sekai-api-cdn.haruki.seiunx.com/v1/master/jp/blob/...`。生产 `POST /api/tools/deck-compare` 返回 `musicMetaTrace.status=matched`、`rowCount=3730`、`source=https://sekai-api-cdn.haruki.seiunx.com/v1/metas/jp/music_metas.json`、`missingFields=[]`。生产公告接口首个请求为 200 且带 ETag，带同一 `If-None-Match` 的第二个请求实际返回 304。上游 CDN 的 current 与 music metas 均已核对有 ETag；当前服务器网络实测上游对条件请求仍返回 200，因此客户端 304 分支以本地测试覆盖，不能把 200 记成上游 304。
+
+旧源回退按“先确认 Haruki 404，再使用旧候选”执行。复查发现 CN costume `261011`、`261021` 的 Haruki PNG 已恢复为 HTTP 200；KR honor `20059`–`20062` 和 CN material `3004` 的当前 Haruki 主图及已列旧候选均为 HTTP 404，仍保留“无可用图”的未通过状态，不能伪称已接入。JP tips 的 Moe 旧源以及其他已确认 Haruki 缺失的资源继续作为显式 fallback；API 的 `source` 字段仍记录实际候选来源。
 
 ## 2026-09-20 Android final c5de19d：公网包与故事1背景修复通过
 
