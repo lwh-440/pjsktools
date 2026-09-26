@@ -193,14 +193,13 @@ async function fetchNamedFile<T>(region: RegionId, name: string, manifest?: Haru
     const sourceUrl = harukiMasterBlobUrl(region, digest);
     let value: T;
     const pending = blobCache.get(digest);
-    if (pending) value = await pending as T;
-    else {
-      const load = fetchJson<T>(sourceUrl, `master blob ${name}`);
+    const load = pending ?? fetchJson<T>(sourceUrl, `master blob ${name}`);
+    if (!pending) {
       while (blobCache.size >= blobCacheMaxEntries()) blobCache.delete(blobCache.keys().next().value as string);
       blobCache.set(digest, load as Promise<unknown>);
-      try { value = await load; }
-      catch (error) { blobCache.delete(digest); if (!(error instanceof HarukiMasterError && error.kind === "not-found")) throw error; return fetchNamedFileWithoutDigest<T>(region, name, manifest, digest); }
     }
+    try { value = await load as T; }
+    catch (error) { blobCache.delete(digest); if (!(error instanceof HarukiMasterError && error.kind === "not-found")) throw error; return fetchNamedFileWithoutDigest<T>(region, name, manifest, digest); }
     return {
       value,
       sourceUrl,
