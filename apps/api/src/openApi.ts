@@ -756,7 +756,7 @@ const overrides: Record<string, OperationOverride> = {
   "GET /api/regions": { operationId: "getRegions", response: { type: "array", items: ref("Region") } },
   "GET /api/runtime/status": { operationId: "getRuntimeStatus", response: ref("RuntimeStatus") },
   "GET /api/assets/:region/config": { operationId: "getAssetConfig", response: ref("AssetConfig") },
-  "GET /api/assets/resolve": { operationId: "resolveAsset", response: { type: "string", format: "binary" }, parameters: [query("url", { type: "array", maxItems: 6, items: { type: "string", format: "uri" } })] },
+  "GET /api/assets/resolve": { operationId: "resolveAsset", response: { type: "string", format: "binary" }, parameters: [query("url", { type: "array", maxItems: 12, items: { type: "string", format: "uri" } })] },
   "GET /api/events/:region": { operationId: "getEvents", response: { type: "array", items: ref("EventSummary") } },
   "GET /api/events/:region/current": { operationId: "getCurrentEvent", response: ref("EventSummary") },
   "GET /api/events/:region/live-ranking": { operationId: "getLiveRanking", response: ref("LiveRanking"), parameters: [query("boardType", { type: "string", enum: ["overall", "worldlink"], default: "overall" }), query("gameCharacterId", { type: "integer", minimum: 1 })] },

@@ -1517,7 +1517,7 @@ export async function buildApp(options: {
 
   app.get("/api/assets/resolve", async (request, reply) => {
     const query = request.query as { url?: string | string[] };
-    const urls = (Array.isArray(query.url) ? query.url : query.url ? [query.url] : []).slice(0, 6);
+    const urls = (Array.isArray(query.url) ? query.url : query.url ? [query.url] : []).slice(0, 12);
     if (!urls.length || urls.some((url) => !isAllowedExternalAssetUrl(url))) {
       return reply.badRequest("Unsupported asset resolve URL");
     }
