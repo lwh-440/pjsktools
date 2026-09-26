@@ -13,6 +13,8 @@
 
 旧源回退按“先确认 Haruki 404，再使用旧候选”执行。复查发现 CN costume `261011`、`261021` 的 Haruki PNG 已恢复为 HTTP 200；KR honor `20059`–`20062` 和 CN material `3004` 的当前 Haruki 主图及已列旧候选均为 HTTP 404，仍保留“无可用图”的未通过状态，不能伪称已接入。JP tips 的 Moe 旧源以及其他已确认 Haruki 缺失的资源继续作为显式 fallback；API 的 `source` 字段仍记录实际候选来源。
 
+Android 正式包已重新构建并签名，`testDebugUnitTest` 与 `assembleRelease` 通过，签名证书 SHA-256 为 `0e02a9f1468ec3d378bbbd0eb3d7c807bbe5e31c135ba6838d64dc230d05e0e9`。本轮 APK 2797933 字节、SHA-256 `a457f277a94486b1a8189e6bdb0faf58cf5c58165fe1451c77f7d53487ce79dd`，服务器文件与公网下载字节一致；当前没有启动中的 Android 模拟器，所以本轮只记构建、签名和公网字节验收，不虚构新包的设备画面验收。
+
 ## 2026-09-20 Android final c5de19d：公网包与故事1背景修复通过
 
 `c5de19d`已推送并同步服务器`101.35.21.48`。服务器与公网完整APK均为2797933字节、SHA256 `1f02e2a93bc69d6644d2541d5e3fb2fb9c185f350bbf63350f75cfa09125f498`；四文件源码SHA256为`c0a4b7acb9b6cb6d044c4843a609ad4a0d645eb1b337cc090381e3ac1ef3129f`，与提交一致，marker为完整`c5de19d` snapshot `android-c5de19d-final`。旧bfdbfdc包与故事503失败保留为历史，当前final包发布与来源校验通过。
