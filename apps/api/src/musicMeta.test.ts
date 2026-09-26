@@ -46,4 +46,18 @@ describe("Haruki music metadata sources", () => {
     await expect(getMusicMetas("en")).resolves.toMatchObject({ source: musicMetaSource("en"), rows: [{ musicId: "1" }] });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("revalidates an expired cache with the registry ETag", async () => {
+    filesystem.cache = JSON.stringify({
+      source: musicMetaSource("en"),
+      fetchedAt: Date.now() - 25 * 60 * 60 * 1000,
+      etag: '"music-1"',
+      rows: [{ music_id: 2, difficulty: "expert", music_time: 121, event_rate: 100, base_score: 1, base_score_auto: 1, skill_score_solo: [], skill_score_auto: [], skill_score_multi: [], fever_score: 1, fever_end_time: 1, tap_count: 1 }]
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 304, headers: { etag: '"music-1"' } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getMusicMetas("en")).resolves.toMatchObject({ source: musicMetaSource("en"), rows: [{ musicId: "2" }] });
+    expect(fetchMock).toHaveBeenCalledWith(musicMetaSource("en"), expect.objectContaining({ headers: expect.objectContaining({ "If-None-Match": '"music-1"' }) }));
+  });
 });

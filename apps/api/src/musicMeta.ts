@@ -6,7 +6,7 @@ import type { MusicMeta } from "./types.js";
 
 const defaultHarukiMasterBase = "https://sekai-api-cdn.haruki.seiunx.com";
 const refreshMs = 24 * 60 * 60 * 1000;
-const memoryCache = new Map<RegionId, { loadedAt: number; rows: MusicMeta[]; source: string }>();
+const memoryCache = new Map<RegionId, { loadedAt: number; rows: MusicMeta[]; source: string; etag?: string }>();
 
 type RawMusicMeta = {
   music_id: number;
@@ -26,6 +26,7 @@ type RawMusicMeta = {
 type CachedMusicMeta = {
   source: string;
   fetchedAt: number;
+  etag?: string;
   rows: RawMusicMeta[];
 };
 
@@ -60,26 +61,33 @@ async function readCache(region: RegionId) {
   try {
     const cached = JSON.parse(await readFile(cachePath(region), "utf-8")) as CachedMusicMeta;
     if (cached.source !== musicMetaSource(region) || !Number.isFinite(cached.fetchedAt) || !Array.isArray(cached.rows)) return undefined;
-    return { rows: normalize(cached.rows, cached.source), fetchedAt: cached.fetchedAt };
+    return { rows: cached.rows, fetchedAt: cached.fetchedAt, etag: cached.etag, source: cached.source };
   } catch {
     return undefined;
   }
 }
 
-async function fetchRemote(region: RegionId) {
+async function fetchRemote(region: RegionId, etag?: string, cachedRows?: RawMusicMeta[]) {
   const source = musicMetaSource(region);
   const controller = new AbortController();
   const timeoutMs = process.env.PJSKTOOLS_FAST_MASTER_REFRESH === "true" ? 1_500 : 12_000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(source, { signal: controller.signal, headers: { "User-Agent": "pjsktools-live-calculator" } });
+    const response = await fetch(source, {
+      signal: controller.signal,
+      headers: { "User-Agent": "pjsktools-live-calculator", ...(etag ? { "If-None-Match": etag } : {}) }
+    });
+    if (response.status === 304) {
+      if (!cachedRows) throw new Error("Music meta returned 304 without a cached value");
+      return { rows: normalize(cachedRows, source), source, etag: response.headers.get("etag") ?? etag };
+    }
     if (!response.ok) throw new Error(`Music meta fetch failed: ${response.status}`);
     const rows = JSON.parse(await response.text()) as RawMusicMeta[];
     if (!Array.isArray(rows)) throw new Error("Music meta response is not an array");
-    const cached: CachedMusicMeta = { source, fetchedAt: Date.now(), rows };
+    const cached: CachedMusicMeta = { source, fetchedAt: Date.now(), etag: response.headers.get("etag") ?? undefined, rows };
     await mkdir(path.dirname(cachePath(region)), { recursive: true });
     await writeFile(cachePath(region), JSON.stringify(cached), "utf-8");
-    return { rows: normalize(rows, source), source };
+    return { rows: normalize(rows, source), source, etag: cached.etag };
   } finally {
     clearTimeout(timer);
   }
@@ -95,18 +103,18 @@ export async function getMusicMetas(region: RegionId = "jp") {
   if (memory && Date.now() - memory.loadedAt < refreshMs) return memory;
   const cached = await readCache(region);
   if (cached && Date.now() - cached.fetchedAt < refreshMs) {
-    const result = { loadedAt: Date.now(), rows: cached.rows, source: musicMetaSource(region) };
+    const result = { loadedAt: Date.now(), rows: normalize(cached.rows, cached.source), source: musicMetaSource(region), etag: cached.etag };
     memoryCache.set(region, result);
     return result;
   }
   try {
-    const remote = await fetchRemote(region);
-    const result = { loadedAt: Date.now(), rows: remote.rows, source: remote.source };
+    const remote = await fetchRemote(region, memory?.etag ?? cached?.etag, cached?.rows);
+    const result = { loadedAt: Date.now(), rows: remote.rows, source: remote.source, etag: remote.etag };
     memoryCache.set(region, result);
     return result;
   } catch (error) {
     if (cached) {
-      const result = { loadedAt: cached.fetchedAt, rows: cached.rows, source: musicMetaSource(region) };
+      const result = { loadedAt: cached.fetchedAt, rows: normalize(cached.rows, cached.source), source: musicMetaSource(region), etag: cached.etag };
       memoryCache.set(region, result);
       return result;
     }
