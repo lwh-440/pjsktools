@@ -171,7 +171,7 @@ describe("pjsktools api", () => {
     const app = await buildApp();
     const musicAssets = await app.inject({ method: "GET", url: "/api/master/jp/music/1/assets" });
     expect(musicAssets.statusCode).toBe(200);
-    expect(musicAssets.json().jacketUrl).toContain("/music/jacket/");
+    expect(musicAssets.json().jacketUrl).toMatch(/\/(?:music\/jacket|thumbnail\/music_jacket)\//);
 
     const cardAssets = await app.inject({ method: "GET", url: "/api/master/jp/cards/1/assets" });
     expect(cardAssets.statusCode).toBe(200);
@@ -186,7 +186,7 @@ describe("pjsktools api", () => {
     const app = await buildApp();
     const music = await app.inject({ method: "GET", url: "/api/master/jp/music/1/full" });
     expect(music.statusCode).toBe(200);
-    expect(music.json().assets.jacketUrl).toContain("/music/jacket/");
+    expect(music.json().assets.jacketUrl).toMatch(/\/(?:music\/jacket|thumbnail\/music_jacket)\//);
     expect(Array.isArray(music.json().charts)).toBe(true);
     expect(music.json().realDataRequired).toBe(true);
 

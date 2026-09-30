@@ -433,6 +433,18 @@ describe("Haruki Toolbox static image host", () => {
     expect(isAllowedExternalAssetUrl("https://images.haruki.seiunx.com/sekai-toolbox/static_images/chara_icon/ick.png")).toBe(true);
     expect(isAllowedExternalAssetUrl("https://untrusted.images.haruki.seiunx.com/sekai-toolbox/static_images/chara_icon/ick.png")).toBe(false);
   });
+
+  it("allows every documented Haruki asset CDN and direct host", () => {
+    for (const host of [
+      "sekai-assets-cn03-she01-cdn.haruki.seiunx.com",
+      "sekai-assets-cn04-sha01-cdn.haruki.seiunx.com",
+      "sekai-assets-cn07-she02-cdn.haruki.seiunx.com",
+      "sekai-assets-cn03-she01-direct.haruki.seiunx.com",
+      "sekai-assets-haruki.seiunx.net"
+    ]) {
+      expect(isAllowedExternalAssetUrl(`https://${host}/jp-assets/startapp/comic/one_frame/comic_0022.png`)).toBe(true);
+    }
+  });
 });
 
 describe("Haruki master metadata", () => {

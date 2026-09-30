@@ -13,7 +13,7 @@ import {
   supportsCardSpecialTraining
 } from "./assets.js";
 import { config, regions, type RegionId } from "./config.js";
-import { fetchHarukiMasterJson, harukiMasterConfigured, type HarukiMasterFetchResult } from "./harukiMasterClient.js";
+import { fetchHarukiMasterJson, harukiMasterConfigured, HarukiMasterError, type HarukiMasterFetchResult } from "./harukiMasterClient.js";
 import { getReferenceMaster, getReferenceMasterHealth, isFormulaMasterKey, syncReferenceMasterRegion } from "./referenceMaster.js";
 import { getExternalCollection } from "./externalData.js";
 import { sampleCards, sampleSongs } from "./sampleData.js";
@@ -399,12 +399,17 @@ async function fetchHarukiMaster<T>(region: RegionId, filePaths: Array<string | 
   return fetchHarukiMasterJson<T>(region, filePaths);
 }
 
+function mayUseLegacyMasterFallback(error: unknown) {
+  return error instanceof HarukiMasterError && error.kind === "not-found";
+}
+
 async function fetchMetadataFirstAvailableJson<T>(region: RegionId, repository: string, filePaths: string[], fallback: T): Promise<T> {
   if (harukiMasterConfigured()) {
     try {
       return (await fetchHarukiMaster<T>(region, filePaths)).value;
-    } catch {
-      // Keep the existing metadata and raw GitHub fallbacks below.
+    } catch (error) {
+      // Legacy mirrors are valid only after Haruki confirms the file is absent.
+      if (!mayUseLegacyMasterFallback(error)) return fallback;
     }
   }
   for (const filePath of filePaths) {
@@ -422,8 +427,9 @@ async function fetchMetadataFirst<T>(region: RegionId, key: string, repository: 
   if (harukiMasterConfigured()) {
     try {
       return (await fetchHarukiMaster<T>(region, [filePath])).value;
-    } catch {
-      // Keep the existing metadata and raw GitHub fallbacks below.
+    } catch (error) {
+      // Do not silently mix stale sources during a Haruki outage.
+      if (!mayUseLegacyMasterFallback(error)) throw error;
     }
   }
   try {

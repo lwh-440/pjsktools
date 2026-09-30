@@ -302,7 +302,14 @@ function harukiRegionAssetCandidates(region: RegionId, path: string) {
   const normalized = harukiAssetPath(path);
   const base = config.harukiAssetBaseUrl.replace(/\/+$/, "");
   if (!base) return [];
-  return [`${base}/${region}-assets/${normalized}`];
+  const mirrors = [...new Set([
+    base,
+    "https://sekai-assets-haruki.seiunx.net",
+    "https://sekai-assets-cn03-she01-cdn.haruki.seiunx.com",
+    "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com",
+    "https://sekai-assets-cn07-she02-cdn.haruki.seiunx.com"
+  ])];
+  return mirrors.map((mirror) => `${mirror}/${region}-assets/${normalized}`);
 }
 
 function regionAssetUrl(region: RegionId, path: string) {
@@ -2558,6 +2565,17 @@ export function isAllowedExternalAssetUrl(value: string) {
       "production-web.sekai.colorfulpalette.org",
       "lf3-mkcncdn-tos.dailygn.com"
     ]);
+    // Keep every documented Haruki asset CDN available to the proxy. The
+    // resolver can choose a mirror after a real GET failure; rejecting the
+    // mirror here would make a working Haruki asset look unavailable and
+    // incorrectly fall through to an old source.
+    for (const hostname of [
+      "sekai-assets-cn03-she01-cdn.haruki.seiunx.com",
+      "sekai-assets-cn04-sha01-cdn.haruki.seiunx.com",
+      "sekai-assets-cn07-she02-cdn.haruki.seiunx.com",
+      "sekai-assets-cn03-she01-direct.haruki.seiunx.com",
+      "sekai-assets-haruki.seiunx.net"
+    ]) allowedHosts.add(hostname);
     if (config.harukiAssetBaseUrl) {
       try {
         allowedHosts.add(new URL(config.harukiAssetBaseUrl).hostname);
