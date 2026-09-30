@@ -6,7 +6,7 @@
 
 生产服务器的 HARUKI_ASSET_BASE_URL 需要同步为该新 CDN 后，才能把这次域名迁移反映到公网生成的 URL；在该环境变量更新并重启 API 前，不把线上旧域名结果记为迁移完成。
 
-已完成生产同步：提交 979cb9d 已推送 GitHub main，并在 101.35.21.48 部署；服务器 marker、HARUKI_ASSET_BASE_URL 和 API 容器均已复核。公网 health 为 200/healthy，/api/assets/jp/config 的 Haruki 主源为新上海 CDN，歌曲 1 谱面 SUS 返回新 CDN URL，活动 216 封面通过公网 API 真实 GET 得到 200 image/png（147240 字节）。
+已完成生产同步：提交 979cb9d 已推送 GitHub main，并在 101.35.21.48 部署；服务器 marker、HARUKI_ASSET_BASE_URL 和 API 容器均已复核。公网 health 为 200/healthy，/api/assets/jp/config 的 Haruki 主源为新上海 CDN，歌曲 1 谱面 SUS 返回新 CDN URL，活动 216 封面通过公网 API 真实 GET 得到 200 image/png（147240 字节）。 Live2D URL 重写也已补为识别公告列出的所有 CDN 域名，提交 1a26914 已在服务器构建并保持 healthy。
 # Haruki 资产验收矩阵（更新至2026-09-26）
 
 ## 2026-09-26 Team Haruki registry 公告适配：5394d81 已同步并生产复验
