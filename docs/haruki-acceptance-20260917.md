@@ -50,7 +50,7 @@
 
 提交 `139bf3d` 已推送 GitHub `main` 并部署到生产。生产 Live2D 详情使用目录返回的完整模型 ID（例如 `v1/collabo/21_miku/clb01_21miku`），并在 cn04 返回 404 时逐个尝试全球、cn03、cn07 等 Haruki 镜像；Miku 样本实际切换到全球 Haruki BuildModelData，详情返回 `partial`、纹理 `1`、动作 `20`。生产浏览器用完整路径实际打开画布（704×439），状态为“部分资源可用”，动作和表情列表可操作；唯一内容请求失败是未登录刷新接口 `401`，不影响资源，故事 70/75 另有已确认的上游缺失背景 `bg_g000102`。
 
-Android 当前正式包仍是 `c5de19d`（APK SHA-256 `1f02e2a93bc69d6644d2541d5e3fb2fb9c185f350bbf63350f75cfa09125f498`）。此前已在设备上实际通过：故事 WebView 播放与暂停/恢复/离页释放、Live2D Miku 首纹理、JP Comic1、MySekai 家具 1816、CN 260221 服装及活动 217 分享卡。`139bf3d` 是服务器运行时镜像修复，Android 无需重新打包即可获得新 API；但尚未在设备上重新走完整 Miku 动作列表、全部 MySekai 类别、全故事媒体和全区服入口，因此 Android 不能标记为全量通过。
+该历史段落当时验证的 Android 包为 `c5de19d`（APK SHA-256 `1f02e2a93bc69d6644d2541d5e3fb2fb9c185f350bbf63350f75cfa09125f498`）。此前已在设备上实际通过：故事 WebView 播放与暂停/恢复/离页释放、Live2D Miku 首纹理、JP Comic1、MySekai 家具 1816、CN 260221 服装及活动 217 分享卡。`139bf3d` 是服务器运行时镜像修复，Android 无需重新打包即可获得新 API；但尚未在设备上重新走完整 Miku 动作列表、全部 MySekai 类别、全故事媒体和全区服入口，因此 Android 不能标记为全量通过。
 
 ## 2026-09-30 补充修复：镜像代理与故事资源回退
 
@@ -719,3 +719,13 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - `d68f501` 已推送并部署，更新运行状态文字，明确 overall tier-series 已走 Haruki，rks-n 只保留 churn 和旧版回退。
 - WorldLink churn 接口现场复核仍为 `rks-n.exmeaning.com`，100/100 条 `churn1h=0` 且带 active parking；Haruki Toolbox 已公开的 overview/detail 只提供轨迹、增长和分数线，未发现可等价替代的 churn/parking 批量接口，因此不能标为 Haruki 已接通。
 - 当时探测 Haruki JP 旧漫画时错误使用 `/jp` 根，导致两种错误候选共80个URL全部404；后续纠正为 `jp-assets/startapp/comic/one_frame/comic_0001..0040.png` 后40/40 HTTP200。原页面使用Moe漫画的显示证据仍保留，后续e5e8116已部署新增40图，初轮部分fallback保留；随后新会话完整来源与显示证据为40/40 Haruki通过，详见顶部，仅覆盖JP新增漫画，旧tips来源待办仍保留。
+## 2026-09-30 生产内容资料与图鉴分区二次实显验收
+
+本轮使用生产浏览器逐项打开其余内容资料页面，并以浏览器实际 `img.naturalWidth/naturalHeight` 判断图片是否解码成功；不是只看 API 状态。结果如下：
+
+- 公告 `7/7`、兑换所 `55/55`，打开兑换所详情后 `57/57`；任务 `19/19`；虚拟 Live `4/4`，点击节目操作后音频/视频媒体节点出现；Live2D 目录 `1/1`；MySekai `17/17`，详情 `18/18`；故事目录及 special story 详情各 `1/1`。
+- 九个主要图鉴分区中，漫画 `9/9`、素材 `13/13`、歌曲 `13/13`、活动 `8/8`、称号 `13/13` 的首批可见图片均实际解码。卡牌、贴纸、服装的首批 `13/13` 已解码，其余节点仍由页面 IntersectionObserver 按滚动懒加载，不能把未进入视口的节点当作失败。
+- 卡池首批可见的 4 张横幅实际显示；`4027、4028、4029、4030、4032、4035、4037、4038` 的 Haruki 上海、全球、CN03 镜像及 `storage.exmeaning.com`、`storage.pjsk.moe` 旧候选均已复核为 HTTP 404，属于无可用上游资源，保留“图片暂不可用”是正确结果。浏览器期间唯一统一 API 失败是未登录刷新接口 `401`，不是资源请求失败。
+- World Link 修复 `02ebcc9` 已推送并部署，生产当前 EN 活动为 `180` 的 `finale` 阶段，Haruki master 没有 `gameCharacterId`。因此角色榜按钮保持不可用、角色详情返回 `503` 是正确的生命周期状态；下一次存在角色章节的 active World Bloom 才能做正向详情 smoke。
+
+本轮证据文件保留在 `.runtime/migration-remaining-results.json`、`.runtime/migration-detail-results.json`、`.runtime/migration-media-results.json` 和 `.runtime/migration-browser-results.json`；这些证据用于记录本地生产验收时间点，不将懒加载未观察节点或确认的上游 404 伪标为通过。
