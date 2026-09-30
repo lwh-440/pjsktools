@@ -11,6 +11,12 @@ const moeChartBase = "https://charts-new.unipjsk.com/moe/svg";
 const comicsAssetBase = `${sekaiBestAssetBase}/sekai-comics`;
 const live2dAssetBase = `${sekaiBestAssetBase}/sekai-live2d-assets`;
 const harukiAssetBase = config.harukiAssetBaseUrl.replace(/\/+$/, "");
+const harukiAssetMirrorBases = uniqueStrings([
+  harukiAssetBase,
+  "https://sekai-assets-haruki.seiunx.net",
+  "https://sekai-assets-cn03-she01-cdn.haruki.seiunx.com",
+  "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com"
+]);
 const harukiToolboxImageBase = "https://images.haruki.seiunx.com/sekai-toolbox/static_images/chara_icon";
 
 // Team-Haruki Toolbox publishes these stable icon nicknames for every game character icon.
@@ -90,8 +96,7 @@ function sekaiBestAssetUrl(region: RegionId, assetPath: string) {
 
 function harukiAssetCandidates(region: RegionId, assetPath: string) {
   const path = harukiAssetPath(assetPath);
-  if (!harukiAssetBase) return [];
-  return [`${harukiAssetBase}/${regionAssetDir[region]}/${path}`];
+  return harukiAssetMirrorBases.map((base) => `${base}/${regionAssetDir[region]}/${path}`);
 }
 
 function harukiAssetUrl(region: RegionId, assetPath: string) {
@@ -167,7 +172,7 @@ export function getAssetConfig(region: RegionId) {
     region,
     assetDirectory: assetDir,
     mirrorPriority: [
-      ...(harukiAssetBase ? [harukiAssetBase] : []),
+      ...harukiAssetMirrorBases,
       moeAssetBase,
       moeOverseasAssetBase,
       sekaiBestAssetBase,
