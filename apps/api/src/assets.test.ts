@@ -151,7 +151,8 @@ describe("Haruki asset mappings", () => {
     expect(enTicket.imageCandidates).toContain("https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/en-assets/ondemand/gacha/ab_gacha_2/logo/logo.png");
     expect(comic.imageCandidates[0]).toBe(`${harukiJp}/startapp/comic/one_frame/comic_0001.png`);
     expect(comic.imageCandidates.some((url) => url.includes("/mangas/"))).toBe(false);
-    expect(legacyTip.imageCandidates[0]).toBe("https://moe.exmeaning.com/mangas/2.webp");
+    expect(legacyTip.imageCandidates[0]).toBe(`${harukiJp}/startapp/comic/one_frame/comic_0002.png`);
+    expect(legacyTip.imageCandidates).toContain("https://sekai-assets-haruki.seiunx.net/jp-assets/startapp/comic/one_frame/comic_0002.png");
     expect(rankMatch.rankMainUrl).toBe(`${harukiJp}/startapp/rank_live/honor/common/tier_25/main.png`);
   });
 });

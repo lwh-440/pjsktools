@@ -433,8 +433,8 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
       ]) : [];
     case "comics":
       return uniqueStrings(assetbundleName ? [
-        harukiAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
-        harukiAssetUrl(region, `comic/${assetbundleName}/${assetbundleName}.webp`),
+        ...harukiAssetCandidates(region, `comic/one_frame/${assetbundleName}.webp`),
+        ...harukiAssetCandidates(region, `comic/${assetbundleName}/${assetbundleName}.webp`),
         `${comicsAssetBase}/comic/one_frame/${assetbundleName}.webp`,
         moeAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
         moeOverseasAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
@@ -442,6 +442,7 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
         sekaiBestAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
         sekaiBestAssetUrl(region, `comic/${assetbundleName}/${assetbundleName}.webp`),
       ] : [
+        ...(numericId ? harukiAssetCandidates(region, `comic/one_frame/comic_${String(numericId).padStart(4, "0")}.webp`) : []),
         numericId ? `${moeStaticBase}/mangas/${numericId}.webp` : undefined,
         numericId ? `${moeStaticBase}/assets/mangas/${numericId}.webp` : undefined
       ]);
