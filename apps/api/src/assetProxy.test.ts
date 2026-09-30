@@ -131,4 +131,89 @@ describe("asset proxy streaming", () => {
       await app.close();
     }
   });
+
+  it("retries a Haruki CDN 404 through the global mirror while preserving range and ETag headers", async () => {
+    const primary = new Response("missing", { status: 404 });
+    const cancel = vi.spyOn(primary.body!, "cancel");
+    const upstream = vi.fn(async (url: unknown, _options: RequestInit) => {
+      if (String(url).includes("cn04-sha01")) return primary;
+      if (String(url).includes("sekai-assets-haruki.seiunx.net")) {
+        return new Response("part", {
+          status: 206,
+          headers: {
+            "content-type": "image/png",
+            "content-range": "bytes 10-13/100",
+            etag: "\"global-asset\""
+          }
+        });
+      }
+      throw new Error(`Unexpected mirror ${String(url)}`);
+    });
+    vi.stubGlobal("fetch", upstream);
+    const app = await buildApp({ assetProxyTimeoutMs: 100 });
+    const target = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets/startapp/comic/one_frame/comic_0022.png";
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/assets/proxy?url=${encodeURIComponent(target)}`,
+        headers: { range: "bytes=10-13", "if-none-match": "\"global-asset\"" }
+      });
+
+      expect(response.statusCode).toBe(206);
+      expect(response.body).toBe("part");
+      expect(response.headers["content-range"]).toBe("bytes 10-13/100");
+      expect(response.headers.etag).toBe("\"global-asset\"");
+      expect(response.headers["x-asset-source"]).toBe("sekai-assets-haruki.seiunx.net");
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(upstream).toHaveBeenCalledTimes(2);
+      expect(upstream.mock.calls[1]?.[1]).toMatchObject({
+        headers: { range: "bytes=10-13", "if-none-match": "\"global-asset\"" }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns an all-mirror 404 without caching it as a proxy failure", async () => {
+    const upstream = vi.fn(async (_url: unknown) => new Response("missing", { status: 404 }));
+    vi.stubGlobal("fetch", upstream);
+    const app = await buildApp({ assetProxyTimeoutMs: 100 });
+    const target = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets/startapp/comic/one_frame/comic_0089.png";
+    const url = `/api/assets/proxy?url=${encodeURIComponent(target)}`;
+
+    try {
+      const first = await app.inject({ method: "GET", url });
+      const retry = await app.inject({ method: "GET", url });
+
+      expect(first.statusCode).toBe(404);
+      expect(retry.statusCode).toBe(404);
+      // Three Haruki CDNs plus the old-source fallbacks (PNG/WebP) are tried
+      // on each request; a 404 must remain retryable rather than becoming a
+      // temporary 503 cache entry.
+      expect(upstream).toHaveBeenCalledTimes(18);
+      expect(upstream.mock.calls.map(([source]) => String(source))).not.toContain(expect.stringContaining("cn07-she02"));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("uses an old WebP mirror only after all Haruki CDN paths return 404", async () => {
+    const upstream = vi.fn(async (url: unknown) => {
+      const source = String(url);
+      if (source.includes("storage.exmeaning.com") && source.endsWith("banner_event_story.webp")) {
+        return new Response("legacy", { status: 206, headers: { "content-type": "image/webp", "content-range": "bytes 0-5/6" } });
+      }
+      return new Response("missing", { status: 404 });
+    });
+    vi.stubGlobal("fetch", upstream);
+    const app = await buildApp({ assetProxyTimeoutMs: 100 });
+    const target = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/tw-assets/ondemand/event_story/event_wl_3rd_part1_2026/screen_image/banner_event_story.png";
+    try {
+      const response = await app.inject({ method: "GET", url: `/api/assets/proxy?url=${encodeURIComponent(target)}` });
+      expect(response.statusCode).toBe(206);
+      expect(response.headers["content-type"]).toBe("image/webp");
+      expect(response.headers["x-asset-source"]).toBe("storage.exmeaning.com");
+    } finally { await app.close(); }
+  });
 });

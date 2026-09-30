@@ -409,7 +409,7 @@ async function fetchMetadataFirstAvailableJson<T>(region: RegionId, repository: 
       return (await fetchHarukiMaster<T>(region, filePaths)).value;
     } catch (error) {
       // Legacy mirrors are valid only after Haruki confirms the file is absent.
-      if (!mayUseLegacyMasterFallback(error)) return fallback;
+      if (!mayUseLegacyMasterFallback(error)) throw error;
     }
   }
   for (const filePath of filePaths) {
@@ -475,6 +475,18 @@ async function fetchFormulaCollection(region: RegionId, repository: string, key:
       };
     } catch (error) {
       harukiError = error;
+      if (!mayUseLegacyMasterFallback(error)) {
+        if (previous.length) {
+          return {
+            rows: previous,
+            health: { status: "cache-stale", source: metadataUrl, count: previous.length, error: `haruki=${errorSummary(error)}` } satisfies MasterCollectionHealth
+          };
+        }
+        return {
+          rows: [],
+          health: { status: "source-unavailable", source: metadataUrl, count: 0, error: `haruki=${errorSummary(error)}` } satisfies MasterCollectionHealth
+        };
+      }
     }
   }
   try {

@@ -1,6 +1,6 @@
 import { config, type RegionId } from "./config.js";
 import { harukiAssetPath } from "./harukiAssetPaths.js";
-import { fetchHarukiMasterJson, harukiMasterConfigured } from "./harukiMasterClient.js";
+import { fetchHarukiMasterJson, harukiMasterConfigured, HarukiMasterError } from "./harukiMasterClient.js";
 import type { MasterCollection, MasterCollectionItem } from "./types.js";
 
 export type CollectionSourceType = "team-haruki" | "metadata" | "information-api" | "asset-list" | "live2d-assets";
@@ -637,8 +637,8 @@ async function fetchMetadataFile<T>(region: RegionId, path: string): Promise<{ d
           fetchedAt: nowIso()
         }
       };
-    } catch {
-      // Keep the established mirrors as a fallback while the registry is unavailable.
+    } catch (error) {
+      if (!(error instanceof HarukiMasterError && error.kind === "not-found")) throw error;
     }
   }
   try {

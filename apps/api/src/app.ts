@@ -516,6 +516,47 @@ const assetMimeTypes: Record<string, string> = {
   ".webp": "image/webp"
 };
 
+const harukiAssetCdnHosts = [
+  "sekai-assets-cn04-sha01-cdn.haruki.seiunx.com",
+  "sekai-assets-haruki.seiunx.net",
+  "sekai-assets-cn03-she01-cdn.haruki.seiunx.com"
+] as const;
+
+function harukiAssetMirrorUrls(value: string) {
+  try {
+    const url = new URL(value);
+    if (!harukiAssetCdnHosts.includes(url.hostname.toLowerCase() as typeof harukiAssetCdnHosts[number])) return [];
+    const mirrors = harukiAssetCdnHosts.filter((host) => host !== url.hostname.toLowerCase()).map((host) => {
+      const mirror = new URL(url.toString());
+      mirror.hostname = host;
+      return mirror.toString();
+    });
+    // The old mirrors remain a last resort only after every Haruki CDN path
+    // returns 404. Include the historical WebP spelling used by event assets.
+    const oldHosts = ["storage.exmeaning.com", "storage.pjsk.moe", "storage.sekai.best"];
+    for (const host of oldHosts) {
+      const mirror = new URL(url.toString());
+      mirror.hostname = host;
+      mirrors.push(mirror.toString());
+      if (/\.png$/i.test(mirror.pathname)) {
+        mirror.pathname = mirror.pathname.replace(/\.png$/i, ".webp");
+        mirrors.push(mirror.toString());
+      }
+    }
+    return mirrors;
+  } catch {
+    return [];
+  }
+}
+
+async function discardAssetProxyResponse(response: Response) {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // A completed/errored response body needs no further cleanup.
+  }
+}
+
 function inferAssetContentType(url: string, upstreamContentType: string | null) {
   const normalized = upstreamContentType?.trim();
   if (normalized && !/^application\/octet-stream(?:\s*;|$)/i.test(normalized)) return normalized;
@@ -1453,7 +1494,8 @@ export async function buildApp(options: {
   app.get("/api/assets/proxy", async (request, reply) => {
     const query = request.query as { url?: string };
     if (!query.url || !isAllowedExternalAssetUrl(query.url)) return reply.badRequest("Unsupported asset proxy URL");
-    const failedAt = assetProxyFailures.get(query.url);
+    const hasHarukiMirrors = harukiAssetMirrorUrls(query.url).length > 0;
+    const failedAt = hasHarukiMirrors ? undefined : assetProxyFailures.get(query.url);
     if (failedAt && Date.now() - failedAt < 60_000) {
       reply.header("cache-control", "no-store");
       return reply.serviceUnavailable("Asset proxy source is temporarily unavailable");
@@ -1464,27 +1506,47 @@ export async function buildApp(options: {
       const controller = new AbortController();
       const deadline = Date.now() + assetProxyTimeoutMs;
       timeout = setTimeout(() => controller.abort(), assetProxyTimeoutMs);
-      const upstream = await fetch(query.url, {
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "pjsktools-local-dev",
-          ...(range ? { range } : {}),
-          ...(request.headers["if-none-match"] ? { "if-none-match": String(request.headers["if-none-match"]) } : {}),
-          ...(request.headers["if-modified-since"] ? { "if-modified-since": String(request.headers["if-modified-since"]) } : {})
+      const upstreamHeaders = {
+        "User-Agent": "pjsktools-local-dev",
+        ...(range ? { range } : {}),
+        ...(request.headers["if-none-match"] ? { "if-none-match": String(request.headers["if-none-match"]) } : {}),
+        ...(request.headers["if-modified-since"] ? { "if-modified-since": String(request.headers["if-modified-since"]) } : {})
+      };
+      let upstreamUrl = query.url;
+      let upstream = await fetch(upstreamUrl, { signal: controller.signal, headers: upstreamHeaders });
+      // Shanghai/CN03 may legitimately lag the global CDN. Keep the public
+      // URL stable while trying the other documented CDN mirrors on a 404.
+      if (upstream.status === 404) {
+        await discardAssetProxyResponse(upstream);
+        for (const mirrorUrl of harukiAssetMirrorUrls(query.url)) {
+          const mirrorResponse = await fetch(mirrorUrl, { signal: controller.signal, headers: upstreamHeaders });
+          if (mirrorResponse.ok || mirrorResponse.status === 304) {
+            upstreamUrl = mirrorUrl;
+            upstream = mirrorResponse;
+            break;
+          }
+          await discardAssetProxyResponse(mirrorResponse);
         }
-      });
-      if (upstream.status === 304) return reply.code(304).send();
+      }
+      if (upstream.status === 304) {
+        await discardAssetProxyResponse(upstream);
+        return reply.code(304).send();
+      }
       if (!upstream.ok) {
-        assetProxyFailures.set(query.url, Date.now());
+        await discardAssetProxyResponse(upstream);
+        // A 404 is an asset-state result, not a transient proxy outage. Do
+        // not suppress a future request that could resolve through a mirror.
+        if (upstream.status >= 500 && !hasHarukiMirrors) assetProxyFailures.set(query.url, Date.now());
         reply.header("cache-control", "no-store");
         return reply.code(upstream.status).send(`Upstream asset unavailable: ${upstream.status}`);
       }
-      const contentType = inferAssetContentType(query.url, upstream.headers.get("content-type"));
+      const contentType = inferAssetContentType(upstreamUrl, upstream.headers.get("content-type"));
       const contentRange = upstream.headers.get("content-range");
       const acceptRanges = upstream.headers.get("accept-ranges");
       const etag = upstream.headers.get("etag");
       const lastModified = upstream.headers.get("last-modified");
       reply.header("content-type", contentType);
+      reply.header("x-asset-source", new URL(upstreamUrl).hostname);
       if (contentRange) reply.header("content-range", contentRange);
       reply.header("accept-ranges", acceptRanges ?? "bytes");
       if (etag) reply.header("etag", etag);
@@ -1498,7 +1560,7 @@ export async function buildApp(options: {
       const stream = createTimedAssetProxyStream(upstream.body as ReadableStream<Uint8Array>, controller, Math.max(1, deadline - Date.now()));
       let clientDisconnected = false;
       stream.once("error", () => {
-        if (!clientDisconnected) assetProxyFailures.set(query.url!, Date.now());
+        if (!clientDisconnected && !hasHarukiMirrors) assetProxyFailures.set(query.url!, Date.now());
       });
       reply.raw.once("close", () => {
         if (stream.destroyed) return;
@@ -1508,7 +1570,7 @@ export async function buildApp(options: {
       });
       return reply.send(stream);
     } catch (error) {
-      assetProxyFailures.set(query.url, Date.now());
+      if (!hasHarukiMirrors) assetProxyFailures.set(query.url, Date.now());
       return reply.serviceUnavailable(`Asset proxy failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       if (timeout) clearTimeout(timeout);
