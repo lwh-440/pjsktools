@@ -381,8 +381,8 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
     case "gachas":
       // A banner is not exported for every region-specific ticket or gift gacha. Haruki's documented ondemand bundle logo is the real fallback.
       return uniqueStrings([
-        gachaId ? harukiAssetUrl(region, `startapp/home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.png`) : undefined,
-        assetbundleName ? harukiAssetUrl(region, `ondemand/gacha/${assetbundleName}/logo/logo.png`) : undefined,
+        ...(gachaId ? harukiAssetCandidates(region, `startapp/home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.png`) : []),
+        ...(assetbundleName ? harukiAssetCandidates(region, `ondemand/gacha/${assetbundleName}/logo/logo.png`) : []),
         ...(gachaId ? moeAssetUrlPair(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : []),
         ...(assetbundleName ? moeAssetUrlPair(region, `gacha/${assetbundleName}/logo/logo.webp`) : []),
         gachaId ? assetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined,
@@ -394,18 +394,18 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
       const frameRarity = { low: 1, middle: 2, high: 3, highest: 4 }[rarity as "low" | "middle" | "high" | "highest"] ?? 1;
       const rankRoot = honorType === "rank_match" ? "rank_live/honor" : "honor";
       return uniqueStrings([
-        backgroundName ? assetUrl(region, `${rankRoot}/${backgroundName}/degree_main.webp`) : undefined,
-        backgroundName ? assetUrl(region, `${rankRoot}/${backgroundName}/degree_sub.webp`) : undefined,
-        frameName ? assetUrl(region, `honor_frame/${frameName}/frame_degree_m_${frameRarity}.webp`) : undefined,
-        frameName ? assetUrl(region, `honor_frame/${frameName}/frame_degree_s_${frameRarity}.webp`) : undefined,
-        assetbundleName ? assetUrl(region, `${rankRoot}/${assetbundleName}/rank_main.webp`) : undefined,
-        assetbundleName ? assetUrl(region, `${rankRoot}/${assetbundleName}/main.webp`) : undefined,
-        assetbundleName ? assetUrl(region, `honor/${assetbundleName}/scroll.webp`) : undefined
+        ...(backgroundName ? harukiAssetCandidates(region, `${rankRoot}/${backgroundName}/degree_main.webp`) : []),
+        ...(backgroundName ? harukiAssetCandidates(region, `${rankRoot}/${backgroundName}/degree_sub.webp`) : []),
+        ...(frameName ? harukiAssetCandidates(region, `honor_frame/${frameName}/frame_degree_m_${frameRarity}.webp`) : []),
+        ...(frameName ? harukiAssetCandidates(region, `honor_frame/${frameName}/frame_degree_s_${frameRarity}.webp`) : []),
+        ...(assetbundleName ? harukiAssetCandidates(region, `${rankRoot}/${assetbundleName}/rank_main.webp`) : []),
+        ...(assetbundleName ? harukiAssetCandidates(region, `${rankRoot}/${assetbundleName}/main.webp`) : []),
+        ...(assetbundleName ? harukiAssetCandidates(region, `honor/${assetbundleName}/scroll.webp`) : [])
       ]);
     }
     case "materials":
       return uniqueStrings([
-        numericId ? harukiAssetUrl(region, `startapp/thumbnail/material/material${numericId}.png`) : undefined,
+        ...(numericId ? harukiAssetCandidates(region, `startapp/thumbnail/material/material${numericId}.png`) : []),
         ...(numericId ? [moeAssetUrl(region, `thumbnail/material/material${numericId}.webp`), moeOverseasAssetUrl(region, `thumbnail/material/material${numericId}.webp`)] : []),
         numericId ? assetUrl(region, `thumbnail/material/material${numericId}.webp`) : undefined,
         numericId ? moeAssetUrl(region, `thumbnail/material/material${numericId}.webp`) : undefined,
@@ -425,7 +425,7 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
       }
     case "stamps":
       return assetbundleName ? uniqueStrings([
-        harukiAssetUrl(region, `startapp/stamp/${assetbundleName}/${assetbundleName}.png`),
+        ...harukiAssetCandidates(region, `startapp/stamp/${assetbundleName}/${assetbundleName}.png`),
         moeAssetUrl(region, `stamp/${assetbundleName}/${assetbundleName}.png`),
         moeOverseasAssetUrl(region, `stamp/${assetbundleName}/${assetbundleName}.png`),
         sekaiBestAssetUrl(region, `stamp/${assetbundleName}/${assetbundleName}.png`),
