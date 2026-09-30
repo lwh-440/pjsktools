@@ -1,5 +1,17 @@
 ## 2026-09-30 Haruki asset endpoint migration
 
+## 2026-09-30 补充修复：镜像代理与故事资源回退
+
+提交 `21881a5`、`93784cf` 已推送 GitHub `main` 并部署到 `101.35.21.48`；生产 marker 为 `93784cf`，API 容器 healthy。针对 `C:/Users/83899/Downloads/haruki-asset-endpoints-migration.md` 的实际影响如下：
+
+- 公告只规定资源域名迁移，五区目录和文件路径保持不变。主源仍为上海 `cn04` CDN，候选顺序增加全球 CDN、`cn03` 和即将上线的 `cn07`；公告中的 `cn03` 直连 `:51125` 没有加入批量候选。
+- 资源代理 allowlist 已放行公告列出的全部 CDN/直连主机。此前全球 Haruki 有资源时代理返回 400，页面错误回退到旧源；修复后公网漫画 `jp/comic/22` 的全球 Haruki URL 经 `/api/assets/proxy` 实际返回 `200 image/png`、`328664` 字节。
+- 故事场景、语音、BGM、背景和 Live2D 相关的 Haruki 资源候选也会尝试全球/CN03/CN04/CN07。生产故事 `specialStories/70` 的场景在上海节点 404 后实际切换全球节点，播放接口返回 `partial-ready`、`116` 个动作，场景 URL 为全球 Haruki。
+- master registry 和独立 music metas 的 `/v1/master/{region}/current`、blob、files 兜底及 `/v1/metas/{region}/music_metas.json` ETag 逻辑已在此前提交中保留；本附件本身不包含 registry 规格，二者分别记录。当前 `contentHash` 仍只在服务端缓存结果中透传，尚未作为 Web/Android IndexedDB 版本字段公开。
+- 旧源只在 Haruki 明确返回 `404/not-found` 后回退；网络错误、超时、5xx 不再被静默混合为旧源数据。资源图候选仍以真实 GET 成功为准。
+
+全量目录审计遍历 `65984` 个项目、`236762` 个去重 URL，首轮因每项只取前 12 个候选而报 `288` 项缺失；补查全部候选后确认 `287` 项确实没有可用图：其中 `40` 项是上游没有图片路径的参考称号，`247` 项的 Haruki 与旧源候选均为 404（8 个超时已重试并确认为 404）。TW 活动 `202` 的后置旧源 WebP 实际为 `206 image/webp`，已从缺失项剔除。其余资源不以 HTTP 200 或元数据 source 字段代替图片显示验收。
+
 读取并核对了 C:/Users/83899/Downloads/haruki-asset-endpoints-migration.md。公告说明旧的 production-sekai-assets.neo.bot.haruki.seiunx.com 将停用，资源目录和文件名不变，只需替换域名；五个区仍使用 jp-assets/、en-assets/、tw-assets/、kr-assets/、cn-assets/。本项目已将默认游戏资源 CDN 切换为上海节点 https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com，并保留环境变量覆盖到公告列出的其他 Haruki CDN；直连端点未用于批量下载。
 
 影响范围：卡牌、活动、歌曲封面、谱面 SUS、故事/Live2D 文件重写、分享卡信任主机和资源来源标记都随新的 CDN 域名生成；master registry 与独立 music metas 接口不受影响，继续使用 sekai-api-cdn.haruki.seiunx.com。旧源只在实际探测 Haruki 候选失败后按现有候选链回退。上海 CDN 的卡牌缩略图和 gacha banner 已用真实 GET 验证为 200 image/*；本地 API 构建及 57 个定向测试通过。 Android app testDebugUnitTest 与 core:network:test 也通过；本次 Android 不新增硬编码资源域名，运行时继续使用生产 API 返回的新 CDN URL。
