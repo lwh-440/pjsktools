@@ -2079,20 +2079,38 @@ export async function getStoryPlaybackContext(region: RegionId, storyType: strin
   let scenarioData: unknown = null;
   let parsed = null as ReturnType<typeof normalizeScenarioData> | null;
   let unavailableReason: string | undefined;
+  let resolvedScenarioDataUrl = scenarioInfo.scenarioDataUrl;
   try {
-    scenarioData = await fetchJsonUrl<unknown>(scenarioInfo.scenarioDataUrl);
+    const scenarioUrls = [...new Set([
+      scenarioInfo.scenarioDataUrl,
+      ...(scenarioInfo.scenarioDataPath ? harukiRegionAssetCandidates(region, scenarioInfo.scenarioDataPath) : [])
+    ].filter((value): value is string => Boolean(value)))];
+    let lastError: unknown;
+    for (const url of scenarioUrls) {
+      try {
+        scenarioData = await fetchJsonUrl<unknown>(url);
+        resolvedScenarioDataUrl = url;
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (scenarioData === null && lastError) throw lastError;
     const models = await getLive2dModels(region).then((result) => result.models).catch(() => []);
     parsed = normalizeScenarioData(region, scenarioInfo, scenarioData, models);
   } catch (error) {
     unavailableReason = `Story scenario asset could not be loaded: ${error instanceof Error ? error.message : String(error)}`;
   }
+  const resolvedScenarioInfo = resolvedScenarioDataUrl && resolvedScenarioDataUrl !== scenarioInfo.scenarioDataUrl
+    ? { ...scenarioInfo, scenarioDataUrl: resolvedScenarioDataUrl, proxiedScenarioDataUrl: proxyUrl(resolvedScenarioDataUrl) }
+    : scenarioInfo;
   return {
     region,
     storyType,
     storyId,
     episodeId: episodeId ?? String(asRecord(scenarioInfo.raw).id ?? scenarioInfo.scenarioId ?? storyId),
     episodeIndex: Math.max(0, scenarioInfos.indexOf(scenarioInfo)),
-    scenarioInfo,
+    scenarioInfo: resolvedScenarioInfo,
     scenarioData,
     appearCharacters: parsed?.appearCharacters ?? [],
     snippets: parsed?.snippets ?? [],
