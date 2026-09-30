@@ -492,31 +492,62 @@ async function harukiLive2dModel3(model: Live2dModelSummary) {
   return model3FromHarukiBuildModelData(buildModelData, legacyModel3Json, model.motionBaseUrl ?? "", motionReferences);
 }
 
-export async function resolveLive2dModelAssetRegion(model: Live2dModelSummary) {
-  if (!model.buildModelDataUrl) return model;
+function replaceHarukiAssetUrl(url: string | undefined, from: URL, to: URL, sharedRegion: boolean) {
+  if (!url) return url;
   try {
-    await fetchJsonUrl<unknown>(model.buildModelDataUrl);
-    return model;
+    const value = new URL(url);
+    if (value.hostname !== from.hostname) return url;
+    value.hostname = to.hostname;
+    if (sharedRegion) value.pathname = value.pathname.replace(/\/(?:jp|en|tw|kr|cn)-assets\//, "/jp-assets/");
+    return value.toString();
   } catch {
-    // Live2D models are global shared assets. Haruki currently publishes many
-    // of them only under jp-assets, even when the selected catalog region is
-    // en/tw/kr/cn; use that same Haruki asset when the regional path is absent.
-    const fallbackBuild = model.buildModelDataUrl.replace(/\/(?:en|tw|kr|cn)-assets\//, "/jp-assets/");
-    if (fallbackBuild === model.buildModelDataUrl) return model;
+    return url;
+  }
+}
+
+/** Try every Haruki CDN mirror before declaring a shared model unavailable. */
+export async function resolveLive2dModelAssetRegion(model: Live2dModelSummary, region: RegionId = "jp") {
+  if (!model.buildModelDataUrl) return model;
+  const original = new URL(model.buildModelDataUrl);
+  const hosts = [...new Set([
+    original.hostname,
+    config.harukiAssetBaseUrl ? new URL(config.harukiAssetBaseUrl).hostname : "",
+    "sekai-assets-haruki.seiunx.net",
+    "sekai-assets-cn03-she01-cdn.haruki.seiunx.com",
+    "sekai-assets-cn04-sha01-cdn.haruki.seiunx.com",
+    "sekai-assets-cn07-she02-cdn.haruki.seiunx.com"
+  ].filter(Boolean))];
+  const regionalUrls = hosts.map((host) => {
+    const value = new URL(original.toString());
+    value.hostname = host;
+    return value;
+  });
+  const sharedUrls = regionalUrls
+    .filter((value) => !value.pathname.includes("/jp-assets/"))
+    .map((value) => {
+      const shared = new URL(value.toString());
+      shared.pathname = shared.pathname.replace(/\/(?:en|tw|kr|cn)-assets\//, "/jp-assets/");
+      return shared;
+    });
+  const candidates = [...regionalUrls, ...sharedUrls];
+  for (const candidate of candidates) {
     try {
-      await fetchJsonUrl<unknown>(fallbackBuild);
-      const replaceBase = (value?: string) => value?.replace(/\/(?:en|tw|kr|cn)-assets\//, "/jp-assets/");
+      await fetchJsonUrl<unknown>(candidate.toString());
+      const sharedRegion = candidate.pathname.includes("/jp-assets/") && !original.pathname.includes("/jp-assets/");
+      const from = original;
+      const to = candidate;
       return {
         ...model,
-        buildModelDataUrl: fallbackBuild,
-        modelBaseUrl: replaceBase(model.modelBaseUrl),
-        motionBaseUrl: replaceBase(model.motionBaseUrl),
-        modelAssetSource: "haruki-buildmodeldata-jp-shared" as const
+        buildModelDataUrl: candidate.toString(),
+        modelBaseUrl: replaceHarukiAssetUrl(model.modelBaseUrl, from, to, sharedRegion),
+        motionBaseUrl: replaceHarukiAssetUrl(model.motionBaseUrl, from, to, sharedRegion),
+        modelAssetSource: sharedRegion ? "haruki-buildmodeldata-jp-shared" as const : "haruki-buildmodeldata" as const
       } satisfies Live2dModelSummary;
     } catch {
-      return model;
+      // Try the next Haruki mirror. Legacy motion/model files remain optional.
     }
   }
+  return model;
 }
 
 function isHarukiAssetUrl(value: string | undefined) {
@@ -1773,7 +1804,7 @@ export async function getLive2dModelDetail(region: RegionId, modelId: string) {
   const list = await getLive2dModels(region);
   const model = list.models.find((item) => item.id === modelId || item.modelPath === modelId || item.name === modelId);
   if (!model) return null;
-  const resolvedModel = await resolveLive2dModelAssetRegion(model);
+  const resolvedModel = await resolveLive2dModelAssetRegion(model, region);
   let parsedModel3 = null;
   let unavailableReason: string | undefined;
   if (resolvedModel.buildModelDataUrl) {
@@ -1848,7 +1879,7 @@ export async function getLive2dModel3Proxy(region: RegionId, modelId: string) {
   const list = await getLive2dModels(region);
   const model = list.models.find((item) => item.id === modelId || item.modelPath === modelId || item.name === modelId);
   if (!model) return null;
-  const resolvedModel = await resolveLive2dModelAssetRegion(model);
+  const resolvedModel = await resolveLive2dModelAssetRegion(model, region);
   if (!resolvedModel.buildModelDataUrl) throw new Error("Haruki BuildModelData URL is unavailable");
   return rewriteLive2dModel3(resolvedModel, await harukiLive2dModel3(resolvedModel));
 }

@@ -96,10 +96,10 @@ describe("Haruki Live2D BuildModelData adapter", () => {
     expect(resolved.buildModelDataUrl).toContain("/jp-assets/");
     expect(resolved.modelBaseUrl).toContain("/jp-assets/");
     expect(resolved.motionBaseUrl).toContain("/jp-assets/");
-    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
-      model.buildModelDataUrl,
-      model.buildModelDataUrl.replace("/en-assets/", "/jp-assets/")
-    ]);
+    const calls = fetchMock.mock.calls.map(([input]) => String(input));
+    expect(calls[0]).toBe(model.buildModelDataUrl);
+    expect(calls.at(-1)).toBe(model.buildModelDataUrl.replace("/en-assets/", "/jp-assets/"));
+    expect(calls.some((value) => value.includes("sekai-assets-haruki.seiunx.net"))).toBe(true);
   });
 });
 
