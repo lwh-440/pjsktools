@@ -512,12 +512,24 @@ export async function resolveLive2dModelAssetRegion(model: Live2dModelSummary) {
   }
 }
 
+function isHarukiAssetUrl(value: string | undefined) {
+  if (!value) return false;
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return (hostname.startsWith("sekai-assets-") && hostname.endsWith(".haruki.seiunx.com"))
+      || hostname === "sekai-assets-haruki.seiunx.net"
+      || hostname === new URL(config.harukiAssetBaseUrl).hostname;
+  } catch {
+    return false;
+  }
+}
+
 function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {
   if (typeof value === "string") {
     const resolved = absoluteUrl(baseUrl, value);
     // Route Haruki binary assets through the proxy with a stable filename suffix
     // so browser loaders retain the resource type and response headers.
-    if (resolved?.includes("sekai-assets-cn04-sha01-cdn.haruki.seiunx.com")) return live2dProxyUrl(resolved, resolved);
+    if (isHarukiAssetUrl(resolved)) return live2dProxyUrl(resolved, resolved);
     return proxyUrl(resolved) ?? value;
   }
   if (Array.isArray(value)) return value.map((entry) => rewriteLive2dFileReference(baseUrl, entry));
@@ -527,7 +539,7 @@ function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {
     if (["Name", "name", "Group", "group"].includes(key)) return [key, entry];
     if (["File", "file", "Path", "path"].includes(key) && typeof entry === "string") {
       const resolved = absoluteUrl(baseUrl, entry);
-      return [key, resolved?.includes("sekai-assets-cn04-sha01-cdn.haruki.seiunx.com") ? live2dProxyUrl(resolved, resolved) : proxyUrl(resolved) ?? entry];
+      return [key, isHarukiAssetUrl(resolved) ? live2dProxyUrl(resolved, resolved) : proxyUrl(resolved) ?? entry];
     }
     return [key, rewriteLive2dFileReference(baseUrl, entry)];
   }));
