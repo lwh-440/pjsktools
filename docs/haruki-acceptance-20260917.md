@@ -729,3 +729,10 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - World Link 修复 `02ebcc9` 已推送并部署，生产当前 EN 活动为 `180` 的 `finale` 阶段，Haruki master 没有 `gameCharacterId`。因此角色榜按钮保持不可用、角色详情返回 `503` 是正确的生命周期状态；下一次存在角色章节的 active World Bloom 才能做正向详情 smoke。
 
 本轮证据文件保留在 `.runtime/migration-remaining-results.json`、`.runtime/migration-detail-results.json`、`.runtime/migration-media-results.json` 和 `.runtime/migration-browser-results.json`；这些证据用于记录本地生产验收时间点，不将懒加载未观察节点或确认的上游 404 伪标为通过。
+## 2026-09-30 卡池 5xx 镜像回退修复与 Android/生产链复验
+
+提交 `681d704` 已推送 GitHub 并部署生产。资源代理在 Haruki 上海节点返回 `5xx` 时会继续尝试全球/CN03 Haruki 镜像；只有在确认资源不存在后才保持不可用，不会把一次节点暂时故障直接呈现为坏图。定向 Vitest `20/20` 通过，API build 通过，生产 API/Caddy/Postgres healthy，公网 `/health` 为 200。
+
+生产真实完整 GET 与 PNG 签名检查确认卡池 `4027、4028、4029、4030、4032、4035、4037、4038` 的可用 logo 全部 `200 image/png`；其中 `4029→ab_gacha_593`、`4030→ab_gacha_579`、`4035→ab_gacha_326` 使用了 master 的真实 assetbundle 名。对应 banner 路径在 Haruki 各镜像均为 404，确认为上游未导出资源，不能把 banner 404 记成代理故障。
+
+部署后生产浏览器打开 `/section/gachas?pageSize=12`，等待 35 秒后页面 `13/13` 图片均有自然尺寸，`fallback=[]`、资产请求失败 `0`；八个原先停在加载状态的条目均实际显示 Haruki logo，证据为 `.runtime/migration-gacha-after-681d704.json` 和 `.runtime/migration-gachas-after-681d704.png`。Android 侧本次启动的无窗口模拟器网络无法访问公网 DNS，未把这次失败环境记作 Android 资源结论；此前 Release Android 实机证据仍以顶部 f4152 包记录为准。
