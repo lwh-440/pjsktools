@@ -8,6 +8,16 @@
 
 同一轮冷启动还实际确认 Android 首页能读取歌曲与活动数据，MySekai 家具、素材和蓝图页面均能显示图片。Android 仍不能因此标记为所有故事、所有 Live2D 模型、所有区服和所有媒体的全量通过；本记录只关闭本次已复现的 Live2D 大纹理 503 和 Miku 舞台样本。
 
+## 2026-09-30 Android 活动详情与跨区服图片验收
+
+在同一份 Release APK（SHA-256 `f4152a06010bb6169d928e59e8cfb9abe4f625c6c7f87d587bdb8e6b6e5d501f`）的冷启动模拟器 `emulator-5554` 上，实际打开活动入口并等待网络资源加载：
+
+- JP 活动 `219`「Side by Side, Our Ways!」详情横幅实际显示，图片中可见活动标题和角色画面；页面同时显示活动类型、时间、简介及相关卡牌。
+- 切换 TW 区服后打开活动 `202`「約定的Passerelle」详情横幅实际显示，图片中可见 World Link 画面；该活动已知 Haruki 主候选缺失，实际走旧源 WebP 回退后在 Android 页面显示成功。
+- 两个详情页的 UIAutomator XML 均未出现“图片请求失败”“图片暂不可用”或 HTTP 503 文本；截图证据为 `.runtime/android-0930-android-0930-event219-detail.png` 与 `.runtime/android-0930-android-0930-tw-event202-detail.png`。
+
+这次验收关闭了 Release 包活动详情横幅和 TW 旧源回退的实显样本，但不等于全部活动、全部区服、全部卡牌与故事媒体均已逐项通过；其余入口仍按下方已知限制记录。
+
 ## 2026-09-30 Live2D 镜像修复与 Android 验收状态
 
 提交 `139bf3d` 已推送 GitHub `main` 并部署到生产。生产 Live2D 详情使用目录返回的完整模型 ID（例如 `v1/collabo/21_miku/clb01_21miku`），并在 cn04 返回 404 时逐个尝试全球、cn03、cn07 等 Haruki 镜像；Miku 样本实际切换到全球 Haruki BuildModelData，详情返回 `partial`、纹理 `1`、动作 `20`。生产浏览器用完整路径实际打开画布（704×439），状态为“部分资源可用”，动作和表情列表可操作；唯一内容请求失败是未登录刷新接口 `401`，不影响资源，故事 70/75 另有已确认的上游缺失背景 `bg_g000102`。
