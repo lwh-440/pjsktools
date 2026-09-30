@@ -155,4 +155,23 @@ describe("Haruki asset mappings", () => {
     expect(legacyTip.imageCandidates).toContain("https://sekai-assets-haruki.seiunx.net/jp-assets/startapp/comic/one_frame/comic_0002.png");
     expect(rankMatch.rankMainUrl).toBe(`${harukiJp}/startapp/rank_live/honor/common/tier_25/main.png`);
   });
+
+  it("keeps gacha banner and bundle-logo candidates separate when the banner is not exported", () => {
+    const freeGacha = getCollectionItemAssetDetail("jp", "gachas", {
+      id: "4027",
+      assetbundleName: "ab_gacha_4027",
+      raw: { id: 4027, assetbundleName: "ab_gacha_4027" }
+    });
+    const ticketGacha = getCollectionItemAssetDetail("jp", "gachas", {
+      id: "4029",
+      assetbundleName: "ab_gacha_593",
+      raw: { id: 4029, assetbundleName: "ab_gacha_593" }
+    });
+
+    expect(freeGacha.bannerUrl).toBe(`${harukiJp}/startapp/home/banner/banner_gacha4027/banner_gacha4027.png`);
+    expect(freeGacha.logoUrl).toBe(`${harukiJp}/ondemand/gacha/ab_gacha_4027/logo/logo.png`);
+    expect(ticketGacha.bannerUrl).toBe(`${harukiJp}/startapp/home/banner/banner_gacha4029/banner_gacha4029.png`);
+    expect(ticketGacha.logoUrl).toBe(`${harukiJp}/ondemand/gacha/ab_gacha_593/logo/logo.png`);
+    expect(ticketGacha.imageCandidates).toContain(ticketGacha.logoUrl);
+  });
 });

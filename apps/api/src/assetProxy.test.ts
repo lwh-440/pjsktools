@@ -175,6 +175,33 @@ describe("asset proxy streaming", () => {
     }
   });
 
+  it("retries a transient Haruki CDN failure through the global mirror", async () => {
+    const primary = new Response("upstream unavailable", { status: 502 });
+    const cancel = vi.spyOn(primary.body!, "cancel");
+    const upstream = vi.fn(async (url: unknown) => {
+      if (String(url).includes("cn04-sha01")) return primary;
+      if (String(url).includes("sekai-assets-haruki.seiunx.net")) {
+        return new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { "content-type": "image/png" } });
+      }
+      throw new Error(`Unexpected mirror ${String(url)}`);
+    });
+    vi.stubGlobal("fetch", upstream);
+    const app = await buildApp({ assetProxyTimeoutMs: 100 });
+    const target = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets/startapp/home/banner/banner_gacha4027/banner_gacha4027.png";
+
+    try {
+      const response = await app.inject({ method: "GET", url: `/api/assets/proxy?url=${encodeURIComponent(target)}` });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toBe("image/png");
+      expect(response.headers["x-asset-source"]).toBe("sekai-assets-haruki.seiunx.net");
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(upstream).toHaveBeenCalledTimes(2);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("returns an all-mirror 404 without caching it as a proxy failure", async () => {
     const upstream = vi.fn(async (_url: unknown) => new Response("missing", { status: 404 }));
     vi.stubGlobal("fetch", upstream);

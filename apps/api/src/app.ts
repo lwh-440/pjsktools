@@ -1524,9 +1524,10 @@ export async function buildApp(options: {
       };
       let upstreamUrl = query.url;
       let upstream = await fetch(upstreamUrl, { signal: controller.signal, headers: upstreamHeaders });
-      // Shanghai/CN03 may legitimately lag the global CDN. Keep the public
-      // URL stable while trying the other documented CDN mirrors on a 404.
-      if (upstream.status === 404) {
+      // Shanghai/CN03 can lag or transiently fail while the global CDN is
+      // available. Keep the public URL stable while trying the other
+      // documented CDN mirrors on missing and transient upstream responses.
+      if (upstream.status === 404 || (upstream.status >= 500 && upstream.status <= 599)) {
         await discardAssetProxyResponse(upstream);
         for (const mirrorUrl of harukiAssetMirrorUrls(query.url)) {
           const mirrorResponse = await fetch(mirrorUrl, { signal: controller.signal, headers: upstreamHeaders });
