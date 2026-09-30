@@ -813,6 +813,7 @@ export async function getLiveRankingCached(region: RegionId, eventId: string, ev
     const borderLines = borderResult.status === "fulfilled" && Array.isArray(borderResult.value) ? borderResult.value : [];
     if (top100.length || borderLines.length) {
       const sampledAt = new Date().toISOString();
+      const fallbackWorldLinkCharacters = await worldLinkCharacters(region, eventId, event);
       const snapshot: LiveRankingSnapshot = {
         region,
         eventId,
@@ -830,8 +831,8 @@ export async function getLiveRankingCached(region: RegionId, eventId: string, ev
           ].slice(-6)
         },
         boardType: "overall",
-        worldLinkCharacters: await worldLinkCharacters(region, eventId, event),
-        worldLinkAvailable: false,
+        worldLinkCharacters: fallbackWorldLinkCharacters,
+        worldLinkAvailable: fallbackWorldLinkCharacters.length > 0,
         staleRanks: [],
         warnings: ["Realtime ranking source unavailable; using Haruki toolbox fallback"]
       };
