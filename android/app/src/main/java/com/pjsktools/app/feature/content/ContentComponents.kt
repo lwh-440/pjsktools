@@ -261,7 +261,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.live2dDetail(baseUrl:
             Text("播放能力：${statusLabel(detail.playbackStatus)}")
             Text(detail.model.modelPath ?: detail.model.id)
             Text("动作 ${detail.model.motionCount} · 表情 ${detail.model.expressionCount} · 贴图 ${detail.model.textureCount}")
-            detail.textureUrls.firstOrNull()?.let { RemoteContentImage(baseUrl, listOf(it), "${detail.model.name} 贴图", height = 260) }
+            // Live2D texture atlases are often multi-megabyte files. Keep the
+            // API's proxy URL here instead of routing through /api/assets/resolve,
+            // whose short server-side candidate timeout is intended for small
+            // catalog images and can turn a valid atlas into a 503.
+            detail.textureUrls.firstOrNull()?.let {
+                RemoteContentImage(baseUrl, listOf(it), "${detail.model.name} 贴图", height = 260, useAssetResolver = false)
+            }
             Text("下方复用网页端 Pixi + Cubism4 运行时，提供拖拽、缩放、动作和表情；原生区域保留资产诊断。", style = MaterialTheme.typography.bodySmall)
             detail.unavailableReason?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             detail.model3Url?.let { Text("model3：$it", style = MaterialTheme.typography.bodySmall) }
