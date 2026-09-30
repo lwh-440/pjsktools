@@ -18,6 +18,28 @@
 
 这次验收关闭了 Release 包活动详情横幅和 TW 旧源回退的实显样本，但不等于全部活动、全部区服、全部卡牌与故事媒体均已逐项通过；其余入口仍按下方已知限制记录。
 
+## 2026-09-30 Haruki master 非404回退修复与生产复验
+
+提交 `0cdcd15` 已推送 GitHub `main` 并部署生产，服务器 marker 为 `0cdcd15`，API 容器 healthy，公网 `/health` 返回 200。`apps/api/src/referenceMaster.ts` 现在只在 Haruki 明确 HTTP 404 时请求旧 metadata/GitHub raw；Haruki 503、网络失败、超时和无效响应直接返回 `source-unavailable`，不再把上游暂时失联伪装成旧源数据。对应测试 4/4 通过，API build 通过。
+
+这项修复只改变数据源判定，不会把 Team Haruki 没有的资源伪造为可用；图片代理仍按真实 Haruki 404 后再尝试旧源。生产五区 master 状态复验仍为 `synced=true`，当前已部署版本可正常读取 Team-Haruki registry。
+
+同日再次冷启动并安装同一 Release APK，在 Android Live2D 目录切换“全局共享”后打开 `v1/collabo/21_miku/clb01_21miku`：原生贴图实际显示，详情为动作 `20`、贴图 `1`；进入嵌入网页运行时后，先等待模型资源，再滚动到画布，Miku 人物实际显示，页面状态为“部分资源可用”，动作列表和“正在播放 Motion / s-common-angry01”均出现。连续两次截图 hash 不同，说明舞台帧在变化。该证据进一步关闭 Release 包 Miku 舞台显示样本，但仍不代表所有模型动作均已验收。
+
+## 2026-09-30 五区目录图片候选全量复核
+
+生产 API 的五区九类图鉴目录实际遍历 `57,694` 条记录、`221,336` 个去重候选 URL，并对候选执行真实响应检查；另外单独补跑了此前因上游 502 未完成的 CN 称号目录 `8,290` 条记录。完整记录数与五区目录总数相符（`65,984`）。原始候选链中有 `288` 条没有取得图片：
+
+| 区服/类型 | 无候选或全部失败 |
+| --- | ---: |
+| JP 活动、卡池、称号、漫画 | 1、66、8、1 |
+| EN 卡池、称号、漫画 | 64、8、1 |
+| TW 活动、称号、漫画 | 1、103、3 |
+| KR 称号、漫画 | 10、3 |
+| CN 卡池、称号、素材、漫画 | 2、13、1、3 |
+
+其中 26 条是上游目录没有图片候选，6 条首轮请求超时后复核为全候选 404，其余均为候选链真实 404；不能把这些条目伪标为已接入。TW 活动 `202` 是路径回退特例：原始 PNG 候选全部 404，但生产 `/api/assets/proxy` 实际返回 `200 image/webp`、105000 字节、`x-asset-source: storage.exmeaning.com`，Android 详情页也已实显通过。完整原始审计结果保留在 `.runtime/audit-catalog-images-direct-0930.json`、`.runtime/audit-cn-honors-0930-v2.json` 和 `.runtime/triage-missing-0930.json`；缺图仍属于 Team Haruki 与旧源均未提供或需要单独路径适配的资源，不代表可用页面已经出现图片失败。
+
 ## 2026-09-30 Live2D 镜像修复与 Android 验收状态
 
 提交 `139bf3d` 已推送 GitHub `main` 并部署到生产。生产 Live2D 详情使用目录返回的完整模型 ID（例如 `v1/collabo/21_miku/clb01_21miku`），并在 cn04 返回 404 时逐个尝试全球、cn03、cn07 等 Haruki 镜像；Miku 样本实际切换到全球 Haruki BuildModelData，详情返回 `partial`、纹理 `1`、动作 `20`。生产浏览器用完整路径实际打开画布（704×439），状态为“部分资源可用”，动作和表情列表可操作；唯一内容请求失败是未登录刷新接口 `401`，不影响资源，故事 70/75 另有已确认的上游缺失背景 `bg_g000102`。
