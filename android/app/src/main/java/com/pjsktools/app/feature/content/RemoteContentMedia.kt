@@ -144,7 +144,7 @@ internal fun RemoteAudioQueue(baseUrl: String, entries: List<PlaybackEntry>) {
     var status by remember { mutableStateOf<String?>(null) }
     DisposableEffect(Unit) { onDispose { player?.release() } }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        entries.take(24).forEach { entry ->
+        entries.forEach { entry ->
             val resolved = resolveUrl(baseUrl, entry.url)
             if (activeUrl == resolved) P3Button(onClick = {
                 player?.release(); player = null; activeUrl = null; status = null

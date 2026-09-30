@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { config } from "./config.js";
-import { applyCnCostumeThumbnailMappings, buildCnCostumeThumbnailAssetbundleName, createCnCostumeThumbnailIndex, getExternalCollection, getOptionalMetadata, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData, parseLive2dModel3, resetCnCostumeThumbnailIndexForTests, resolveLive2dModelAssetRegion } from "./externalData.js";
+import { applyCnCostumeThumbnailMappings, buildCnCostumeThumbnailAssetbundleName, createCnCostumeThumbnailIndex, getExternalCollection, getOptionalMetadata, getVirtualLivePlaybackContext, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData, parseLive2dModel3, resetCnCostumeThumbnailIndexForTests, resolveLive2dModelAssetRegion } from "./externalData.js";
 import { resetHarukiMasterClientStateForTests } from "./harukiMasterClient.js";
 
 describe("Haruki Live2D BuildModelData adapter", () => {
@@ -134,6 +134,59 @@ describe("Haruki comic collection", () => {
     expect(collection?.items.find((item) => item.id === "1041")?.assetbundleName).toBe("comic_0041");
     expect(collection?.items.find((item) => item.id === "2")).toMatchObject({ title: "legacy help tip", assetbundleName: undefined });
     expect(collection?.items.find((item) => item.id === "haruki-comic_0002")).toMatchObject({ title: "Comic 2", assetbundleName: "comic_0002" });
+  });
+});
+
+describe("Virtual Live playback status", () => {
+  const originalBaseUrl = config.harukiMasterBaseUrl;
+
+  beforeEach(() => {
+    Object.assign(config, { harukiMasterBaseUrl: "https://haruki.test" });
+    resetHarukiMasterClientStateForTests();
+  });
+
+  afterEach(() => {
+    Object.assign(config, { harukiMasterBaseUrl: originalBaseUrl });
+    resetHarukiMasterClientStateForTests();
+    vi.unstubAllGlobals();
+  });
+
+  function stubMaster(lives: unknown[], musicVocals: unknown[] = [], musics: unknown[] = []) {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/v1/master/jp/current")) return new Response(JSON.stringify({ files: [] }));
+      if (url.endsWith("/v1/master/jp/files/virtualLives.json")) return new Response(JSON.stringify(lives));
+      if (url.endsWith("/v1/master/jp/files/musicVocals.json")) return new Response(JSON.stringify(musicVocals));
+      if (url.endsWith("/v1/master/jp/files/musics.json")) return new Response(JSON.stringify(musics));
+      return new Response("unexpected", { status: 500 });
+    }));
+  }
+
+  it("reports partial instead of claiming candidate audio is already playable", async () => {
+    stubMaster([
+      { id: "live-1", virtualLiveSetlists: [{ virtualLiveSetlistType: "music", musicVocalId: 1 }] }
+    ], [{ id: 1, musicId: 2, assetbundleName: "song_vocal" }], [{ id: 2, title: "Song" }]);
+
+    const result = await getVirtualLivePlaybackContext("jp", "live-1");
+
+    expect(result).toMatchObject({
+      playbackStatus: "partial",
+      playbackReadiness: { hasLive: true, setlistCount: 1, playableAudioCount: 1 },
+      unavailableReason: undefined
+    });
+    expect(result.playbackQueue).toHaveLength(1);
+  });
+
+  it("reports missing-resource when the Virtual Live record is absent", async () => {
+    stubMaster([]);
+
+    const result = await getVirtualLivePlaybackContext("jp", "missing-live");
+
+    expect(result).toMatchObject({
+      playbackStatus: "missing-resource",
+      playbackReadiness: { hasLive: false, setlistCount: 0, playableAudioCount: 0 },
+      unavailableReason: "Virtual Live record not found in confirmed metadata"
+    });
   });
 });
 describe("CN costume catalog", () => {

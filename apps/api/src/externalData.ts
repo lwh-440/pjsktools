@@ -2498,6 +2498,21 @@ export async function getVirtualLivePlaybackContext(region: RegionId, virtualLiv
     bannerProxiedUrl: proxyUrl(regionAssetUrl(region, `home/banner/banner_virtuallive${virtualLiveId}/banner_virtuallive${virtualLiveId}.webp`))
   } : {};
   const stepWarnings = steps.flatMap((step) => Array.isArray(step.warnings) ? step.warnings.map((warning) => `step ${step.index + 1}: ${warning}`) : []);
+  const missingSteps = steps
+    .filter((step) => step.unavailableReason)
+    .map((step) => ({ index: step.index, type: step.type, unavailableReason: step.unavailableReason }));
+  const unavailableReason = !live
+    ? "Virtual Live record not found in confirmed metadata"
+    : !steps.length
+      ? "Virtual Live setlist is unavailable in confirmed metadata"
+      : missingSteps.length === steps.length
+        ? "All Virtual Live setlist resources are unavailable"
+        : undefined;
+  const playbackStatus = unavailableReason
+    ? "missing-resource"
+    // A proxy candidate is not proof that Android has successfully played it.
+    // Keep this partial until a client reports a playback result.
+    : "partial";
   return {
     ...context,
     virtualLiveId,
@@ -2527,7 +2542,7 @@ export async function getVirtualLivePlaybackContext(region: RegionId, virtualLiv
       queueLength: playbackQueue.length,
       musicAudioCandidates: musicSteps.filter((step) => step.proxiedAudioUrl).length,
       voiceCandidates: mcEvents.filter((event) => event.voice?.proxiedUrl).length,
-      missingSteps: steps.filter((step) => step.unavailableReason).map((step) => ({ index: step.index, type: step.type, unavailableReason: step.unavailableReason }))
+      missingSteps
     },
     playbackDiagnostics: {
       stepCount: steps.length,
@@ -2544,8 +2559,9 @@ export async function getVirtualLivePlaybackContext(region: RegionId, virtualLiv
       musicCount: musicSteps.length,
       playableAudioCount: playbackQueue.length
     },
+    playbackStatus,
     warnings: [...(context.warnings ?? []), ...stepWarnings],
-    unavailableReason: live ? undefined : "Virtual Live record not found in confirmed metadata",
+    unavailableReason,
     realDataRequired: true
   };
 }
