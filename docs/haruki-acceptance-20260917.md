@@ -40,6 +40,12 @@
 
 其中 26 条是上游目录没有图片候选，6 条首轮请求超时后复核为全候选 404，其余均为候选链真实 404；不能把这些条目伪标为已接入。TW 活动 `202` 是路径回退特例：原始 PNG 候选全部 404，但生产 `/api/assets/proxy` 实际返回 `200 image/webp`、105000 字节、`x-asset-source: storage.exmeaning.com`，Android 详情页也已实显通过。完整原始审计结果保留在 `.runtime/audit-catalog-images-direct-0930.json`、`.runtime/audit-cn-honors-0930-v2.json` 和 `.runtime/triage-missing-0930.json`；缺图仍属于 Team Haruki 与旧源均未提供或需要单独路径适配的资源，不代表可用页面已经出现图片失败。
 
+## 2026-09-30 谱面渲染链修复与生产实图验收
+
+生产歌曲 `jp/music/1/charts/easy` 初次请求暴露了音符皮肤域名 `asset3.pjskjai.moe` TLS 不可用，旧实现会让整个 SVG/PNG 渲染超时。提交 `5aa3dac` 将音符皮肤视为可选展示资源：Haruki SUS 和本地渲染仍严格失败即报错，单个外部音符皮肤不可用时嵌入本地矢量占位音符，保证谱面图仍可生成；新增失败皮肤测试，相关 5 个测试通过，API build 通过。
+
+提交已推送 GitHub 并部署生产 marker `5aa3dac`。部署后实际 GET `/api/assets/charts/jp/1/easy?format=png` 返回 `200 image/png`、`1000400` 字节，并已目视确认生成的谱面图；此前超时入口已关闭。音符皮肤仍是外部旧源依赖，未伪称为 Haruki 资源。
+
 ## 2026-09-30 Live2D 镜像修复与 Android 验收状态
 
 提交 `139bf3d` 已推送 GitHub `main` 并部署到生产。生产 Live2D 详情使用目录返回的完整模型 ID（例如 `v1/collabo/21_miku/clb01_21miku`），并在 cn04 返回 404 时逐个尝试全球、cn03、cn07 等 Haruki 镜像；Miku 样本实际切换到全球 Haruki BuildModelData，详情返回 `partial`、纹理 `1`、动作 `20`。生产浏览器用完整路径实际打开画布（704×439），状态为“部分资源可用”，动作和表情列表可操作；唯一内容请求失败是未登录刷新接口 `401`，不影响资源，故事 70/75 另有已确认的上游缺失背景 `bg_g000102`。
