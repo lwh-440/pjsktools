@@ -2,23 +2,23 @@
 
 ## 2026-09-30 补充修复：镜像代理与故事资源回退
 
-提交 `21881a5`、`93784cf` 已推送 GitHub `main` 并部署到 `101.35.21.48`；生产 marker 为 `93784cf`，API 容器 healthy。针对 `C:/Users/83899/Downloads/haruki-asset-endpoints-migration.md` 的实际影响如下：
+提交 `289de7e`、`818ea5a` 已推送 GitHub `main` 并部署到 `101.35.21.48`；生产 marker 为 `818ea5a`，API 容器 healthy。针对 `C:/Users/83899/Downloads/haruki-asset-endpoints-migration.md` 的实际影响如下：
 
 - 公告只规定资源域名迁移，五区目录和文件路径保持不变。主源仍为上海 `cn04` CDN，候选顺序增加全球 CDN、`cn03` 和即将上线的 `cn07`；公告中的 `cn03` 直连 `:51125` 没有加入批量候选。
-- 资源代理 allowlist 已放行公告列出的全部 CDN/直连主机。此前全球 Haruki 有资源时代理返回 400，页面错误回退到旧源；修复后公网漫画 `jp/comic/22` 的全球 Haruki URL 经 `/api/assets/proxy` 实际返回 `200 image/png`、`328664` 字节。
-- 故事场景、语音、BGM、背景和 Live2D 相关的 Haruki 资源候选也会尝试全球/CN03/CN04/CN07。生产故事 `specialStories/70` 的场景在上海节点 404 后实际切换全球节点，播放接口返回 `partial-ready`、`116` 个动作，场景 URL 为全球 Haruki。
+- 资源代理 allowlist 已放行公告列出的全部 CDN/直连主机。代理在 Haruki CDN 返回 404 时按 cn04→全球→cn03 顺序尝试，最后才尝试旧源；旧活动横幅还适配了 `tw-assets/ondemand/event_story/*.png` 到旧源 `sekai-tw-assets/event_story/*.webp` 的路径差异。公网漫画 `jp/comic/22` 经全球 Haruki URL 实际返回 `200 image/png`、`328664` 字节。
+- 故事场景 JSON 会尝试全球/CN03/CN04/CN07 镜像。生产故事 `specialStories/70` 的场景在上海节点 404 后实际切换全球节点，播放接口返回 `partial-ready`、`116` 个动作，场景 URL 为全球 Haruki；故事动作里的语音、BGM、背景和 Live2D 仍需逐项媒体级验收，不能由此样本外推全部资源。
 - master registry 和独立 music metas 的 `/v1/master/{region}/current`、blob、files 兜底及 `/v1/metas/{region}/music_metas.json` ETag 逻辑已在此前提交中保留；本附件本身不包含 registry 规格，二者分别记录。当前 `contentHash` 仍只在服务端缓存结果中透传，尚未作为 Web/Android IndexedDB 版本字段公开。
-- 旧源只在 Haruki 明确返回 `404/not-found` 后回退；网络错误、超时、5xx 不再被静默混合为旧源数据。资源图候选仍以真实 GET 成功为准。
+- master 数据旧源只在 Haruki 明确返回 `404/not-found` 后回退；网络错误、超时、5xx 不再被静默混合为旧源数据。图片目录的代理候选仍以真实 GET 成功为准，并在确认 Haruki 404 后尝试旧源；故事动作媒体目前仅完成 Haruki 镜像回退，不能外推为全部旧源媒体已验收。
 
-全量目录审计遍历 `65984` 个项目、`236762` 个去重 URL，首轮因每项只取前 12 个候选而报 `288` 项缺失；补查全部候选后确认 `287` 项确实没有可用图：其中 `40` 项是上游没有图片路径的参考称号，`247` 项的 Haruki 与旧源候选均为 404（8 个超时已重试并确认为 404）。TW 活动 `202` 的后置旧源 WebP 实际为 `206 image/webp`，已从缺失项剔除。其余资源不以 HTTP 200 或元数据 source 字段代替图片显示验收。
+全量目录审计遍历 `65984` 个项目、`236762` 个去重 URL；首轮每项只取前 12 个候选，发现 `288` 项待复核。复核脚本成功取得 `286` 项详情：其中 `40` 项是上游没有图片路径的参考称号，`246` 项是当前代码列出的全部候选均为 404；两个活动因 API 没有单项详情路由未被该脚本覆盖。独立复查确认 TW 活动 `202` 的后置旧源 WebP 完整 GET 为 `200 image/webp`、`105000` 字节、RIFF/WEBP；该条不属于上述 `286/246` 集合，所以不能把首轮 `288` 当最终缺失数。其余资源不以 HTTP 200 或元数据 source 字段代替图片显示验收。
+
+生产网页浏览器验收脚本已重新访问漫画、素材、贴纸、歌曲、卡牌、活动、称号、服装、卡池九个分区：可见资源分别为 `13/13、13/13、13/13、13/13、13/13、8/8、13/13、13/13、13/13`，均无图片失败或 fallback；贴纸、卡牌、服装、卡池的其余元素仍按页面懒加载，未把未加载的离屏节点误算为失败。
 
 读取并核对了 C:/Users/83899/Downloads/haruki-asset-endpoints-migration.md。公告说明旧的 production-sekai-assets.neo.bot.haruki.seiunx.com 将停用，资源目录和文件名不变，只需替换域名；五个区仍使用 jp-assets/、en-assets/、tw-assets/、kr-assets/、cn-assets/。本项目已将默认游戏资源 CDN 切换为上海节点 https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com，并保留环境变量覆盖到公告列出的其他 Haruki CDN；直连端点未用于批量下载。
 
-影响范围：卡牌、活动、歌曲封面、谱面 SUS、故事/Live2D 文件重写、分享卡信任主机和资源来源标记都随新的 CDN 域名生成；master registry 与独立 music metas 接口不受影响，继续使用 sekai-api-cdn.haruki.seiunx.com。旧源只在实际探测 Haruki 候选失败后按现有候选链回退。上海 CDN 的卡牌缩略图和 gacha banner 已用真实 GET 验证为 200 image/*；本地 API 构建及 57 个定向测试通过。 Android app testDebugUnitTest 与 core:network:test 也通过；本次 Android 不新增硬编码资源域名，运行时继续使用生产 API 返回的新 CDN URL。
+影响范围：卡牌、活动、歌曲封面、谱面 SUS、故事/Live2D 文件重写、分享卡信任主机和资源来源标记都随新的 CDN 域名生成；master registry 与独立 music metas 接口不受影响，继续使用 sekai-api-cdn.haruki.seiunx.com。图片目录代理只在实际探测 Haruki 候选返回 404 后按候选链回退旧源。上海 CDN 的卡牌缩略图和 gacha banner 已用真实 GET 验证为 200 image/*；本地 API 构建及 50 个定向测试通过。 Android app testDebugUnitTest 与 core:network:test 也通过；本次 Android 不新增硬编码资源域名，运行时继续使用生产 API 返回的新 CDN URL。
 
-生产服务器的 HARUKI_ASSET_BASE_URL 需要同步为该新 CDN 后，才能把这次域名迁移反映到公网生成的 URL；在该环境变量更新并重启 API 前，不把线上旧域名结果记为迁移完成。
-
-已完成生产同步：提交 979cb9d 已推送 GitHub main，并在 101.35.21.48 部署；服务器 marker、HARUKI_ASSET_BASE_URL 和 API 容器均已复核。公网 health 为 200/healthy，/api/assets/jp/config 的 Haruki 主源为新上海 CDN，歌曲 1 谱面 SUS 返回新 CDN URL，活动 216 封面通过公网 API 真实 GET 得到 200 image/png（147240 字节）。 Live2D URL 重写也已补为识别公告列出的所有 CDN 域名，提交 1a26914 已在服务器构建并保持 healthy。
+生产同步已完成：服务器 `HARUKI_ASSET_BASE_URL` 为新上海 CDN，生产 marker 为 `818ea5a`，公网 health 为 200；`/api/master/jp/status` 返回 `synced=true`、`repository=Team-Haruki/haruki-sekai-master`、songs 725、cards 1460、events 219。生产 `/api/assets/proxy` 已实测漫画 22 为全球 Haruki PNG 200，TW 活动 202 为旧源 WebP 200，故事 70 场景为全球 Haruki JSON 200。
 # Haruki 资产验收矩阵（更新至2026-09-26）
 
 ## 2026-09-26 Team Haruki registry 公告适配：5394d81 已同步并生产复验
