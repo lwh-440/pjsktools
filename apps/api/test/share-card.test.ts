@@ -131,7 +131,7 @@ describe("share-card source image redirects", () => {
       status: 200,
       headers: { "content-type": "application/octet-stream" }
     }));
-    const url = "https://sekai-assets.haruki.seiunx.com/jp-assets/startapp/character/member/res023_no059/card_normal.png";
+    const url = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets/startapp/character/member/res023_no059/card_normal.png";
 
     await expect(fetchSourceImage(url, missingType)).resolves.toEqual(image);
     await expect(fetchSourceImage(url, genericType)).resolves.toEqual(image);
@@ -139,7 +139,7 @@ describe("share-card source image redirects", () => {
 
   it("does not infer an image type for a non-image extension", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(image, { status: 200 }));
-    await expect(fetchSourceImage("https://sekai-assets.haruki.seiunx.com/jp-assets/master-data.json", fetchMock)).resolves.toBeUndefined();
+    await expect(fetchSourceImage("https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets/master-data.json", fetchMock)).resolves.toBeUndefined();
   });
 
   it("rejects a redirect to a non-trusted or downgraded host before requesting it", async () => {
@@ -206,7 +206,7 @@ describe("share-card source image composition", () => {
       region: "jp",
       title: "Drive to Dream！",
       subtitle: "Event share composition",
-      sourceImageUrl: "https://sekai-assets.haruki.seiunx.com/jp-assets/ondemand/event_story/event_drive_2026/screen_image/banner_event_story.png"
+      sourceImageUrl: "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets/ondemand/event_story/event_drive_2026/screen_image/banner_event_story.png"
     }, vi.fn<typeof fetch>().mockResolvedValue(new Response(source, {
       status: 200,
       headers: { "content-type": "image/png", "content-length": String(source.length) }

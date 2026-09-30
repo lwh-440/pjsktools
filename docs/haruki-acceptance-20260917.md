@@ -1,3 +1,10 @@
+## 2026-09-30 Haruki asset endpoint migration
+
+读取并核对了 C:/Users/83899/Downloads/haruki-asset-endpoints-migration.md。公告说明旧的 production-sekai-assets.neo.bot.haruki.seiunx.com 将停用，资源目录和文件名不变，只需替换域名；五个区仍使用 jp-assets/、en-assets/、tw-assets/、kr-assets/、cn-assets/。本项目已将默认游戏资源 CDN 切换为上海节点 https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com，并保留环境变量覆盖到公告列出的其他 Haruki CDN；直连端点未用于批量下载。
+
+影响范围：卡牌、活动、歌曲封面、谱面 SUS、故事/Live2D 文件重写、分享卡信任主机和资源来源标记都随新的 CDN 域名生成；master registry 与独立 music metas 接口不受影响，继续使用 sekai-api-cdn.haruki.seiunx.com。旧源只在实际探测 Haruki 候选失败后按现有候选链回退。上海 CDN 的卡牌缩略图和 gacha banner 已用真实 GET 验证为 200 image/*；本地 API 构建及 57 个定向测试通过。
+
+生产服务器的 HARUKI_ASSET_BASE_URL 需要同步为该新 CDN 后，才能把这次域名迁移反映到公网生成的 URL；在该环境变量更新并重启 API 前，不把线上旧域名结果记为迁移完成。
 # Haruki 资产验收矩阵（更新至2026-09-26）
 
 ## 2026-09-26 Team Haruki registry 公告适配：5394d81 已同步并生产复验

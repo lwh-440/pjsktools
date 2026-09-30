@@ -6,7 +6,7 @@ import type { RegionId } from "./config.js";
 type ChartEngine = typeof import("./vendor/pjsekai-scores/pjsekai_scores_rs.js");
 type FetchLike = typeof fetch;
 
-const HARUKI_ASSET_BASE = "https://sekai-assets.haruki.seiunx.com";
+const HARUKI_ASSET_BASE = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com";
 const NOTE_HOST = "https://asset3.pjsekai.moe/live/note/custom01";
 const CACHE_TTL_MS = 60 * 60_000;
 const MAX_CACHE_ENTRIES = 8;

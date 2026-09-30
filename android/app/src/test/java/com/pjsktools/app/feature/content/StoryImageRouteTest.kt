@@ -19,7 +19,7 @@ class StoryImageRouteTest {
     fun storyPreviewRejectsRawUpstreamAndOtherBackendRoutes() {
         assertNull(contentImageRequestUrl(
             "https://api.sekai-tools.cn",
-            listOf("https://sekai-assets.haruki.seiunx.com/jp-assets/ondemand/scenario/background/bg_a002201/bg_a002201.png"),
+            listOf("https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets/ondemand/scenario/background/bg_a002201/bg_a002201.png"),
             useAssetResolver = false
         ))
         assertNull(contentImageRequestUrl(

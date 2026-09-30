@@ -85,7 +85,7 @@ describe("pjsktools api", () => {
     const payload = response.json();
     expect(payload.realDataRequired).toBe(true);
     expect(payload.chartSvgUrl).toBe("/api/assets/charts/jp/1/easy?format=svg");
-    expect(payload.susUrl).toBe("https://sekai-assets.haruki.seiunx.com/jp-assets/startapp/music/music_score/0001_01/easy.txt?v=2");
+    expect(payload.susUrl).toBe("https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets/startapp/music/music_score/0001_01/easy.txt?v=2");
   }, 20_000);
 
   it("registers, reads me, refreshes and logs out", async () => {

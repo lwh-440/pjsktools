@@ -1,10 +1,10 @@
-process.env.HARUKI_ASSET_BASE_URL = "https://sekai-assets.haruki.seiunx.com";
+process.env.HARUKI_ASSET_BASE_URL = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com";
 
 import { describe, expect, it } from "vitest";
 
 const { getAssetCandidates, getAssetSourceLabel, getCardAssetDetail, getCharacterIconCandidates, getCollectionItemAssetDetail, getEventAssetDetail, getMusicAssetDetail, proxiedAssetUrl } = await import("./assets.js");
 
-const harukiJp = "https://sekai-assets.haruki.seiunx.com/jp-assets";
+const harukiJp = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets";
 
 describe("Haruki asset mappings", () => {
   it("uses the verified Haruki Toolbox character icons and proxy candidates", () => {
@@ -93,7 +93,7 @@ describe("Haruki asset mappings", () => {
     const jpCandidates = getAssetCandidates("jp", "stamp/stamp125261/stamp125261.png");
     const twCandidates = getAssetCandidates("tw", "thumbnail/material/material281.webp");
 
-    expect(jpCandidates.filter((url) => url.startsWith("https://sekai-assets.haruki.seiunx.com/"))).toEqual([
+    expect(jpCandidates.filter((url) => url.startsWith("https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/"))).toEqual([
       `${harukiJp}/startapp/stamp/stamp125261/stamp125261.png`
     ]);
     expect(twCandidates).toContain("https://storage.exmeaning.com/sekai-tw-assets/thumbnail/material/material281.webp");
@@ -149,7 +149,7 @@ describe("Haruki asset mappings", () => {
     expect(gacha.logoUrl).toBe(`${harukiJp}/ondemand/gacha/ab_gacha_281/logo/logo.png`);
     expect(gacha).not.toHaveProperty("screenUrl");
     const enTicket = getCollectionItemAssetDetail("en", "gachas", { id: "1171", assetbundleName: "ab_gacha_2", raw: { id: 1171, assetbundleName: "ab_gacha_2" } });
-    expect(enTicket.imageCandidates).toContain("https://sekai-assets.haruki.seiunx.com/en-assets/ondemand/gacha/ab_gacha_2/logo/logo.png");
+    expect(enTicket.imageCandidates).toContain("https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/en-assets/ondemand/gacha/ab_gacha_2/logo/logo.png");
     expect(comic.imageCandidates[0]).toBe(`${harukiJp}/startapp/comic/one_frame/comic_0001.png`);
     expect(comic.imageCandidates.some((url) => url.includes("/mangas/"))).toBe(false);
     expect(legacyTip.imageCandidates[0]).toBe("https://moe.exmeaning.com/mangas/2.webp");

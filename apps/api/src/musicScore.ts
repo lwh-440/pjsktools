@@ -18,7 +18,7 @@ export type MusicScoreTrace = {
 };
 export type MusicScoreResult = { score?: MusicScore; trace: MusicScoreTrace };
 
-const harukiAssetBase = "https://sekai-assets.haruki.seiunx.com";
+const harukiAssetBase = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com";
 const fastRefresh = process.env.PJSKTOOLS_FAST_MASTER_REFRESH === "true";
 
 function apiRoot() {

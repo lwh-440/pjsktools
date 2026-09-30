@@ -21,7 +21,7 @@ describe("share card source image retrieval", () => {
     });
 
     const [rendered, template] = await Promise.all([
-      renderShareCard({ ...data, sourceImageUrl: "https://sekai-assets.haruki.seiunx.com/cn-assets/primary.png", sourceImageUrls: ["https://sekai-assets.haruki.seiunx.com/cn-assets/fallback.png"] }, fetchImpl),
+      renderShareCard({ ...data, sourceImageUrl: "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/cn-assets/primary.png", sourceImageUrls: ["https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/cn-assets/fallback.png"] }, fetchImpl),
       renderShareCard(data, fetchImpl)
     ]);
 
@@ -34,12 +34,12 @@ describe("share card source image retrieval", () => {
     ]);
     const centerPixel = (250 * 1200 + 800) * 4;
     expect(compositedPixels[centerPixel + 1]).toBeLessThan(templatePixels[centerPixel + 1] - 10);
-    expect(fetchImpl).toHaveBeenCalledWith("https://sekai-assets.haruki.seiunx.com/cn-assets/fallback.png", expect.any(Object));
+    expect(fetchImpl).toHaveBeenCalledWith("https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/cn-assets/fallback.png", expect.any(Object));
   });
 
   it("marks a source failure so callers can avoid caching its template", async () => {
     const rendered = await renderShareCard(
-      { ...data, sourceImageUrl: "https://sekai-assets.haruki.seiunx.com/cn-assets/missing.png" },
+      { ...data, sourceImageUrl: "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/cn-assets/missing.png" },
       vi.fn<typeof fetch>(async () => new Response("unavailable", { status: 503 }))
     );
 
@@ -56,12 +56,12 @@ describe("share card source image retrieval", () => {
     );
     const [rendered, template] = await Promise.all([renderShareCard({
       ...data,
-      sourceImageUrl: "https://sekai-assets.haruki.seiunx.com/cn-assets/corrupt.png",
-      sourceImageUrls: ["https://sekai-assets.haruki.seiunx.com/cn-assets/valid.png"]
+      sourceImageUrl: "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/cn-assets/corrupt.png",
+      sourceImageUrls: ["https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/cn-assets/valid.png"]
     }, fetchImpl), renderShareCard(data, fetchImpl)]);
 
     expect(rendered.sourceImageUsed).toBe(true);
-    expect(fetchImpl).toHaveBeenCalledWith("https://sekai-assets.haruki.seiunx.com/cn-assets/valid.png", expect.any(Object));
+    expect(fetchImpl).toHaveBeenCalledWith("https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/cn-assets/valid.png", expect.any(Object));
     const [compositedPixels, templatePixels] = await Promise.all([
       sharp(rendered.image).raw().toBuffer(),
       sharp(template.image).raw().toBuffer()

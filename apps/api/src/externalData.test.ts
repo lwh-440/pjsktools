@@ -58,7 +58,7 @@ describe("Haruki Live2D BuildModelData adapter", () => {
   });
 
   it("adds stable asset suffixes to every proxied Cubism resource", () => {
-    const base = "https://sekai-assets.haruki.seiunx.com/en-assets/startapp/live2d/model/v1/collabo/21_miku/clb01_21miku/";
+    const base = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/en-assets/startapp/live2d/model/v1/collabo/21_miku/clb01_21miku/";
     const parsed = parseLive2dModel3({ modelBaseUrl: base, model3JsonUrl: `${base}model.model3.json` } as any, {
       FileReferences: {
         Moc: "model.moc3",
@@ -82,9 +82,9 @@ describe("Haruki Live2D BuildModelData adapter", () => {
 
   it("falls back an unavailable EN BuildModelData URL to the JP shared asset", async () => {
     const model = {
-      buildModelDataUrl: "https://sekai-assets.haruki.seiunx.com/en-assets/startapp/live2d/model/v1/collabo/21_miku/clb01_21miku/buildmodeldata.json",
-      modelBaseUrl: "https://sekai-assets.haruki.seiunx.com/en-assets/startapp/live2d/model/v1/collabo/21_miku/clb01_21miku/",
-      motionBaseUrl: "https://sekai-assets.haruki.seiunx.com/en-assets/live2d/motion/v1/collabo/21_miku/"
+      buildModelDataUrl: "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/en-assets/startapp/live2d/model/v1/collabo/21_miku/clb01_21miku/buildmodeldata.json",
+      modelBaseUrl: "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/en-assets/startapp/live2d/model/v1/collabo/21_miku/clb01_21miku/",
+      motionBaseUrl: "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/en-assets/live2d/motion/v1/collabo/21_miku/"
     };
     const fetchMock = vi.fn(async (input: string | URL) => String(input).includes("/en-assets/")
       ? new Response("missing", { status: 404 })

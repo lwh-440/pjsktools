@@ -131,7 +131,7 @@ function unproxiedAssetUrl(url: string) {
 export function getAssetSourceLabel(url: string, fallback: string) {
   try {
     const hostname = new URL(unproxiedAssetUrl(url)).hostname.toLowerCase();
-    if (hostname === "sekai-assets.haruki.seiunx.com") return "Haruki asset storage";
+    if (hostname === "sekai-assets-cn04-sha01-cdn.haruki.seiunx.com" || (hostname.startsWith("sekai-assets-") && hostname.endsWith(".haruki.seiunx.com")) || hostname === "sekai-assets-haruki.seiunx.net") return "Haruki asset storage";
     if (hostname === "images.haruki.seiunx.com") return "Haruki Toolbox static assets";
     if (hostname === "storage.exmeaning.com" || hostname === "moe.exmeaning.com") return "Moesekai asset mirror";
     if (hostname === "storage.pjsk.moe") return "pjsk.moe asset mirror";
@@ -350,7 +350,7 @@ export function getChartAssetDetail(region: RegionId, song: Song, difficulty: st
     chartSvgUrl: `/api/assets/charts/${region}/${song.id}/${normalizedDifficulty}?format=svg`,
     chartPngUrl: `/api/assets/charts/${region}/${song.id}/${normalizedDifficulty}?format=png`,
     sekaiViewerChartSvgUrl: `/api/assets/charts/${region}/${song.id}/${normalizedDifficulty}?format=svg`,
-    susUrl: `https://sekai-assets.haruki.seiunx.com/${region}-assets/startapp/music/music_score/${paddedId}_01/${normalizedDifficulty}.txt?v=2`,
+    susUrl: `https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/${region}-assets/startapp/music/music_score/${paddedId}_01/${normalizedDifficulty}.txt?v=2`,
     source: {
       chartSvgUrl: "Haruki SUS rendered server-side with pjsekai-scores-rs v0.4.3",
       chartPngUrl: "Haruki SUS rendered server-side with pjsekai-scores-rs v0.4.3",

@@ -24,7 +24,7 @@ const pngSignature = Buffer.from("89504e470d0a1a0a", "hex");
 const sourceImageMaxBytes = 8 * 1024 * 1024;
 const sourceImageMaxRedirects = 3;
 const sourceImageFetchTimeoutMs = 5_000;
-const trustedImageHosts = ["sekai-assets.haruki.seiunx.com", "storage.sekai.best", "storage.exmeaning.com", "storage.pjsk.moe", "q.qlogo.cn", "thirdqq.qlogo.cn"];
+const trustedImageHosts = ["sekai-assets-cn04-sha01-cdn.haruki.seiunx.com", "sekai-assets-cn03-she01-cdn.haruki.seiunx.com", "sekai-assets-cn07-she02-cdn.haruki.seiunx.com", "sekai-assets-haruki.seiunx.net", "storage.sekai.best", "storage.exmeaning.com", "storage.pjsk.moe", "q.qlogo.cn", "thirdqq.qlogo.cn"];
 const inferredImageExtensions = new Set([".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"]);
 
 function escapeXml(value: string) {

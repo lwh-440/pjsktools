@@ -7,8 +7,8 @@ const sus = ['#TITLE "renderer test"', "#REQUEST \"ticks_per_beat 480\"", "#0000
 
 describe("Haruki SUS chart renderer", () => {
   it("builds the required Haruki music_score path", () => {
-    expect(buildHarukiMusicScoreUrl("jp", 1, "EXPERT")).toBe("https://sekai-assets.haruki.seiunx.com/jp-assets/startapp/music/music_score/0001_01/expert.txt?v=2");
-    expect(buildHarukiMusicScoreUrl("tw", 11012, "master")).toBe("https://sekai-assets.haruki.seiunx.com/tw-assets/startapp/music/music_score/11012_01/master.txt?v=2");
+    expect(buildHarukiMusicScoreUrl("jp", 1, "EXPERT")).toBe("https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets/startapp/music/music_score/0001_01/expert.txt?v=2");
+    expect(buildHarukiMusicScoreUrl("tw", 11012, "master")).toBe("https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/tw-assets/startapp/music/music_score/11012_01/master.txt?v=2");
     expect(buildHarukiMusicScoreUrl("jp", 1, "invalid")).toBeUndefined();
   });
 

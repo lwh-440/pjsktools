@@ -59,7 +59,7 @@ export const config = {
   harukiApiBaseUrl: process.env.HARUKI_API_BASE_URL ?? "",
   harukiMasterBaseUrl: process.env.HARUKI_MASTER_BASE_URL ?? "",
   harukiMasterToken: process.env.HARUKI_MASTER_TOKEN ?? "",
-  harukiAssetBaseUrl: process.env.HARUKI_ASSET_BASE_URL ?? "",
+  harukiAssetBaseUrl: process.env.HARUKI_ASSET_BASE_URL ?? "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com",
   harukiFeatureEnabled: process.env.HARUKI_FEATURE_ENABLED === "true",
   harukiPublicSuiteBaseUrl: process.env.HARUKI_PUBLIC_SUITE_BASE_URL ?? "https://suite-api.haruki.seiunx.com/public",
   harukiOAuthAuthorizeUrl: process.env.HARUKI_OAUTH_AUTHORIZE_URL ?? "",
