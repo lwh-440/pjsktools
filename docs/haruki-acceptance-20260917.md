@@ -1,5 +1,13 @@
 ## 2026-09-30 Haruki asset endpoint migration
 
+## 2026-09-30 Android Live2D 纹理修复与 Release 实机验收
+
+此前 Android Live2D 详情页把多兆字节纹理送入 `/api/assets/resolve`；服务器 resolver 的短候选超时会让有效的 Haruki 纹理表现为 HTTP 503。提交 `10e3815` 将 Live2D 纹理改为使用 API 的 `/api/assets/proxy` 直代理，避免把大纹理交给小图 resolver。`app:testDebugUnitTest`、`assembleDebug` 和 `assembleRelease` 均通过，提交已推送 GitHub `main`。
+
+重新安装 Debug 包后，Android 模拟器 `emulator-5554` 实测 `clb01_21miku`：原生纹理图集实际显示，详情显示动作 `20`、贴图 `1`，嵌入式网页 Pixi/Cubism 舞台实际出现 Miku 模型，Motion/Expression 控件和动作条目加载。随后安装同一修复的 Release 包再次实测，纹理图集实际显示且 XML 中不再出现图片 503。Release APK `2797933` 字节，SHA-256 为 `f4152a06010bb6169d928e59e8cfb9abe4f625c6c7f87d587bdb8e6b6e5d501f`；该文件已上传服务器 `/opt/pjsktools/deploy/downloads/pjsktools-android-0.1.0.apk`，公网 `/download/pjsktools-android-0.1.0.apk` 下载字节和 hash 一致。
+
+同一轮冷启动还实际确认 Android 首页能读取歌曲与活动数据，MySekai 家具、素材和蓝图页面均能显示图片。Android 仍不能因此标记为所有故事、所有 Live2D 模型、所有区服和所有媒体的全量通过；本记录只关闭本次已复现的 Live2D 大纹理 503 和 Miku 舞台样本。
+
 ## 2026-09-30 Live2D 镜像修复与 Android 验收状态
 
 提交 `139bf3d` 已推送 GitHub `main` 并部署到生产。生产 Live2D 详情使用目录返回的完整模型 ID（例如 `v1/collabo/21_miku/clb01_21miku`），并在 cn04 返回 404 时逐个尝试全球、cn03、cn07 等 Haruki 镜像；Miku 样本实际切换到全球 Haruki BuildModelData，详情返回 `partial`、纹理 `1`、动作 `20`。生产浏览器用完整路径实际打开画布（704×439），状态为“部分资源可用”，动作和表情列表可操作；唯一内容请求失败是未登录刷新接口 `401`，不影响资源，故事 70/75 另有已确认的上游缺失背景 `bg_g000102`。
