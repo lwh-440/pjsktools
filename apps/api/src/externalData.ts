@@ -529,7 +529,7 @@ function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {
     const resolved = absoluteUrl(baseUrl, value);
     // Route Haruki binary assets through the proxy with a stable filename suffix
     // so browser loaders retain the resource type and response headers.
-    if (isHarukiAssetUrl(resolved)) return live2dProxyUrl(resolved, resolved);
+    if (resolved && isHarukiAssetUrl(resolved)) return live2dProxyUrl(resolved, resolved);
     return proxyUrl(resolved) ?? value;
   }
   if (Array.isArray(value)) return value.map((entry) => rewriteLive2dFileReference(baseUrl, entry));
@@ -539,7 +539,7 @@ function rewriteLive2dFileReference(baseUrl: string, value: unknown): unknown {
     if (["Name", "name", "Group", "group"].includes(key)) return [key, entry];
     if (["File", "file", "Path", "path"].includes(key) && typeof entry === "string") {
       const resolved = absoluteUrl(baseUrl, entry);
-      return [key, isHarukiAssetUrl(resolved) ? live2dProxyUrl(resolved, resolved) : proxyUrl(resolved) ?? entry];
+      return [key, resolved && isHarukiAssetUrl(resolved) ? live2dProxyUrl(resolved, resolved) : proxyUrl(resolved) ?? entry];
     }
     return [key, rewriteLive2dFileReference(baseUrl, entry)];
   }));
