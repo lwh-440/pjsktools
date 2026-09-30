@@ -542,6 +542,16 @@ function harukiAssetMirrorUrls(value: string) {
         mirror.pathname = mirror.pathname.replace(/\.png$/i, ".webp");
         mirrors.push(mirror.toString());
       }
+      // Event banners used a different legacy directory layout. The old
+      // mirrors keep `sekai-{region}-assets/event_story/.../*.webp`, while
+      // Haruki serves the same file from `{region}-assets/ondemand/.../*.png`.
+      const legacyEvent = url.pathname.match(/^\/(jp|en|tw|kr|cn)-assets\/ondemand\/event_story\/(.+)$/i);
+      if (legacyEvent) {
+        const legacy = new URL(url.toString());
+        legacy.hostname = host;
+        legacy.pathname = `/sekai-${legacyEvent[1].toLowerCase()}-assets/event_story/${legacyEvent[2]}`.replace(/\.png$/i, ".webp");
+        mirrors.push(legacy.toString());
+      }
     }
     return mirrors;
   } catch {

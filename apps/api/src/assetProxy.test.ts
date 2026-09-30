@@ -201,7 +201,7 @@ describe("asset proxy streaming", () => {
   it("uses an old WebP mirror only after all Haruki CDN paths return 404", async () => {
     const upstream = vi.fn(async (url: unknown) => {
       const source = String(url);
-      if (source.includes("storage.exmeaning.com") && source.endsWith("banner_event_story.webp")) {
+      if (source.includes("storage.exmeaning.com/sekai-tw-assets/event_story/") && source.endsWith("banner_event_story.webp")) {
         return new Response("legacy", { status: 206, headers: { "content-type": "image/webp", "content-range": "bytes 0-5/6" } });
       }
       return new Response("missing", { status: 404 });
