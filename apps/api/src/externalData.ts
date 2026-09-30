@@ -2508,6 +2508,14 @@ export async function getVirtualLivePlaybackContext(region: RegionId, virtualLiv
       : missingSteps.length === steps.length
         ? "All Virtual Live setlist resources are unavailable"
         : undefined;
+  const playbackReadiness = {
+    hasLive: Boolean(live),
+    setlistCount: steps.length,
+    mcCount: steps.filter((step) => String(step.type).startsWith("mc")).length,
+    mcEventCount: mcEvents.length,
+    musicCount: musicSteps.length,
+    playableAudioCount: playbackQueue.length
+  };
   const playbackStatus = unavailableReason
     ? "missing-resource"
     // A proxy candidate is not proof that Android has successfully played it.
@@ -2551,14 +2559,7 @@ export async function getVirtualLivePlaybackContext(region: RegionId, virtualLiv
       queueLength: playbackQueue.length,
       degradationPolicy: "unavailable MC/music resources are skipped while the rest of the setlist remains inspectable"
     },
-    playbackReadiness: {
-      hasLive: Boolean(live),
-      setlistCount: steps.length,
-      mcCount: steps.filter((step) => String(step.type).startsWith("mc")).length,
-      mcEventCount: mcEvents.length,
-      musicCount: musicSteps.length,
-      playableAudioCount: playbackQueue.length
-    },
+    playbackReadiness,
     playbackStatus,
     warnings: [...(context.warnings ?? []), ...stepWarnings],
     unavailableReason,
