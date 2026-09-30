@@ -96,9 +96,18 @@ async function inlineNoteAssets(svg: string, noteHost: string, fetchImpl: FetchL
   const urls = [...new Set(matches.map((match) => match[1] ?? match[2]).filter((url) => safeUrl(url, noteHost)))];
   if (urls.length > 48) throw new ChartRenderError(502, "Chart references too many note assets");
   const replacements = await Promise.all(urls.map(async (url) => {
-    const asset = await responseBytes(fetchImpl, url, "image/png,image/webp,image/*", MAX_NOTE_BYTES, 8_000);
-    if (!asset.contentType.toLowerCase().startsWith("image/")) throw new ChartRenderError(502, "Chart note asset is not an image");
-    return [url, `data:${asset.contentType.split(";", 1)[0]};base64,${asset.body.toString("base64")}`] as const;
+    try {
+      const asset = await responseBytes(fetchImpl, url, "image/png,image/webp,image/*", MAX_NOTE_BYTES, 8_000);
+      if (!asset.contentType.toLowerCase().startsWith("image/")) throw new ChartRenderError(502, "Chart note asset is not an image");
+      return [url, `data:${asset.contentType.split(";", 1)[0]};base64,${asset.body.toString("base64")}`] as const;
+    } catch {
+      // The note skin is presentation-only and is currently hosted outside
+      // Haruki. Keep the chart renderable when that optional skin is down by
+      // embedding a local vector note placeholder instead of failing the
+      // whole SUS request.
+      const fallbackSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path fill="#12a8b0" stroke="#ffffff" stroke-width="5" d="M8 32 32 8l24 24-24 24z"/></svg>';
+      return [url, `data:image/svg+xml;base64,${Buffer.from(fallbackSvg).toString("base64")}`] as const;
+    }
   }));
   let embedded = svg;
   for (const [url, dataUri] of replacements) embedded = embedded.replaceAll(url, dataUri);

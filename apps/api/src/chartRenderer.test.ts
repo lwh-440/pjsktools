@@ -22,4 +22,13 @@ describe("Haruki SUS chart renderer", () => {
     await expect(sharp(chart.png).metadata()).resolves.toMatchObject({ format: "png" });
     expect(upstream).toHaveBeenCalled();
   });
+
+  it("keeps rendering when the optional external note skin is unavailable", async () => {
+    const upstream = vi.fn(async () => { throw new Error("note skin unavailable"); });
+    const renderer = new ChartRenderer({ fetchImpl: upstream as typeof fetch });
+    const chart = await renderer.renderSus(sus, { title: "fallback test", difficulty: "expert" });
+    expect(chart.svg.toString("utf8")).toContain("data:image/svg+xml;base64,");
+    expect(chart.svg.toString("utf8")).not.toMatch(/<image\b[^>]*\b(?:href|xlink:href)=(?:"|')https?:\/\//i);
+    await expect(sharp(chart.png).metadata()).resolves.toMatchObject({ format: "png" });
+  });
 });
