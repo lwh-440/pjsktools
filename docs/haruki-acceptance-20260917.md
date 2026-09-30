@@ -1,5 +1,11 @@
 ## 2026-09-30 Haruki asset endpoint migration
 
+## 2026-09-30 Live2D 镜像修复与 Android 验收状态
+
+提交 `139bf3d` 已推送 GitHub `main` 并部署到生产。生产 Live2D 详情使用目录返回的完整模型 ID（例如 `v1/collabo/21_miku/clb01_21miku`），并在 cn04 返回 404 时逐个尝试全球、cn03、cn07 等 Haruki 镜像；Miku 样本实际切换到全球 Haruki BuildModelData，详情返回 `partial`、纹理 `1`、动作 `20`。生产浏览器用完整路径实际打开画布（704×439），状态为“部分资源可用”，动作和表情列表可操作；唯一内容请求失败是未登录刷新接口 `401`，不影响资源，故事 70/75 另有已确认的上游缺失背景 `bg_g000102`。
+
+Android 当前正式包仍是 `c5de19d`（APK SHA-256 `1f02e2a93bc69d6644d2541d5e3fb2fb9c185f350bbf63350f75cfa09125f498`）。此前已在设备上实际通过：故事 WebView 播放与暂停/恢复/离页释放、Live2D Miku 首纹理、JP Comic1、MySekai 家具 1816、CN 260221 服装及活动 217 分享卡。`139bf3d` 是服务器运行时镜像修复，Android 无需重新打包即可获得新 API；但尚未在设备上重新走完整 Miku 动作列表、全部 MySekai 类别、全故事媒体和全区服入口，因此 Android 不能标记为全量通过。
+
 ## 2026-09-30 补充修复：镜像代理与故事资源回退
 
 提交 `289de7e`、`818ea5a` 已推送 GitHub `main` 并部署到 `101.35.21.48`；生产 marker 为 `818ea5a`，API 容器 healthy。针对 `C:/Users/83899/Downloads/haruki-asset-endpoints-migration.md` 的实际影响如下：
