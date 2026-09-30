@@ -154,6 +154,17 @@ export async function fetchReference(region: RegionId, key: FormulaMasterKey) {
     } catch (error) {
       lastError = error;
       notReleased = error instanceof HarukiMasterError && error.kind === "not-found";
+      // A configured Haruki source is authoritative. Legacy metadata and
+      // GitHub raw files are valid fallbacks only when Haruki explicitly
+      // confirms that this collection does not exist (HTTP 404).
+      if (!notReleased) {
+        return {
+          status: "source-unavailable" as const,
+          rows: [] as unknown[],
+          sourceUrl: sourceUrls(region, key).join(" | "),
+          error: lastError instanceof Error ? lastError.message : String(lastError)
+        };
+      }
     }
   }
   for (const sourceUrl of fallbackSourceUrls(region, key)) {
