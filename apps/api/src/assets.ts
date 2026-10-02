@@ -447,9 +447,10 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
     case "comics":
       // Haruki is authoritative for comics that it publishes. Legacy mirrors are
       // allowed only when the record explicitly says it is legacy-only. A record
-      // already confirmed missing across every probe gets a visible marker and no
-      // speculative fallback URL.
-      if (isConfirmedUpstreamMissingAsset(region, type, id)) return [];
+      // A confirmed Haruki gap may use the separately retained legacy mirror
+      // candidates. It remains marked as an upstream gap so the UI never
+      // presents the fallback as Haruki data.
+      if (isConfirmedUpstreamMissingAsset(region, type, id)) return legacyComicCandidates(region, assetbundleName, numericId);
       if (raw.legacySource === true || raw.sourcePolicy === "legacy-only") return legacyComicCandidates(region, assetbundleName, numericId);
       return assetbundleName
         ? uniqueStrings([
@@ -491,7 +492,7 @@ export function getCollectionItemAssetDetail(region: RegionId, type: string, ite
   const imageCandidates = collectionAssetCandidates(region, type, item.id, assetbundleName, raw);
   const imageUrl = imageCandidates[0] ?? "";
   const upstreamMissing = isConfirmedUpstreamMissingAsset(region, type, item.id);
-  const legacyOnly = type === "comics" && (raw.legacySource === true || raw.sourcePolicy === "legacy-only");
+  const legacyOnly = type === "comics" && (raw.legacySource === true || raw.sourcePolicy === "legacy-only" || upstreamMissing);
   const gachaId = stringField(raw, ["id"]) || item.id;
   const gachaBannerUrl = type === "gachas" && gachaId ? assetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined;
   const gachaLogoUrl = type === "gachas" && assetbundleName ? assetUrl(region, `gacha/${assetbundleName}/logo/logo.webp`) : undefined;
@@ -509,7 +510,7 @@ export function getCollectionItemAssetDetail(region: RegionId, type: string, ite
     thumbnailUrl: imageUrl,
     imageCandidates,
     assetStatus: upstreamMissing ? "upstream-missing" : imageCandidates.length ? (legacyOnly ? "legacy-only" : "haruki-primary") : "unavailable",
-    unavailableReason: upstreamMissing ? "已确认 Team-Haruki 上游未提供该资源" : imageCandidates.length ? undefined : "未找到可用资源路径",
+    unavailableReason: upstreamMissing ? "已确认 Team-Haruki 上游未提供该资源；已保留旧源候选" : imageCandidates.length ? undefined : "未找到可用资源路径",
     sourcePolicy: legacyOnly ? "legacy-only" : upstreamMissing ? "upstream-missing" : "haruki-only",
     bannerUrl: gachaBannerUrl,
     logoUrl: gachaLogoUrl,
@@ -526,7 +527,7 @@ export function getCollectionItemAssetDetail(region: RegionId, type: string, ite
             ? "moe-sekai/Moesekai metadata + asset rules"
             : "Sekai Viewer / Moesekai asset mirror"
         )
-      : upstreamMissing ? "Team-Haruki 上游缺失（已标记）" : "真实资源路径暂不可用"
+      : upstreamMissing ? "Team-Haruki 上游缺失（已标记，保留旧源候选）" : "真实资源路径暂不可用"
   };
 }
 

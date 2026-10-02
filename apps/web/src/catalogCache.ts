@@ -86,7 +86,13 @@ export async function loadCachedCatalog<T>(
     if (response.status === 304 && cached) return cached.data;
     if (!response.ok) throw new Error((await response.text()) || `Catalog request failed: ${response.status}`);
     const data = await response.json() as T;
-    void writeCache({ key, data, etag: response.headers.get("etag") ?? undefined, contentHash: contentHashOf(data), cachedAt: Date.now() });
+    void writeCache({
+      key,
+      data,
+      etag: response.headers.get("etag") ?? undefined,
+      contentHash: response.headers.get("x-master-content-hash") ?? contentHashOf(data),
+      cachedAt: Date.now()
+    });
     return data;
   })();
   const pending: PendingRequest<T> = { promise: request, signal: options.signal };

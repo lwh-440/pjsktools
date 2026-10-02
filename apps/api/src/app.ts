@@ -278,17 +278,18 @@ const catalogQuerySchema = z.object({
   ,comicTypes: stringValuesSchema.default([])
 });
 
-function catalogResponse(reply: any, request: any, payload: unknown) {
+export function catalogResponse(reply: any, request: any, payload: unknown) {
   if (payload && typeof payload === "object" && "items" in payload && "page" in payload && "pageSize" in payload && "total" in payload && "totalPages" in payload) {
     payload = withPaginationFlags(payload as any);
   }
   const contentHash = payload && typeof payload === "object" && typeof (payload as { contentHash?: unknown }).contentHash === "string"
     ? (payload as { contentHash: string }).contentHash
     : undefined;
-  // The registry content hash is stable across filtered pages. Reusing it as
-  // the catalog ETag lets the browser keep an IndexedDB page entirely local
-  // until Haruki publishes a new registry version.
-  const etagValue = contentHash ?? createHash("sha1").update(JSON.stringify(payload)).digest("base64url");
+  // contentHash identifies the upstream registry, but response shaping can
+  // change independently (for example, a code-side mapping or external
+  // collection update). Keep the registry hash as metadata and derive the
+  // validator from the actual response body.
+  const etagValue = createHash("sha1").update(JSON.stringify(payload)).digest("base64url");
   const etag = `W/\"${etagValue}\"`;
   reply.header("etag", etag);
   if (contentHash) reply.header("x-master-content-hash", contentHash);
@@ -1439,7 +1440,11 @@ export async function buildApp(options: {
       || (path.startsWith("/api/me/player-bindings/") && path.includes("/sync"));
     if (harukiPath) return reply.code(404).send({ statusCode: 404, code: "NOT_FOUND", message: "Not found" });
   });
-  await app.register(cors, { origin: config.corsAllowedOrigins, credentials: true });
+  await app.register(cors, {
+    origin: config.corsAllowedOrigins,
+    credentials: true,
+    exposedHeaders: ["etag", "x-master-content-hash"]
+  });
   await app.register(compress, { global: true, threshold: 1024 });
   await app.register(sensible);
   await app.register(jwt, { secret: config.jwtSecret });

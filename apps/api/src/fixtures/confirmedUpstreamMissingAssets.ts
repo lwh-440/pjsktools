@@ -1,5 +1,9 @@
-// Generated from .runtime/audit-catalog-images-direct-0930.json after all candidate probes returned non-image/404.
-// This is an explicit acceptance ledger, not a guess: entries stay marked until a later probe proves an asset.
+// Generated from .runtime/audit-catalog-images-direct-0930.json and the
+// follow-up .runtime/triage-missing-0930.json. The direct sweep contained six
+// timeout observations for TW honors 7749-7754; the triage sweep re-probed all
+// of them (72 candidate requests) and confirmed 404/non-image results before
+// they were included here. This is an explicit acceptance ledger, not a guess:
+// entries stay marked until a later probe proves an asset.
 export type ConfirmedMissingAsset = { region: string; type: string; id: string };
 export const confirmedUpstreamMissingAssets: readonly ConfirmedMissingAsset[] = [
   {

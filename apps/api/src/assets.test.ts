@@ -175,12 +175,14 @@ describe("Haruki asset mappings", () => {
     expect(ticketGacha.imageCandidates).toContain(ticketGacha.logoUrl);
   });
 
-  it("marks the confirmed upstream gap instead of inventing a fallback URL", () => {
+  it("marks the confirmed upstream gap while retaining separate legacy candidates", () => {
     const missing = getCollectionItemAssetDetail("jp", "comics", { id: "89", raw: { id: 89 } });
-    expect(missing.imageCandidates).toEqual([]);
+    expect(missing.imageCandidates.length).toBeGreaterThan(0);
+    expect(missing.imageCandidates.every((value) => !value.includes("haruki.seiunx"))).toBe(true);
     expect(missing.assetStatus).toBe("upstream-missing");
-    expect(missing.sourcePolicy).toBe("upstream-missing");
+    expect(missing.sourcePolicy).toBe("legacy-only");
     expect(missing.unavailableReason).toContain("Team-Haruki");
+    expect(missing.unavailableReason).toContain("保留旧源");
   });
 
   it("keeps an explicitly legacy-only comic on the old source list", () => {
