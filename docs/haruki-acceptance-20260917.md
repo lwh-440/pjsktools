@@ -856,3 +856,8 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - JP 故事 `special/70` 在 Android 发布包中实际打开详情并点击“加载并播放本章”；页面显示文本播放区和背景图，缺失封面显示 `HTTP 404`，对应生产详情明确返回 `assetStatus=upstream-missing`、`missingResources=[story-cover]`、`sourcePolicy=haruki-only`，因此按已确认上游缺失标记收口，不记为接入故障。
 - JP Virtual Live `id=1` 实际打开详情，横幅图片、结束状态、角色和日程列表均显示；首次详情加载约 45 秒后完成，截图为 `.runtime/android-content-v4-20261002/虚拟Live-detail-45s.png`。
 - JP Live2D `v2_01ichika_casual` 实际打开详情，纹理图集自然显示；下方 Android WebView 的 Pixi/Cubism 交互舞台出现模型像素，页面同时明确“部分资源可用”，与已登记的动作/表情缺失边界一致。证据为 `.runtime/android-content-v4-20261002/Live2D-detail-v2-40s.png` 和 `Live2D-stage-20s.png`。
+
+### 2026-10-02 五区大型 master 数据健康复核
+
+- 生产 `/api/master/{region}/exchanges/context` 并发复核全部通过：JP `sourceHealth=ok`、4225 项；EN `ok`、3410 项；TW `ok`、3375 项；KR `ok`、3881 项；CN `ok`、3330 项；五区均 `unavailableCollections=[]`、无 warnings。
+- 该复核覆盖此前触发超时的 `resourceBoxes.json` 依赖，证明 60 秒 master blob 超时配置在五区均生效。
