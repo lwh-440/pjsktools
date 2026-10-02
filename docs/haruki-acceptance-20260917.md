@@ -836,4 +836,11 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - `e29867d` 已推送 GitHub `main` 并部署至 `/opt/pjsktools/release-snapshots/assets-e29867d`；API/Caddy 重建后健康。生产单文件 BGM 代理实际返回 `200 audio/mpeg`、`1,922,655` 字节，`x-asset-source=sekai-assets.haruki.seiunx.net`。
 - 生产浏览器打开 EN `v1/collabo/21_miku/clb01_21miku` 等 Live2D 入口，等待 70 秒后画布实际出现角色像素，且页面进入 `正在播放：Motion / s-common-angry01`；页面仍显示“部分资源可用”，对应已登记的上游缺失/不兼容资源，不能误记为全目录动作通过。证据 `.runtime/asset-acceptance-20260917/live2d-en-long.png`、`live2d-en-long.json`。
 - 生产卡牌故事 `cardEpisodes/1/1` 在文本播放模式实际完成 `ready · 85/85`，浏览器脚本重新验证通过（`story-text-full.cjs`）。舞台模式仍因该章节的缺失/不兼容模型进入 `partial-ready`，按缺失标记保留文本播放路径；此前语音/BGM 在 `AudioBufferSourceNode` 中实际启动，离页停止证据仍保留在 `story-postdeploy-78fda34-card-full/report.json`。
+- 随后使用触发 React 状态更新的速度控件脚本，在生产舞台模式重新验收：初始 `ready · 5/85`，双暂停保持 `12/85`，双恢复推进到 `14/85`，手动暂停保持 `14/85`，最终 `ready · 85/85`；48 段 Haruki 音频响应全部成功，`failed=[]`，唯一 `401` 为无登录刷新请求。第 12 段截图实际显示校园背景、咲希和一歌角色（`story-validation-e29867d-ready/stage-step12.png`），离页返回章节目录且之后没有新的音频 start 事件。该结果覆盖了 e29867d 的故事舞台、语音、暂停/恢复和离页停止验收。
+
+### 2026-10-02 Android 精确发布包五区图鉴矩阵复验
+
+- 精确下载并安装服务器发布的 `d1478566` APK（SHA256 `d14785660a0c1ff61f7c8092fe25a863ebede702f3a41079fbb04e488af8d903`）到 `emulator-5554`；通过 `-dns-server 8.8.8.8` 启动后，生产 API 可解析并返回实时数据。
+- 修正区域导航后，五区 `JP/EN/TW/KR/CN` 的歌曲、卡牌、卡池、称号、素材、服装、贴图/漫画共 `35/35` 个入口均满足：页面标题与目标区域一致、UI 显示“资料已同步”、首屏截图含实际解码图片。报告和逐项 UIAutomator XML/PNG 保存在 `.runtime/android-visible-catalog-v4-20261002/`；截图示例已逐张确认 JP/EN/TW/KR/CN 贴图/漫画页面均有图像像素。
+- 这轮只验证公开图鉴和图片数据链；登录态个人页面、故事/Live2D Android 入口及内容资料入口仍需在同一精确包上做最后 smoke，不能用本矩阵代替。
 
