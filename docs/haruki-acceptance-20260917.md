@@ -760,3 +760,9 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 精确源码归档 `4e0fc43decc81c24fd35cbd4421ab02e64e568a2` 使用 JDK 17 完整 `assembleRelease`（未跳过 lint）成功；`testDebugUnitTest` 47/47 通过。
 - APK `2,797,933` bytes，SHA256 `0113CE7DDF163B72D2EA0967C27969F3117A44C56DC66255584ED94FF56EF49E`；`apksigner` v2 验签通过，证书 SHA256 `0e02a9f1468ec3d378bbbd0eb3d7c807bbe5e31c135ba6838d64dc230d05e0e9`。
 - 该包已再次安装到 `emulator-5554` 并冷启动；此前同一 SHA256 包的虚拟 Live 末段语音与 CN 服装图片实机证据仍有效。
+
+### Team-Haruki 新端点生产核验（2026-10-02）
+
+- CDN 与 Direct 的 `/v1/master/jp/current` 均返回 200；清单含 417 个文件，`dataVersion=7.0.0.15`，`contentHash=d3e263e2782af2025339ac0bc4b585d49150a2f97f96cfb9f634c25feb95bfca`，响应带 `Cache-Control: no-cache` 与 ETag。
+- Direct 端点携带相同 ETag 的条件请求实际返回 `304 Not Modified`；`/v1/metas/jp/music_metas.json` 返回 200、ETag 和 3,761 条元数据。
+- 生产 API 歌曲 `id=1` 返回的主封面 URL 为 Haruki CDN，`sources.jacketUrl` 为 `Haruki asset storage`。证据保存在 `.runtime/haruki-registry-prod-1002.txt`。
