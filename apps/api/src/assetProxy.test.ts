@@ -132,6 +132,28 @@ describe("asset proxy streaming", () => {
     }
   });
 
+  it("buffers Live2D texture responses to avoid CDN stream resets", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), {
+      status: 200,
+      headers: { "content-type": "image/png" }
+    })));
+    const app = await buildApp({ assetProxyTimeoutMs: 100 });
+    const target = "https://sekai-assets-haruki.seiunx.net/jp-assets/startapp/live2d/model/v1/main/02_saki/texture_00.png";
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/assets/proxy?url=" + encodeURIComponent(target) + "&__asset=texture_00.png"
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toBe("image/png");
+      expect(response.rawPayload).toEqual(Buffer.from([137, 80, 78, 71]));
+    } finally {
+      await app.close();
+    }
+  });
+
   it("retries a Haruki CDN 404 through the global mirror while preserving range and ETag headers", async () => {
     const primary = new Response("missing", { status: 404 });
     const cancel = vi.spyOn(primary.body!, "cancel");

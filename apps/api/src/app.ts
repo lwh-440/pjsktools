@@ -1515,7 +1515,7 @@ export async function buildApp(options: {
   });
 
   app.get("/api/assets/proxy", async (request, reply) => {
-    const query = request.query as { url?: string };
+    const query = request.query as { url?: string; __asset?: string };
     if (!query.url || !isAllowedExternalAssetUrl(query.url)) return reply.badRequest("Unsupported asset proxy URL");
     const hasHarukiMirrors = harukiAssetMirrorUrls(query.url).length > 0;
     const failedAt = hasHarukiMirrors ? undefined : assetProxyFailures.get(query.url);
@@ -1578,6 +1578,16 @@ export async function buildApp(options: {
       reply.header("cache-control", "public, max-age=31536000, immutable");
       if (upstream.status === 206) reply.code(206);
       if (!upstream.body) return reply.send();
+      // Live2D textures are requested in bursts by Cubism/Pixi. Buffering
+      // these small image responses avoids HTTP/2 stream resets from the
+      // upstream CDN while preserving the stable proxy URL and headers.
+      if (typeof query.__asset === "string" && /texture/i.test(query.__asset) && /.(?:png|webp)$/i.test(query.__asset)) {
+        const body = Buffer.from(await upstream.arrayBuffer());
+        clearTimeout(timeout);
+        timeout = undefined;
+        assetProxyFailures.delete(query.url);
+        return reply.send(body);
+      }
       clearTimeout(timeout);
       timeout = undefined;
       assetProxyFailures.delete(query.url);
