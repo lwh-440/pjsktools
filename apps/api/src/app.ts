@@ -1578,10 +1578,19 @@ export async function buildApp(options: {
       reply.header("cache-control", "public, max-age=31536000, immutable");
       if (upstream.status === 206) reply.code(206);
       if (!upstream.body) return reply.send();
-      // Live2D textures are requested in bursts by Cubism/Pixi. Buffering
-      // these small image responses avoids HTTP/2 stream resets from the
-      // upstream CDN while preserving the stable proxy URL and headers.
-      if (typeof query.__asset === "string" && /(?:.png|.webp|.moc3|.physics3|.motion3.json|.exp3.json|.model3.json)$/i.test(query.__asset)) {
+      // Live2D assets and story audio are requested in bursts by the browser.
+      // Buffering them avoids HTTP/2 stream resets from the upstream CDN while
+      // preserving the stable proxy URL and response headers.
+      const bufferedAssetName = typeof query.__asset === "string"
+        ? query.__asset
+        : (() => {
+          try { return new URL(upstreamUrl).pathname; } catch { return ""; }
+        })();
+      const isLive2dAsset = typeof query.__asset === "string"
+        && /(?:\.png|\.webp|\.moc3|\.physics3|\.motion3\.json|\.exp3\.json|\.model3\.json)$/i.test(bufferedAssetName);
+      const isStoryAudio = typeof query.__asset !== "string"
+        && /(?:\.mp3|\.ogg|\.wav|\.m4a)$/i.test(bufferedAssetName);
+      if (isLive2dAsset || isStoryAudio) {
         const body = Buffer.from(await upstream.arrayBuffer());
         clearTimeout(timeout);
         timeout = undefined;

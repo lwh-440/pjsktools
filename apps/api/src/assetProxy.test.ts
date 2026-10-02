@@ -154,6 +154,28 @@ describe("asset proxy streaming", () => {
     }
   });
 
+  it("buffers story audio responses when the proxy has no asset hint", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([73, 68, 51]), {
+      status: 200,
+      headers: { "content-type": "audio/mpeg" }
+    })));
+    const app = await buildApp({ assetProxyTimeoutMs: 100 });
+    const target = "https://sekai-assets-haruki.seiunx.net/jp-assets/ondemand/sound/scenario/bgm/bgm00024/bgm00024.mp3";
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/assets/proxy?url=" + encodeURIComponent(target)
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toBe("audio/mpeg");
+      expect(response.rawPayload).toEqual(Buffer.from([73, 68, 51]));
+    } finally {
+      await app.close();
+    }
+  });
+
   it("retries a Haruki CDN 404 through the global mirror while preserving range and ETag headers", async () => {
     const primary = new Response("missing", { status: 404 });
     const cancel = vi.spyOn(primary.body!, "cancel");
