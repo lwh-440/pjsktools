@@ -768,3 +768,9 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 生产 API 歌曲 `id=1` 返回的主封面 URL 为 Haruki CDN，`sources.jacketUrl` 为 `Haruki asset storage`。证据保存在 `.runtime/haruki-registry-prod-1002.txt`。
 
 - 五区 registry Direct 端点当前均可访问并返回版本/ETag：JP `7.0.0.15`、EN `6.0.0.10`、TW/KR `6.4.0.9`、CN `6.4.1.0`；证据为 `.runtime/haruki-registry-regions-1002.txt`。
+
+### Android 正式包服务器同步（2026-10-02）
+
+- JDK17 正式包 `4e0fc43` 已替换服务器 `/opt/pjsktools/deploy/downloads/pjsktools-android-0.1.0.apk`。
+- 公网下载 `https://sekai-tools.cn/download/pjsktools-android-0.1.0.apk` 长度 `2,797,933` 字节，SHA256 与本地完全一致：`0113ce7ddf163b72d2ea0967c27969f3117a44c56dc66255584ed94ff56ef49e`。
+- 证据：`.runtime/android-final-public-1002.txt`。
