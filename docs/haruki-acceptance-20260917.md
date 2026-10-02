@@ -830,3 +830,10 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 生产故事舞台高并发预加载时，`02_saki` 纹理曾触发 Chrome `ERR_HTTP2_PROTOCOL_ERROR`；直连和单张代理请求均可返回 2048×2048 PNG。提交 `953a427` 将带有 `__asset=texture_*.png` 的 Live2D 纹理先完整缓冲后响应，资源来源和路径保持不变；新增代理回归测试，资源代理测试 `27/27` 通过，API/Caddy 已部署且健康。
 - 部署后单纹理真实浏览器请求通过，代理响应实际解码为 `2048×2048`。卡牌故事文本模式在生产页面实际推进至 `ready · 85/85`，证明完整动作序列和文本控制器可跑通；舞台模式仍会对缺失/不兼容模型保持 `partial-ready`，不把它误记为全 Live2D 动作通过。
 
+### 2026-10-02 Live2D 全资产代理与故事文本完整播放复验
+
+- `144b508` 将带 `__asset` 标记的 Live2D `png/webp/moc3/physics3/motion3/exp3/model3` 响应统一完整缓冲；`e29867d` 进一步处理无 `__asset` 标记的故事 `mp3/ogg/wav/m4a`，避免浏览器并发请求在上游 HTTP/2 流上被重置。资源代理定向测试 `28/28`（主工作树 `12/12`，既有归档源 `6/6` 与 `10/10`）通过，API build 通过。
+- `e29867d` 已推送 GitHub `main` 并部署至 `/opt/pjsktools/release-snapshots/assets-e29867d`；API/Caddy 重建后健康。生产单文件 BGM 代理实际返回 `200 audio/mpeg`、`1,922,655` 字节，`x-asset-source=sekai-assets.haruki.seiunx.net`。
+- 生产浏览器打开 EN `v1/collabo/21_miku/clb01_21miku` 等 Live2D 入口，等待 70 秒后画布实际出现角色像素，且页面进入 `正在播放：Motion / s-common-angry01`；页面仍显示“部分资源可用”，对应已登记的上游缺失/不兼容资源，不能误记为全目录动作通过。证据 `.runtime/asset-acceptance-20260917/live2d-en-long.png`、`live2d-en-long.json`。
+- 生产卡牌故事 `cardEpisodes/1/1` 在文本播放模式实际完成 `ready · 85/85`，浏览器脚本重新验证通过（`story-text-full.cjs`）。舞台模式仍因该章节的缺失/不兼容模型进入 `partial-ready`，按缺失标记保留文本播放路径；此前语音/BGM 在 `AudioBufferSourceNode` 中实际启动，离页停止证据仍保留在 `story-postdeploy-78fda34-card-full/report.json`。
+
