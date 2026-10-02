@@ -70,8 +70,12 @@ function rawHarukiUrl(region: RegionId, name: string) {
 }
 
 function requestTimeoutMs() {
-  const configured = Number(process.env.HARUKI_MASTER_TIMEOUT_MS ?? 15_000);
-  return Number.isFinite(configured) && configured > 0 ? configured : 15_000;
+  // Some registry blobs (notably resourceBoxes.json) are large enough that a
+  // normal cross-region connection can need more than the old 15 second
+  // window. Keep the override for local deployments, but make the default
+  // long enough to consume the documented immutable blob endpoint reliably.
+  const configured = Number(process.env.HARUKI_MASTER_TIMEOUT_MS ?? 60_000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 60_000;
 }
 
 function requestHeaders() {
