@@ -177,12 +177,16 @@ describe("Haruki asset mappings", () => {
 
   it("marks the confirmed upstream gap while retaining separate legacy candidates", () => {
     const missing = getCollectionItemAssetDetail("jp", "comics", { id: "89", raw: { id: 89 } });
+    const legacyTip = getCollectionItemAssetDetail("jp", "comics", { id: "119", raw: { id: 119 } });
     expect(missing.imageCandidates.length).toBeGreaterThan(0);
     expect(missing.imageCandidates.every((value) => !value.includes("haruki.seiunx"))).toBe(true);
     expect(missing.assetStatus).toBe("upstream-missing");
     expect(missing.sourcePolicy).toBe("legacy-only");
     expect(missing.unavailableReason).toContain("Team-Haruki");
     expect(missing.unavailableReason).toContain("保留旧源");
+    expect(legacyTip.assetStatus).toBe("upstream-missing");
+    expect(legacyTip.sourcePolicy).toBe("legacy-only");
+    expect(legacyTip.imageCandidates[0]).toContain("moe.exmeaning.com/mangas/119.webp");
   });
 
   it("keeps an explicitly legacy-only comic on the old source list", () => {
