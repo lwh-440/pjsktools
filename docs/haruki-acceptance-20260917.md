@@ -775,11 +775,11 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 公网下载 `https://sekai-tools.cn/download/pjsktools-android-0.1.0.apk` 长度 `2,797,933` 字节，SHA256 与本地完全一致：`0113ce7ddf163b72d2ea0967c27969f3117a44c56dc66255584ed94ff56ef49e`。
 - 证据：`.runtime/android-final-public-1002.txt`。
 
-### 2026-10-02 f602a89 缺失标记、漫画边界与 registry 缓存复验
+### 2026-10-02 f602a89 / 9061ffc 缺失标记、漫画边界与 registry 缓存复验
 
-- `f602a89` 已推送 GitHub `main`，并部署到服务器发布归档 `release-snapshots/assets-f602a89`；API/Caddy 容器重建后均健康运行。
-- 生产歌曲目录返回 `contentHash=d3e263e2782af2025339ac0bc4b585d49150a2f97f96cfb9f634c25feb95bfca`，响应 `ETag` 与 registry hash 一致；带同一 `If-None-Match` 的条件请求实际返回 `304`，并带 `X-Master-Content-Hash`。Web IndexedDB 目录缓存已保存该字段，API 变化时由 registry hash 触发重新验证。
-- 生产漫画 `id=89` 返回 `assetStatus=upstream-missing`、`sourcePolicy=upstream-missing`、空候选及“已确认 Team-Haruki 上游未提供该资源”标记；普通漫画返回 Haruki-only 候选，不再自动退化到 Moe/旧镜像。明确标记 `legacy-only` 的记录才保留旧源候选。
+- `f602a89` 已推送 GitHub `main`，`9061ffc` 修正缓存校验和漫画旧源边界后也已推送并部署到 `release-snapshots/assets-9061ffc`；API/Caddy 容器重建后均健康运行。
+- 生产歌曲目录返回 `contentHash=d3e263e2782af2025339ac0bc4b585d49150a2f97f96cfb9f634c25feb95bfca`，并带 `X-Master-Content-Hash`；ETag 对最终响应体计算，带相同 ETag 的条件请求实际返回 `304`。Web IndexedDB 目录缓存已保存 registry hash，代码映射或外部目录变化时仍会用响应体 ETag 重新验证。
+- 生产漫画 `id=89` 返回 `assetStatus=upstream-missing`、`sourcePolicy=legacy-only`、旧源候选及“已确认 Team-Haruki 上游未提供该资源；已保留旧源候选”标记；普通漫画 `id=2` 返回 Haruki-only 候选，不再自动退化到 Moe/旧镜像。
 - 五区 registry 和音乐元数据端点、生产歌曲目录、漫画缺失标记均已用公网请求复核；前端谱面 `GET /api/master/jp/music/1/charts/expert` 返回 Haruki SUS 地址，实际 SVG/PNG 渲染端点均返回对应图片类型（示例 PNG 1,792,054 bytes）。
 - 本轮定向 API 测试 `20/20`、缺失资产测试、Web 构建、API 构建、OpenAPI 导出/生成/一致性检查通过；Android JDK17 `testDebugUnitTest` 与 `assembleRelease` 也通过。Android 全量矩阵仍按最后阶段执行。
 - 同一工作树构建的 Android Release APK 已替换服务器下载文件；本地与公网下载均为 `2,797,933` bytes，SHA256 `d14785660a0c1ff61f7c8092fe25a863ebede702f3a41079fbb04e488af8d903`，但该新包尚未完成全量矩阵的设备实测。
@@ -795,7 +795,7 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 5. **故事与 Live2D**：卡牌故事代表章节、特殊故事控制器和 Miku 模型样本已通过；特殊故事缺背景、完整动作/表情目录及 legacy motion bridge 仍未达到全量通过。
 6. **谱面与外部展示资源**：前端谱面 API 已返回 Haruki SUS，生产示例的 SVG/PNG 均实际生成并返回正确媒体类型；全歌曲/全难度渲染仍未逐项验收，音符皮肤仍有外部旧源依赖。
 7. **World Link 与识别服务**：角色榜样本已通过；churn/parking、部分详情轨迹仍依赖 rks-n 或处于 source-unavailable。卡片识别 fingerprint manifest 仍是旧外部依赖，当前没有仓内完整消费者。
-8. **新 registry 的缓存字段**：服务端已消费 `contentHash`、sha256 blob、ETag/304；Web 目录响应的 ETag/X-Master-Content-Hash 已与 registry hash 对齐，IndexedDB 已保存并用于条件请求。Android DTO 已暴露 `contentHash`，但 Android 本地缓存与全量矩阵仍未完成最终实测。
+8. **新 registry 的缓存字段**：服务端已消费 `contentHash`、sha256 blob、ETag/304；Web IndexedDB 已保存 `contentHash`，并以最终响应体 ETag 做条件请求，避免同一 registry 下代码或外部集合变更被错误缓存。Android DTO 已暴露 `contentHash`，但 Android 本地缓存与全量矩阵仍未完成最终实测。
 9. **登录数据页面**：`/me/deck`、`/me/scores`、档案分析及 Android 账号收藏/成绩/卡组需要真实登录数据的全路径验收，当前只有契约/部分样本。
 10. **本地工作树同步**：迁移代码已部署，GitHub `main` 和服务器 API/Android 下载文件已同步；本地仍保留用户 UI 改动（2 个已跟踪文件及新增 UI 资源/文档），因此不能声称工作树与 GitHub 完全一致，也不能擅自丢弃这些 UI 内容。
 
