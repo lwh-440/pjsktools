@@ -783,6 +783,7 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 五区 registry 和音乐元数据端点、生产歌曲目录、漫画缺失标记均已用公网请求复核；前端谱面 `GET /api/master/jp/music/1/charts/expert` 返回 Haruki SUS 地址，实际 SVG/PNG 渲染端点均返回对应图片类型（示例 PNG 1,792,054 bytes）。
 - 本轮定向 API 测试 `23/23`（含同 registry hash 下响应变化仍返回 200 的 ETag 回归测试）、Web 构建、API 构建、OpenAPI 导出/生成/一致性检查通过；Android JDK17 `testDebugUnitTest` 与 `assembleRelease` 也通过。Android 全量矩阵仍按最后阶段执行。
 - 同一工作树构建的 Android Release APK 已替换服务器下载文件；本地与公网下载均为 `2,797,933` bytes，SHA256 `d14785660a0c1ff61f7c8092fe25a863ebede702f3a41079fbb04e488af8d903`，但该新包尚未完成全量矩阵的设备实测。
+- 已将该新包安装到任务模拟器并冷启动；本次模拟器 DNS 无法解析 `api.sekai-tools.cn`，页面明确显示网络解析错误，因此没有把这次环境失败计入 Android 数据验收，模拟器已关闭。
 
 ## 当前未完成项清单（2026-10-02）
 
