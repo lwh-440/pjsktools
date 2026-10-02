@@ -754,3 +754,9 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 虚拟 Live `ID 1` 详情实际显示 `状态：部分可用`、`节目 11`、`MC 事件 85`、`歌曲 3`、`可播放音频 47`。播放面板实际渲染队列末段按钮；点击末段语音后界面变为“停止/正在播放”，logcat 确认 `audio/mpeg`、`c2.android.mp3.decoder`、44100Hz 和 `AudioTrack`。
 - 切换 CN 区并搜索服装 `261011`，列表显示 `共 1 项 · 资料已同步`，卡片的 `content-desc` 为“锋芒古着”，Haruki 图片在 Android 页面实际解码显示。
 - 以上只证明代表性 Android 数据、图片和音频链路已跑通；Live2D 全动作、剧情模型和所有内容页仍需逐项验收，不能据此宣称 Android 全部完成。
+
+### Android Release 正式包复核（2026-10-02）
+
+- 精确源码归档 `4e0fc43decc81c24fd35cbd4421ab02e64e568a2` 使用 JDK 17 完整 `assembleRelease`（未跳过 lint）成功；`testDebugUnitTest` 47/47 通过。
+- APK `2,797,933` bytes，SHA256 `0113CE7DDF163B72D2EA0967C27969F3117A44C56DC66255584ED94FF56EF49E`；`apksigner` v2 验签通过，证书 SHA256 `0e02a9f1468ec3d378bbbd0eb3d7c807bbe5e31c135ba6838d64dc230d05e0e9`。
+- 该包已再次安装到 `emulator-5554` 并冷启动；此前同一 SHA256 包的虚拟 Live 末段语音与 CN 服装图片实机证据仍有效。
