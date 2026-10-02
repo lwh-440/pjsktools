@@ -820,3 +820,8 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - TW 生产页面贴纸、素材、歌曲、卡牌、卡池、称号、服装、漫画首批均完成加载检查；卡牌新内容在 Haruki 路径 404 时继续使用可用旧源候选，不能把该次首屏等待误记为 Haruki 资源成功。往期活动 `202` 已由同一缺失标记记录。
 - 以上证据来自生产页面图片自然尺寸，不以接口 200 代替显示验收；剩余全库分页、故事/Live2D、全谱面和 Android 全量矩阵仍未完成。
 
+### 2026-10-02 Android 当前正式包图片链路补验
+
+- 当前服务器同步的 Release APK `f4152a06010bb6169d928e59e8cfb9abe4f625c6c7f87d587bdb8e6b6e5d501f` 安装到 `emulator-5554` 后，首页数据实际加载；JP 卡牌第 1、2 页、贴纸、素材、漫画页面均有真实图片自然显示。证据截图保留在 `.runtime/android-current-cards-wait.png`、`.runtime/android-current-cards-page2.png`、`.runtime/android-current-stamps.png`、`.runtime/android-current-materials.png`、`.runtime/android-current-comics.png`。
+- 本次只补证图片和 API 数据链路；故事/Live2D 全量、所有区域和所有详情仍未达到 Android 全量通过标准，模拟器验收后已关闭。
+
