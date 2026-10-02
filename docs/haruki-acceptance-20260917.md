@@ -872,3 +872,10 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 通过生产 API 遍历五区全部歌曲的全部难度，共 `17,148` 个 `/api/master/{region}/music/{id}/charts/{difficulty}` 端点：JP `3,758`、EN `3,306`、TW `3,328`、KR `3,382`、CN `3,374`，全部 HTTP 200，无失败。
 - 每个成功响应均提供 Haruki SUS 地址及服务端生成的 SVG/PNG 图表地址；响应的 `partial` 只对应已登记的可选 note skin 外部依赖，并带本地矢量回退。代表歌曲/难度的 SVG/PNG 已在浏览器实际渲染，矩阵本身证明全库端点没有断链，不把元数据请求等同于逐张视觉验收。
 - 结构化结果保留在 `.runtime/chart-matrix-20261002.json`。
+
+### 2026-10-02 当前工作树编译与生产 API 复核
+
+- 当前工作树 `npm run build -w apps/api` 与 `npm run build -w apps/web` 均通过；Web bundle 仍包含生产 API 域名与 Haruki 域名引用。
+- 生产 `https://api.sekai-tools.cn/health` 返回 200，`harukiApiConfigured=true`、`harukiFeatureEnabled=true`；生产 `GET /api/master/jp/exchanges/context` 返回 200、`sourceHealth.status=ok`、`items=4225`、`unavailableGroups=0`。
+- API 测试本轮为 `260 passed / 3 failed / 5 skipped`。3 个失败均为本机测试环境的 Supabase/Postgres 租户域名 `postgres.wwvzbxfbekmuojydscuo` 无法解析，集中在注册与绑定数据库路径；Haruki 资源、代理、谱面、分享卡等相关测试均通过，未据此判定资源接入失败。
+- Android 五区图鉴 `35/35` 和 JP 内容入口证据继续有效；此前自动化五区内容脚本因抽屉导航和区域切换时序问题产生的截图不作为验收证据，避免把首页/错误区域页面误算为公告内容通过。
