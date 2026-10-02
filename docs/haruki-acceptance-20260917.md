@@ -782,6 +782,7 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 生产漫画 `id=89` 返回 `assetStatus=upstream-missing`、`sourcePolicy=upstream-missing`、空候选及“已确认 Team-Haruki 上游未提供该资源”标记；普通漫画返回 Haruki-only 候选，不再自动退化到 Moe/旧镜像。明确标记 `legacy-only` 的记录才保留旧源候选。
 - 五区 registry 和音乐元数据端点、生产歌曲目录、漫画缺失标记均已用公网请求复核；前端谱面 `GET /api/master/jp/music/1/charts/expert` 返回 Haruki SUS 地址，实际 SVG/PNG 渲染端点均返回对应图片类型（示例 PNG 1,792,054 bytes）。
 - 本轮定向 API 测试 `20/20`、缺失资产测试、Web 构建、API 构建、OpenAPI 导出/生成/一致性检查通过；Android JDK17 `testDebugUnitTest` 与 `assembleRelease` 也通过。Android 全量矩阵仍按最后阶段执行。
+- 同一工作树构建的 Android Release APK 已替换服务器下载文件；本地与公网下载均为 `2,797,933` bytes，SHA256 `d14785660a0c1ff61f7c8092fe25a863ebede702f3a41079fbb04e488af8d903`，但该新包尚未完成全量矩阵的设备实测。
 
 ## 当前未完成项清单（2026-10-02）
 
