@@ -844,3 +844,9 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 修正区域导航后，五区 `JP/EN/TW/KR/CN` 的歌曲、卡牌、卡池、称号、素材、服装、贴图/漫画共 `35/35` 个入口均满足：页面标题与目标区域一致、UI 显示“资料已同步”、首屏截图含实际解码图片。报告和逐项 UIAutomator XML/PNG 保存在 `.runtime/android-visible-catalog-v4-20261002/`；截图示例已逐张确认 JP/EN/TW/KR/CN 贴图/漫画页面均有图像像素。
 - 这轮只验证公开图鉴和图片数据链；登录态个人页面、故事/Live2D Android 入口及内容资料入口仍需在同一精确包上做最后 smoke，不能用本矩阵代替。
 
+
+### 2026-10-02 Android 内容资料入口与大型 master blob 修复复验
+
+- Android 精确发布包在公网模拟器中实际进入 JP 公告、兑换所、任务、Virtual Live、Live2D、MySekai、故事入口；公告头图、Virtual Live 横幅、MySekai 家具图标、任务列表、Live2D 模型目录和故事列表均有可见内容。证据保存在 `.runtime/android-content-v4-20261002/`。
+- 首次兑换所验收暴露 `resourceBoxes.json` 大型 Haruki registry blob 使用 15 秒默认超时，页面显示“部分可用”。将 `HARUKI_MASTER_TIMEOUT_MS` 默认值改为 `60000` 并部署 `60065ad` 后，生产 `/api/master/jp/exchanges/context` 返回 `sourceHealth=ok`、`unavailableCollections=[]`、`items=4225`；Android 冷启动后兑换所实际显示“资料状态：可用”及兑换资源图片（`.runtime/android-content-v4-20261002/兑换所-fresh.png`）。
+- 本次复验证明该问题是跨区大型 blob 超时，已修复；上游真正缺失项仍按既有 `upstream-missing` 标记处理。
