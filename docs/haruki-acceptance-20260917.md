@@ -825,3 +825,8 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 当前服务器同步的 Release APK `f4152a06010bb6169d928e59e8cfb9abe4f625c6c7f87d587bdb8e6b6e5d501f` 安装到 `emulator-5554` 后，首页数据实际加载；JP 卡牌第 1、2 页、贴纸、素材、漫画页面均有真实图片自然显示。证据截图保留在 `.runtime/android-current-cards-wait.png`、`.runtime/android-current-cards-page2.png`、`.runtime/android-current-stamps.png`、`.runtime/android-current-materials.png`、`.runtime/android-current-comics.png`。
 - 本次只补证图片和 API 数据链路；故事/Live2D 全量、所有区域和所有详情仍未达到 Android 全量通过标准，模拟器验收后已关闭。
 
+### 2026-10-02 Live2D 纹理代理与故事播放复验
+
+- 生产故事舞台高并发预加载时，`02_saki` 纹理曾触发 Chrome `ERR_HTTP2_PROTOCOL_ERROR`；直连和单张代理请求均可返回 2048×2048 PNG。提交 `953a427` 将带有 `__asset=texture_*.png` 的 Live2D 纹理先完整缓冲后响应，资源来源和路径保持不变；新增代理回归测试，资源代理测试 `27/27` 通过，API/Caddy 已部署且健康。
+- 部署后单纹理真实浏览器请求通过，代理响应实际解码为 `2048×2048`。卡牌故事文本模式在生产页面实际推进至 `ready · 85/85`，证明完整动作序列和文本控制器可跑通；舞台模式仍会对缺失/不兼容模型保持 `partial-ready`，不把它误记为全 Live2D 动作通过。
+
