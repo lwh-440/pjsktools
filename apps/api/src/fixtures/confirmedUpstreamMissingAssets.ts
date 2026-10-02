@@ -2080,6 +2080,431 @@ export const confirmedUpstreamMissingAssets: readonly ConfirmedMissingAsset[] = 
     "region": "cn",
     "type": "comics",
     "id": "146"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "72"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "75"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "79"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "80"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "83"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "87"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "88"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "90"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "93"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "94"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "95"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "101"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "103"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "105"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "110"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "115"
+  },
+  {
+    "region": "jp",
+    "type": "comics",
+    "id": "117"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "72"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "75"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "79"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "80"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "83"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "87"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "88"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "90"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "93"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "94"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "95"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "101"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "103"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "105"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "110"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "115"
+  },
+  {
+    "region": "en",
+    "type": "comics",
+    "id": "117"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "72"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "75"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "79"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "80"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "83"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "87"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "88"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "90"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "93"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "94"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "95"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "101"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "103"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "105"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "110"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "115"
+  },
+  {
+    "region": "tw",
+    "type": "comics",
+    "id": "117"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "72"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "75"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "79"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "80"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "83"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "87"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "88"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "90"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "93"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "94"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "95"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "101"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "103"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "105"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "110"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "115"
+  },
+  {
+    "region": "kr",
+    "type": "comics",
+    "id": "117"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "72"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "75"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "79"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "80"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "83"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "87"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "88"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "90"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "93"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "94"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "95"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "101"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "103"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "105"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "110"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "115"
+  },
+  {
+    "region": "cn",
+    "type": "comics",
+    "id": "117"
   }
 ];
 const keys = new Set(confirmedUpstreamMissingAssets.map((entry) => `${entry.region}:${entry.type}:${entry.id}`));
