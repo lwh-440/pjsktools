@@ -11639,6 +11639,43 @@
           }
         }
       },
+      "AssetAvailability": {
+        "type": "object",
+        "properties": {
+          "assetStatus": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "partial",
+              "upstream-missing",
+              "external-dependency",
+              "unavailable"
+            ]
+          },
+          "sourcePolicy": {
+            "type": "string",
+            "enum": [
+              "haruki-only",
+              "mixed",
+              "legacy-only",
+              "external-dependency",
+              "upstream-missing"
+            ]
+          },
+          "missingResources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ApiError": {
         "type": "object",
         "required": [
@@ -12506,6 +12543,28 @@
           },
           "susUrl": {
             "type": "string"
+          },
+          "assetStatus": {
+            "type": "string"
+          },
+          "sourcePolicy": {
+            "type": "string"
+          },
+          "missingResources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": true
           }
         }
       },
@@ -14207,6 +14266,18 @@
             }
           },
           "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assetStatus": {
+            "type": "string"
+          },
+          "sourcePolicy": {
+            "type": "string"
+          },
+          "externalDependencies": {
             "type": "array",
             "items": {
               "type": "string"
@@ -16447,6 +16518,38 @@
               }
             ]
           },
+          "sourcePolicy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missingResources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "facets": {
             "type": "array",
             "items": {
@@ -16602,6 +16705,38 @@
                 "type": "null"
               }
             ]
+          },
+          "sourcePolicy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missingResources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "facets": {
             "type": "array",
@@ -16769,6 +16904,38 @@
               }
             ]
           },
+          "sourcePolicy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missingResources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "facets": {
             "type": "array",
             "items": {
@@ -16924,6 +17091,38 @@
                 "type": "null"
               }
             ]
+          },
+          "sourcePolicy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missingResources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "facets": {
             "type": "array",
@@ -17129,6 +17328,38 @@
               }
             ]
           },
+          "sourcePolicy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missingResources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "facets": {
             "type": "array",
             "items": {
@@ -17284,6 +17515,38 @@
                 "type": "null"
               }
             ]
+          },
+          "sourcePolicy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missingResources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "facets": {
             "type": "array",

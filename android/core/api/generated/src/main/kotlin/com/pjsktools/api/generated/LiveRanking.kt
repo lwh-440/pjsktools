@@ -39,6 +39,9 @@ import kotlinx.serialization.Contextual
  * @param worldLinkAvailable 
  * @param staleRanks 
  * @param warnings 
+ * @param assetStatus 
+ * @param sourcePolicy 
+ * @param externalDependencies 
  */
 @Serializable
 
@@ -69,7 +72,7 @@ data class LiveRanking (
     val gameCharacterId: kotlin.Int? = null,
 
     @SerialName(value = "worldLinkCharacters")
-    val worldLinkCharacters: kotlin.collections.List<WorldLinkCharacter>? = null,
+    val worldLinkCharacters: kotlin.collections.List<@Contextual WorldLinkCharacter>? = null,
 
     @SerialName(value = "worldLinkAvailable")
     val worldLinkAvailable: kotlin.Boolean? = null,
@@ -78,7 +81,16 @@ data class LiveRanking (
     val staleRanks: kotlin.collections.List<kotlin.Int>? = null,
 
     @SerialName(value = "warnings")
-    val warnings: kotlin.collections.List<kotlin.String>? = null
+    val warnings: kotlin.collections.List<kotlin.String>? = null,
+
+    @SerialName(value = "assetStatus")
+    val assetStatus: kotlin.String? = null,
+
+    @SerialName(value = "sourcePolicy")
+    val sourcePolicy: kotlin.String? = null,
+
+    @SerialName(value = "externalDependencies")
+    val externalDependencies: kotlin.collections.List<kotlin.String>? = null
 
 ) {
 

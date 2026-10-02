@@ -94,7 +94,7 @@ data class HonorPage (
     @SerialName(value = "filterMeta")
     val filterMeta: CatalogFilterMeta? = null,
 
-    @SerialName(value = "appliedFilters")
+    @Contextual @SerialName(value = "appliedFilters")
     val appliedFilters: AppliedCatalogFilters? = null
 
 ) {

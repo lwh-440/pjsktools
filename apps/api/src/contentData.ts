@@ -245,6 +245,9 @@ export async function getInformationDetail(region: RegionId, informationId: stri
     bannerUrl: raw.bannerUrl,
     bannerImageCandidates: array(raw.bannerImageCandidates),
     ...classification,
+    assetStatus: "external-dependency",
+    sourcePolicy: "external-dependency",
+    externalDependencies: ["moe-sekai/Moesekai information API", "official region announcement pages"],
     embeddedDetailUrl: classification.embedStatus === "ready"
       ? `/api/master/${region}/information-content/${encodeURIComponent(informationId)}?v=${INFORMATION_CONTENT_VERSION}`
       : undefined,

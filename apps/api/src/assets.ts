@@ -369,10 +369,15 @@ export function getChartAssetDetail(region: RegionId, song: Song, difficulty: st
     chartPngUrl: `/api/assets/charts/${region}/${song.id}/${normalizedDifficulty}?format=png`,
     sekaiViewerChartSvgUrl: `/api/assets/charts/${region}/${song.id}/${normalizedDifficulty}?format=svg`,
     susUrl: `https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/${region}-assets/startapp/music/music_score/${paddedId}_01/${normalizedDifficulty}.txt?v=2`,
+    assetStatus: "partial",
+    sourcePolicy: "mixed",
+    missingResources: [],
+    externalDependencies: ["asset3.pjsekai.moe/live/note/custom01 (optional note skin; local vector fallback is embedded when unavailable)"],
     source: {
       chartSvgUrl: "Haruki SUS rendered server-side with pjsekai-scores-rs v0.4.3",
       chartPngUrl: "Haruki SUS rendered server-side with pjsekai-scores-rs v0.4.3",
       susUrl: "Haruki asset storage music_score",
+      noteSkin: "external-dependency with local fallback",
       jacketUrl: "Haruki asset storage"
     },
     realDataRequired: true

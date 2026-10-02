@@ -11,7 +11,14 @@ import type { PlayerProfile, RankingHistoryInput, RankingHistoryQuery, RankingSa
 type RankingSample = { sampledAt: string; top100: unknown[]; borders: unknown[] };
 type LiveRankingHealthStatus = "fresh" | "stale-refreshing" | "source-unavailable" | "fallback-haruki" | "no-active-event";
 export type RankingChurnStatus = "fresh" | "stale-refreshing" | "source-unavailable" | "not-released" | "player-not-tracked" | "worldlink-context-missing";
-export type RankingChurnResult = RealtimeChurnSnapshot & { status: RankingChurnStatus; stale?: boolean; errors?: string[] };
+export type RankingChurnResult = RealtimeChurnSnapshot & {
+  status: RankingChurnStatus;
+  stale?: boolean;
+  errors?: string[];
+  assetStatus?: "ready" | "external-dependency" | "unavailable";
+  sourcePolicy?: "haruki-only" | "external-dependency" | "mixed";
+  externalDependencies?: string[];
+};
 type LiveRankingSnapshot = {
   region: RegionId;
   eventId: string;
@@ -41,6 +48,9 @@ type LiveRankingSnapshot = {
   worldLinkAvailable: boolean;
   staleRanks: number[];
   warnings: string[];
+  assetStatus?: "ready" | "partial" | "external-dependency" | "unavailable";
+  sourcePolicy?: "haruki-only" | "external-dependency" | "mixed";
+  externalDependencies?: string[];
 };
 
 type RuntimeCache = {
@@ -334,7 +344,14 @@ async function refreshRankingChurn(region: RegionId, eventId: string, options: {
   const cache = await readRuntimeCache();
   cache.rankingChurn[key] = { key, region, updatedAt: snapshot.updatedAt, source: snapshot.sourceUrl, data: snapshot };
   await writeRuntimeCache(cache);
-  return { ...snapshot, status: "fresh", errors };
+  return {
+    ...snapshot,
+    status: "fresh",
+    errors,
+    assetStatus: "external-dependency",
+    sourcePolicy: "external-dependency",
+    externalDependencies: ["rks-n realtime ranking API (churn/parking)"]
+  };
 }
 
 function triggerRankingChurnRefresh(region: RegionId, eventId: string, options: { boardType: "overall" | "worldlink"; gameCharacterId?: number; top?: number }) {
@@ -349,22 +366,22 @@ function triggerRankingChurnRefresh(region: RegionId, eventId: string, options: 
 export async function getRankingChurnCached(region: RegionId, eventId: string, options: { boardType?: "overall" | "worldlink"; gameCharacterId?: number; top?: number; force?: boolean } = {}): Promise<RankingChurnResult> {
   const boardType = options.boardType ?? "overall";
   if (boardType === "worldlink" && !options.gameCharacterId) {
-    return { region, eventId, boardType, updatedAt: new Date().toISOString(), entries: [], sourceLine: "main", sourceUrl: "", status: "worldlink-context-missing", errors: ["gameCharacterId is required for World Link churn"] };
+    return { region, eventId, boardType, updatedAt: new Date().toISOString(), entries: [], sourceLine: "main", sourceUrl: "", status: "worldlink-context-missing", errors: ["gameCharacterId is required for World Link churn"], assetStatus: "unavailable", sourcePolicy: "external-dependency", externalDependencies: ["rks-n realtime ranking API (churn/parking)"] };
   }
   const key = rankingChurnKey(region, eventId, boardType, options.gameCharacterId);
   const cache = await readRuntimeCache();
   const cached = cache.rankingChurn[key];
-  if (!options.force && cached && isFresh(cached, Math.min(config.rankingRefreshMs, 30_000))) return { ...cached.data, status: "fresh" };
+  if (!options.force && cached && isFresh(cached, Math.min(config.rankingRefreshMs, 30_000))) return { ...cached.data, status: "fresh", assetStatus: "external-dependency", sourcePolicy: "external-dependency", externalDependencies: ["rks-n realtime ranking API (churn/parking)"] };
   if (!options.force && cached) {
     triggerRankingChurnRefresh(region, eventId, { boardType, gameCharacterId: options.gameCharacterId, top: options.top }).catch(() => undefined);
-    return { ...cached.data, status: "stale-refreshing", stale: true };
+    return { ...cached.data, status: "stale-refreshing", stale: true, assetStatus: "external-dependency", sourcePolicy: "external-dependency", externalDependencies: ["rks-n realtime ranking API (churn/parking)"] };
   }
   try {
     return await triggerRankingChurnRefresh(region, eventId, { boardType, gameCharacterId: options.gameCharacterId, top: options.top });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status: RankingChurnStatus = /404/.test(message) ? "not-released" : "source-unavailable";
-    return { region, eventId, boardType, gameCharacterId: options.gameCharacterId, updatedAt: new Date().toISOString(), entries: [], sourceLine: "main", sourceUrl: "", status, errors: [message] };
+    return { region, eventId, boardType, gameCharacterId: options.gameCharacterId, updatedAt: new Date().toISOString(), entries: [], sourceLine: "main", sourceUrl: "", status, errors: [message], assetStatus: "unavailable", sourcePolicy: "external-dependency", externalDependencies: ["rks-n realtime ranking API (churn/parking)"] };
   }
 }
 
@@ -547,7 +564,10 @@ function unavailableLiveSnapshot(
     worldLinkCharacters: options.worldLinkCharacters ?? [],
     worldLinkAvailable: options.worldLinkAvailable ?? false,
     staleRanks: [],
-    warnings: eventId === "none" ? ["No active event"] : ["Realtime ranking source unavailable and no usable cache exists"]
+    warnings: eventId === "none" ? ["No active event"] : ["Realtime ranking source unavailable and no usable cache exists"],
+    assetStatus: "unavailable",
+    sourcePolicy: "mixed",
+    externalDependencies: ["rks-n realtime ranking API (churn/parking/tier-series fallback)"]
   };
 }
 
@@ -694,6 +714,9 @@ async function refreshLiveRanking(
     worldLinkCharacters: resolvedWorldLinkCharacters,
     worldLinkAvailable: Boolean(matchingSnapshot?.groups.length) || (isWorldLinkEvent && resolvedWorldLinkCharacters.length > 0),
     staleRanks: [],
+    assetStatus: latest.sourceUrl.includes("haruki.seiunx.com") ? "ready" : "external-dependency",
+    sourcePolicy: latest.sourceUrl.includes("haruki.seiunx.com") ? "haruki-only" : "external-dependency",
+    externalDependencies: ["rks-n realtime ranking API (WorldLink/churn/parking/tier-series fallback)"],
     warnings: [
       ...(harukiPrimaryError ? [options.boardType === "worldlink" ? "Haruki World Link overview unavailable; using rks-n World Link fallback" : "Haruki total overview unavailable; using rks-n overall fallback"] : []),
       ...(borderLines.length ? [] : ["Realtime ranking tier-series did not include configured border ranks"])
@@ -834,7 +857,10 @@ export async function getLiveRankingCached(region: RegionId, eventId: string, ev
         worldLinkCharacters: fallbackWorldLinkCharacters,
         worldLinkAvailable: fallbackWorldLinkCharacters.length > 0,
         staleRanks: [],
-        warnings: ["Realtime ranking source unavailable; using Haruki toolbox fallback"]
+        warnings: ["Realtime ranking source unavailable; using Haruki toolbox fallback"],
+        assetStatus: "ready",
+        sourcePolicy: "haruki-only",
+        externalDependencies: ["rks-n realtime ranking API (fallback only)"]
       };
       freshCache.liveRankings[key] = { key, region, updatedAt: sampledAt, source: "haruki-toolbox", data: snapshot };
       freshCache.rankingTop100[key] = { key, region, updatedAt: sampledAt, source: "haruki-toolbox", data: top100 };

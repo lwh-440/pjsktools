@@ -184,6 +184,8 @@ describe("Virtual Live playback status", () => {
 
     expect(result).toMatchObject({
       playbackStatus: "missing-resource",
+      assetStatus: "upstream-missing",
+      sourcePolicy: "haruki-only",
       playbackReadiness: { hasLive: false, setlistCount: 0, playableAudioCount: 0 },
       unavailableReason: "Virtual Live record not found in confirmed metadata"
     });

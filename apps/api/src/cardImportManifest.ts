@@ -72,6 +72,10 @@ export async function getCardImportManifest(region: RegionId) {
     catalog,
     fingerprintStatus,
     fingerprintWarning,
+    assetStatus: fingerprintStatus === "matched" ? "partial" : "external-dependency",
+    sourcePolicy: "external-dependency",
+    externalDependencies: ["storage.sekai.best/chara_hash.json (card fingerprint manifest)"],
+    missingResources: fingerprintStatus === "matched" ? [] : ["card-fingerprint-manifest"],
     fingerprintSource: {
       url: hashSourceUrl,
       scope: "global-card-art-fingerprint",

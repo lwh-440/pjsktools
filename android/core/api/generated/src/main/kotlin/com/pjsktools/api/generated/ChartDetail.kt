@@ -38,6 +38,11 @@ import kotlinx.serialization.Contextual
  * @param totalNoteCount 
  * @param durationSeconds 
  * @param bpm 
+ * @param assetStatus 
+ * @param sourcePolicy 
+ * @param missingResources 
+ * @param externalDependencies 
+ * @param source 
  */
 @Serializable
 
@@ -83,7 +88,22 @@ data class ChartDetail (
     val durationSeconds: kotlin.Int? = null,
 
     @Contextual @SerialName(value = "bpm")
-    val bpm: java.math.BigDecimal? = null
+    val bpm: java.math.BigDecimal? = null,
+
+    @SerialName(value = "assetStatus")
+    val assetStatus: kotlin.String? = null,
+
+    @SerialName(value = "sourcePolicy")
+    val sourcePolicy: kotlin.String? = null,
+
+    @SerialName(value = "missingResources")
+    val missingResources: kotlin.collections.List<kotlin.String>? = null,
+
+    @SerialName(value = "externalDependencies")
+    val externalDependencies: kotlin.collections.List<kotlin.String>? = null,
+
+    @Contextual @SerialName(value = "source")
+    val source: kotlin.collections.Map<kotlin.String, kotlin.Any>? = null
 
 ) {
 

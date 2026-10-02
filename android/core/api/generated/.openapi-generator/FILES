@@ -4,6 +4,7 @@ src/main/kotlin/com/pjsktools/api/generated/AccountDeletionIntentResponse.kt
 src/main/kotlin/com/pjsktools/api/generated/AndroidApi.kt
 src/main/kotlin/com/pjsktools/api/generated/ApiError.kt
 src/main/kotlin/com/pjsktools/api/generated/AppliedCatalogFilters.kt
+src/main/kotlin/com/pjsktools/api/generated/AssetAvailability.kt
 src/main/kotlin/com/pjsktools/api/generated/AssetCandidates.kt
 src/main/kotlin/com/pjsktools/api/generated/AssetConfig.kt
 src/main/kotlin/com/pjsktools/api/generated/AuthResponse.kt
@@ -112,9 +113,10 @@ src/main/kotlin/com/pjsktools/api/generated/RankingHistorySample.kt
 src/main/kotlin/com/pjsktools/api/generated/RankingHistorySummary.kt
 src/main/kotlin/com/pjsktools/api/generated/RankingNeighbor.kt
 src/main/kotlin/com/pjsktools/api/generated/RankingPlayerDetail.kt
-src/main/kotlin/com/pjsktools/api/generated/RankingPlayerDetailAllOfHourlyChurn.kt
-src/main/kotlin/com/pjsktools/api/generated/RankingPlayerDetailAllOfParkingPeriods.kt
-src/main/kotlin/com/pjsktools/api/generated/RankingPlayerDetailAllOfRecentScoreChanges.kt
+src/main/kotlin/com/pjsktools/api/generated/RankingPlayerDetailAllOfHourlyChurnInner.kt
+src/main/kotlin/com/pjsktools/api/generated/RankingPlayerDetailAllOfParkingPeriodsInner.kt
+src/main/kotlin/com/pjsktools/api/generated/RankingPlayerDetailAllOfRecentScoreChangesInner.kt
+src/main/kotlin/com/pjsktools/api/generated/RankingPlayerDetailAllOfTraceCoverage.kt
 src/main/kotlin/com/pjsktools/api/generated/RankingProfileHonor.kt
 src/main/kotlin/com/pjsktools/api/generated/RankingTracePoint.kt
 src/main/kotlin/com/pjsktools/api/generated/RefreshTokenRequest.kt

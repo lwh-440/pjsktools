@@ -23,6 +23,15 @@ const schemas: Record<string, Schema> = {
       primarySource: nullable({ type: "string" }), fallbackLine: nullable({ type: "string" }), latestUpdatedAt: nullable({ type: "string" }), cacheUpdatedAt: nullable({ type: "string" }), errors: stringArray
     }
   },
+  AssetAvailability: {
+    type: "object",
+    properties: {
+      assetStatus: { type: "string", enum: ["ready", "partial", "upstream-missing", "external-dependency", "unavailable"] },
+      sourcePolicy: { type: "string", enum: ["haruki-only", "mixed", "legacy-only", "external-dependency", "upstream-missing"] },
+      missingResources: stringArray,
+      externalDependencies: stringArray
+    }
+  },
   ApiError: {
     type: "object",
     required: ["statusCode", "code", "message"],
@@ -169,7 +178,9 @@ const schemas: Record<string, Schema> = {
     properties: {
       region: ref("RegionId"), musicId: { type: "string" }, title: { type: "string" }, difficulty: { type: "string" }, difficultyId: nullable({ type: "string" }),
       playLevel: nullable({ type: "integer" }), totalNoteCount: nullable({ type: "integer" }), durationSeconds: nullable({ type: "integer" }), bpm: nullable({ type: "number" }),
-      jacketUrl: { type: "string" }, chartSvgUrl: { type: "string" }, chartPngUrl: { type: "string" }, sekaiViewerChartSvgUrl: { type: "string" }, susUrl: { type: "string" }
+      jacketUrl: { type: "string" }, chartSvgUrl: { type: "string" }, chartPngUrl: { type: "string" }, sekaiViewerChartSvgUrl: { type: "string" }, susUrl: { type: "string" },
+      assetStatus: { type: "string" }, sourcePolicy: { type: "string" }, missingResources: stringArray, externalDependencies: stringArray,
+      source: { type: "object", additionalProperties: true }
     }
   },
   SongDetail: {
@@ -341,6 +352,7 @@ const schemas: Record<string, Schema> = {
       eventId: nullable({ type: "string" }), currentEvent: nullable(ref("EventSummary")), top100: { type: "array", items: ref("RankingEntry") },
       borderLines: { type: "array", items: ref("RankingEntry") }, updatedAt: nullable({ type: "string" }), sourceHealth: ref("SourceHealth"),
       boardType: { type: "string", enum: ["overall", "worldlink"] }, gameCharacterId: nullable({ type: "integer" }), worldLinkCharacters: { type: "array", items: ref("WorldLinkCharacter") }, worldLinkAvailable: { type: "boolean" }, staleRanks: { type: "array", items: { type: "integer" } }, warnings: stringArray
+      , assetStatus: { type: "string" }, sourcePolicy: { type: "string" }, externalDependencies: stringArray
     }
   },
   ScoreControlRequest: {
@@ -626,7 +638,8 @@ const catalogItemProperties: Record<string, Schema> = {
   id: { type: "string" }, type: { type: "string" }, name: { type: "string" }, title: nullable({ type: "string" }),
   description: nullable({ type: "string" }), category: nullable({ type: "string" }), rarity: nullable({ type: "string" }),
   characterId: nullable({ type: "integer" }), startAt: nullable({ type: "string" }), endAt: nullable({ type: "string" }),
-  relatedCardIds: stringArray, assets: ref("CatalogAssets"), assetStatus: nullable({ type: "string" }), facets: { type: "array", items: ref("CatalogItemFacet") }
+  relatedCardIds: stringArray, assets: ref("CatalogAssets"), assetStatus: nullable({ type: "string" }), sourcePolicy: nullable({ type: "string" }), unavailableReason: nullable({ type: "string" }),
+  missingResources: stringArray, externalDependencies: stringArray, facets: { type: "array", items: ref("CatalogItemFacet") }
 };
 const catalogItemExtras: Record<string, Record<string, Schema>> = {
   Gacha: { gachaType: nullable({ type: "string" }) },

@@ -2,7 +2,7 @@ process.env.HARUKI_ASSET_BASE_URL = "https://sekai-assets-cn04-sha01-cdn.haruki.
 
 import { describe, expect, it } from "vitest";
 
-const { getAssetCandidates, getAssetSourceLabel, getCardAssetDetail, getCharacterIconCandidates, getCollectionItemAssetDetail, getEventAssetDetail, getMusicAssetDetail, proxiedAssetUrl } = await import("./assets.js");
+const { getAssetCandidates, getAssetSourceLabel, getCardAssetDetail, getCharacterIconCandidates, getChartAssetDetail, getCollectionItemAssetDetail, getEventAssetDetail, getMusicAssetDetail, proxiedAssetUrl } = await import("./assets.js");
 
 const harukiJp = "https://sekai-assets-cn04-sha01-cdn.haruki.seiunx.com/jp-assets";
 
@@ -190,5 +190,13 @@ describe("Haruki asset mappings", () => {
     expect(legacy.imageCandidates[0]).toBe("https://storage.sekai.best/sekai-comics/comic/one_frame/comic_9001.webp");
     expect(legacy.assetStatus).toBe("legacy-only");
     expect(legacy.sourcePolicy).toBe("legacy-only");
+  });
+
+  it("marks the optional chart note skin as an external dependency", () => {
+    const chart = getChartAssetDetail("jp", {
+      id: "1", title: "Test song", unit: "ln", difficultyDetails: [{ difficulty: "expert", playLevel: 25, totalNoteCount: 100 }]
+    } as any, "expert");
+    expect(chart).toMatchObject({ assetStatus: "partial", sourcePolicy: "mixed" });
+    expect(chart.externalDependencies?.[0]).toContain("asset3.pjsekai.moe");
   });
 });

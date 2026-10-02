@@ -39,6 +39,10 @@ import kotlinx.serialization.Contextual
  * @param startAt 
  * @param endAt 
  * @param assetStatus 
+ * @param sourcePolicy 
+ * @param unavailableReason 
+ * @param missingResources 
+ * @param externalDependencies 
  * @param facets 
  * @param costumeNumber 
  * @param designer 
@@ -90,6 +94,18 @@ data class CostumeItem (
 
     @SerialName(value = "assetStatus")
     val assetStatus: kotlin.String? = null,
+
+    @SerialName(value = "sourcePolicy")
+    val sourcePolicy: kotlin.String? = null,
+
+    @SerialName(value = "unavailableReason")
+    val unavailableReason: kotlin.String? = null,
+
+    @SerialName(value = "missingResources")
+    val missingResources: kotlin.collections.List<kotlin.String>? = null,
+
+    @SerialName(value = "externalDependencies")
+    val externalDependencies: kotlin.collections.List<kotlin.String>? = null,
 
     @SerialName(value = "facets")
     val facets: kotlin.collections.List<CatalogItemFacet>? = null,

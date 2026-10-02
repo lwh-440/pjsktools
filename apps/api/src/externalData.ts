@@ -12,6 +12,11 @@ export interface ExternalDataSource {
   sourceProject: string;
   fetchedAt: string;
   unavailableReason?: string;
+  /** Explicit data-source boundary shown to clients when Haruki cannot own the resource. */
+  assetStatus?: "ready" | "partial" | "upstream-missing" | "external-dependency" | "unavailable";
+  sourcePolicy?: "haruki-only" | "mixed" | "legacy-only" | "external-dependency" | "upstream-missing";
+  missingResources?: string[];
+  externalDependencies?: string[];
 }
 
 export interface ResolvedCollectionResult extends MasterCollection {
@@ -67,6 +72,10 @@ export interface Live2dModelSummary {
   regionReferenceStatus?: "region-referenced" | "global-only";
   referencedStories?: Array<{ storyType: string; storyId: string; scenarioId?: string }>;
   playbackStatus?: "region-referenced" | "global-only" | "partial" | "missing-resource";
+  assetStatus?: "ready" | "partial" | "upstream-missing" | "external-dependency" | "unavailable";
+  sourcePolicy?: "haruki-only" | "mixed" | "legacy-only" | "external-dependency" | "upstream-missing";
+  missingResources?: string[];
+  externalDependencies?: string[];
   assetCounts?: { motions: number; expressions: number; textures: number };
   raw: unknown;
 }
@@ -996,7 +1005,10 @@ function live2dSource(error?: unknown): ExternalDataSource {
     fallbackUrl: `${config.harukiAssetBaseUrl.replace(/\/+$/, "")}/{region}-assets/startapp/live2d/model/{modelPath}/buildmodeldata.json`,
     sourceProject: "Team-Haruki BuildModelData/MOC3/textures/physics; Sekai-World/sekai-viewer catalog and optional legacy Cubism motion bridge",
     fetchedAt: nowIso(),
-    unavailableReason: error instanceof Error ? error.message : error ? String(error) : undefined
+    unavailableReason: error instanceof Error ? error.message : error ? String(error) : undefined,
+    assetStatus: error ? "unavailable" : "partial",
+    sourcePolicy: "mixed",
+    externalDependencies: ["Sekai-World/sekai-viewer legacy Cubism motion bridge"]
   };
 }
 
@@ -1602,7 +1614,10 @@ export async function informationCollection(region: RegionId): Promise<ResolvedC
       primaryUrl: `${informationBase}/${region}/information`,
       sourceProject: "moe-sekai/Moesekai information API",
       fetchedAt: nowIso(),
-      unavailableReason: "Information API is only confirmed for jp and cn"
+      unavailableReason: "Information API is only confirmed for jp and cn",
+      assetStatus: "external-dependency",
+      sourcePolicy: "external-dependency",
+      externalDependencies: ["moe-sekai/Moesekai information API", "official region announcement pages"]
     };
     const collection = toCollection(region, "announcements", [], sourceMetadata);
     return {
@@ -1643,7 +1658,10 @@ export async function informationCollection(region: RegionId): Promise<ResolvedC
       sourceType: "information-api",
       primaryUrl,
       sourceProject: "moe-sekai/Moesekai information API",
-      fetchedAt: nowIso()
+      fetchedAt: nowIso(),
+      assetStatus: "external-dependency",
+      sourcePolicy: "external-dependency",
+      externalDependencies: ["moe-sekai/Moesekai information API", "official region announcement pages"]
     });
     const previewItems = items.slice(0, 24).map((item, index) => previewItem(item, "information", index));
     return {
@@ -1664,7 +1682,10 @@ export async function informationCollection(region: RegionId): Promise<ResolvedC
       primaryUrl,
       sourceProject: "moe-sekai/Moesekai information API",
       fetchedAt: nowIso(),
-      unavailableReason: error instanceof Error ? error.message : String(error)
+      unavailableReason: error instanceof Error ? error.message : String(error),
+      assetStatus: "external-dependency",
+      sourcePolicy: "external-dependency",
+      externalDependencies: ["moe-sekai/Moesekai information API", "official region announcement pages"]
     };
     const collection = toCollection(region, "announcements", [], sourceMetadata);
     return {
@@ -1761,6 +1782,10 @@ export async function getLive2dModels(region: RegionId, options: Live2dCatalogOp
         regionReferenceStatus: referencedStories.length ? "region-referenced" : "global-only",
         referencedStories,
         playbackStatus: referencedStories.length ? "region-referenced" : "global-only",
+        assetStatus: "partial",
+        sourcePolicy: "mixed",
+        missingResources: ["model files and motion manifests are verified only when the model detail endpoint loads them"],
+        externalDependencies: ["Sekai-World/sekai-viewer legacy Cubism motion bridge"],
         assetCounts: { motions: 0, expressions: 0, textures: 0 },
         raw
       };
@@ -1791,7 +1816,10 @@ export async function getLive2dModels(region: RegionId, options: Live2dCatalogOp
       sourceMetadata: {
         ...sourceMetadata,
         scope: "global-shared-model-asset",
-        regionAvailability: "A model is playable only after a scenario in the selected region references it and its files load successfully."
+        regionAvailability: "A model is playable only after a scenario in the selected region references it and its files load successfully.",
+        assetStatus: models.some((model) => model.playbackStatus === "region-referenced") ? "partial" : "upstream-missing",
+        missingResources: models.filter((model) => model.playbackStatus === "global-only").map((model) => model.id),
+        sourcePolicy: "mixed"
       } as ExternalDataSource,
       realDataRequired: true
     };
@@ -1826,6 +1854,12 @@ export async function getLive2dModelDetail(region: RegionId, modelId: string) {
     : assetCounts.textures === 0
       ? "missing-resource"
       : "partial";
+  const missingResources = [
+    ...(unavailableReason ? [unavailableReason] : []),
+    ...(assetCounts.textures === 0 ? ["textures"] : []),
+    ...(assetCounts.motions === 0 ? ["motions"] : []),
+    ...(assetCounts.expressions === 0 ? ["expressions"] : [])
+  ];
   return {
     region,
     model: { ...resolvedModel, assetCounts, playbackStatus },
@@ -1867,6 +1901,10 @@ export async function getLive2dModelDetail(region: RegionId, modelId: string) {
       ].filter(Boolean) : []
     },
     playbackStatus,
+    assetStatus: playbackStatus === "missing-resource" ? "upstream-missing" : "partial",
+    sourcePolicy: "mixed",
+    missingResources,
+    externalDependencies: ["Sekai-World/sekai-viewer legacy Cubism motion bridge"],
     assetCounts,
     sourceMetadata: list.sourceMetadata,
     runtimeRequired: ["pixi.js@7", "@sekai-world/pixi-live2d-display-mulmotion", "Cubism runtime"],
@@ -2049,6 +2087,12 @@ export async function getStoryFullContext(region: RegionId, storyType: string, s
     bannerUrl: storyImageCandidates[0] ?? scenarioInfo?.bannerUrl,
     imageCandidates: storyImageCandidates,
     imageStatus: storyImageCandidates.length ? "matched" : "reference-no-cover",
+    assetStatus: storyImageCandidates.length && scenarioInfo?.scenarioDataUrl ? "partial" : "upstream-missing",
+    sourcePolicy: "haruki-only",
+    missingResources: [
+      ...(storyImageCandidates.length ? [] : ["story-cover"]),
+      ...(scenarioInfo?.scenarioDataUrl ? [] : ["scenario"])
+    ],
     playbackUrl: `/api/master/${region}/stories/${encodeURIComponent(storyType)}/${encodeURIComponent(storyId)}/playback`,
     playbackReadiness: {
       hasScenario: Boolean(scenarioInfo?.scenarioDataUrl),
@@ -2104,6 +2148,9 @@ export async function getStoryPlaybackContext(region: RegionId, storyType: strin
       sourceHealth: sourceHealthFromEntries(entries),
       warnings,
       unavailableReason: "Story scenario asset path could not be resolved from confirmed metadata",
+      assetStatus: "upstream-missing",
+      sourcePolicy: "haruki-only",
+      missingResources: ["scenario"],
       realDataRequired: true
     };
   }
@@ -2165,6 +2212,11 @@ export async function getStoryPlaybackContext(region: RegionId, storyType: strin
       ? "missing-resource"
       : (parsed.warnings.length || parsed.unsupportedActions.length || !parsed.live2dModels.length) ? "partial-ready" : "ready",
     missingResources: parsed?.warnings ?? [],
+    assetStatus: unavailableReason || !parsed?.actions?.length
+      ? "upstream-missing"
+      : (parsed.warnings.length || parsed.unsupportedActions.length || !parsed.live2dModels.length) ? "partial" : "ready",
+    sourcePolicy: "haruki-only",
+    externalDependencies: ["Live2D runtime and legacy motion bridge"],
     sourceMetadata: source,
     sourceHealth: sourceHealthFromEntries(entries),
     warnings: [...warnings, ...(parsed?.warnings ?? [])],
@@ -2561,6 +2613,9 @@ export async function getVirtualLivePlaybackContext(region: RegionId, virtualLiv
     },
     playbackReadiness,
     playbackStatus,
+    assetStatus: playbackStatus === "missing-resource" ? "upstream-missing" : "partial",
+    sourcePolicy: "haruki-only",
+    missingResources: missingSteps.map((step) => `step-${step.index + 1}`),
     warnings: [...(context.warnings ?? []), ...stepWarnings],
     unavailableReason,
     realDataRequired: true
