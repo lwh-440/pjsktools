@@ -850,3 +850,9 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - Android 精确发布包在公网模拟器中实际进入 JP 公告、兑换所、任务、Virtual Live、Live2D、MySekai、故事入口；公告头图、Virtual Live 横幅、MySekai 家具图标、任务列表、Live2D 模型目录和故事列表均有可见内容。证据保存在 `.runtime/android-content-v4-20261002/`。
 - 首次兑换所验收暴露 `resourceBoxes.json` 大型 Haruki registry blob 使用 15 秒默认超时，页面显示“部分可用”。将 `HARUKI_MASTER_TIMEOUT_MS` 默认值改为 `60000` 并部署 `60065ad` 后，生产 `/api/master/jp/exchanges/context` 返回 `sourceHealth=ok`、`unavailableCollections=[]`、`items=4225`；Android 冷启动后兑换所实际显示“资料状态：可用”及兑换资源图片（`.runtime/android-content-v4-20261002/兑换所-fresh.png`）。
 - 本次复验证明该问题是跨区大型 blob 超时，已修复；上游真正缺失项仍按既有 `upstream-missing` 标记处理。
+
+### 2026-10-02 Android 内容详情与资源标记复验
+
+- JP 故事 `special/70` 在 Android 发布包中实际打开详情并点击“加载并播放本章”；页面显示文本播放区和背景图，缺失封面显示 `HTTP 404`，对应生产详情明确返回 `assetStatus=upstream-missing`、`missingResources=[story-cover]`、`sourcePolicy=haruki-only`，因此按已确认上游缺失标记收口，不记为接入故障。
+- JP Virtual Live `id=1` 实际打开详情，横幅图片、结束状态、角色和日程列表均显示；首次详情加载约 45 秒后完成，截图为 `.runtime/android-content-v4-20261002/虚拟Live-detail-45s.png`。
+- JP Live2D `v2_01ichika_casual` 实际打开详情，纹理图集自然显示；下方 Android WebView 的 Pixi/Cubism 交互舞台出现模型像素，页面同时明确“部分资源可用”，与已登记的动作/表情缺失边界一致。证据为 `.runtime/android-content-v4-20261002/Live2D-detail-v2-40s.png` 和 `Live2D-stage-20s.png`。
