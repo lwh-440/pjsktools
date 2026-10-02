@@ -790,7 +790,7 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 以下项目仍不能标记为全量完成：
 
 1. **全库图片逐条实显**：五区目录共 65,984 条记录的候选审计已完成，但仍有 288 条候选链无可用图（其中 26 条无候选、6 条复核为全 404）；这证明缺口存在，不等于每条都已在浏览器逐条打开。
-2. **已确认上游缺失资源**：JP 63 条 legacy tips 没有 Haruki 图、KR 称号 20059–20062、CN 素材 3004、部分 CN future costume、特殊故事背景等，现已进入 `upstream-missing` 标记路径；故事/Live2D 的同类缺口也需要按该标志收口。剩余工作是逐项把生产页面/Android 表现与标记证据归档。
+2. **已确认上游缺失资源**：JP 63 条 legacy tips 没有 Haruki 图、KR 称号 20059–20062、CN 素材 3004、部分 CN future costume、特殊故事背景等，已统一进入 `upstream-missing` 标记路径。故事播放、Virtual Live、Live2D 模型详情也返回同一类标记；这项标记实现已完成，后续只需在最终实显矩阵中核对标记是否与页面表现一致。
 3. **漫画来源边界**：Haruki 可提供的漫画现在只返回 Haruki-only 候选；经确认没有 Haruki 资源的记录返回 `upstream-missing`；只有显式 `legacy-only` 的旧记录才保留旧源。`haruki-comic_xx` 只作为已有上游数据的记录 ID，不再为缺失项伪造名称。仍需把全库旧源保留清单做一次最终核对。
 4. **Android 全量矩阵**：最终 APK 已发布并完成核心生产路径实测，但五区所有图鉴、所有详情、所有 MySekai 类别、全部故事类型、全部 Live2D 模型和全部媒体仍未逐项实机验收。
 5. **故事与 Live2D**：卡牌故事代表章节、特殊故事控制器和 Miku 模型样本已通过；特殊故事缺背景、完整动作/表情目录及 legacy motion bridge 仍未达到全量通过。
@@ -799,4 +799,11 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 8. **新 registry 的缓存字段**：服务端已消费 `contentHash`、sha256 blob、ETag/304；Web IndexedDB 已保存 `contentHash`，并以最终响应体 ETag 做条件请求，避免同一 registry 下代码或外部集合变更被错误缓存。Android DTO 已暴露 `contentHash`，但 Android 本地缓存与全量矩阵仍未完成最终实测。
 9. **登录数据页面**：`/me/deck`、`/me/scores`、档案分析及 Android 账号收藏/成绩/卡组需要真实登录数据的全路径验收，当前只有契约/部分样本。
 10. **本地工作树同步**：迁移代码已部署，GitHub `main` 和服务器 API/Android 下载文件已同步；本地仍保留用户 UI 改动（2 个已跟踪文件及新增 UI 资源/文档），因此不能声称工作树与 GitHub 完全一致，也不能擅自丢弃这些 UI 内容。
+
+### 2026-10-02 3c8a6db 缺失/外部依赖标记收口
+
+- `3c8a6db` 已提交并部署到 `/opt/pjsktools/release-snapshots/assets-3c8a6db`，API/Caddy 重建后健康检查仍为 200；本地代码、GitHub `main` 与服务器运行代码已包含同一标记实现。
+- 统一字段为 `assetStatus`、`sourcePolicy`、`missingResources`、`externalDependencies`。故事/Virtual Live/Live2D 缺资源使用 `upstream-missing`；公告、卡片 fingerprint manifest、WorldLink churn/parking 和谱面可选 note skin 使用 `external-dependency` 或 `mixed`，不会伪装成 Haruki 已提供。
+- 生产复核：卡牌故事 `cardEpisodes/1` 返回 `playbackStatus=ready`、`assetStatus=ready`；漫画 `89` 保持 `upstream-missing + legacy-only`；谱面 `1/expert` 返回 Haruki SUS 且标记可选 note skin 外部依赖；卡片识别清单明确标记 `source-unavailable/external-dependency`；JP 公告明确标记外部公告源；Live2D 列表标记全局模型需逐模型详情加载，模型详情再报告具体缺失资源；JP 活动 `219` churn 返回 `external-dependency` 并注明 rks-n。
+- 标记相关定向测试：外部数据、资源路由、谱面渲染共 `98/98` 通过；API build、OpenAPI 导出/生成/一致性检查通过。至此“先完成缺失/外部标记，再进入实显验收”的前置条件已满足；全库图片、故事/Live2D、谱面和 Android 全量矩阵仍按清单待做。
 
