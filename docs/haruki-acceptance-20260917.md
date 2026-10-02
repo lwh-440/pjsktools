@@ -748,3 +748,9 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 生产真实完整 GET 与 PNG 签名检查确认卡池 `4027、4028、4029、4030、4032、4035、4037、4038` 的可用 logo 全部 `200 image/png`；其中 `4029→ab_gacha_593`、`4030→ab_gacha_579`、`4035→ab_gacha_326` 使用了 master 的真实 assetbundle 名。对应 banner 路径在 Haruki 各镜像均为 404，确认为上游未导出资源，不能把 banner 404 记成代理故障。
 
 部署后生产浏览器打开 `/section/gachas?pageSize=12`，等待 35 秒后页面 `13/13` 图片均有自然尺寸，`fallback=[]`、资产请求失败 `0`；八个原先停在加载状态的条目均实际显示 Haruki logo，证据为 `.runtime/migration-gacha-after-681d704.json` 和 `.runtime/migration-gachas-after-681d704.png`。Android 侧本次启动的无窗口模拟器网络无法访问公网 DNS，未把这次失败环境记作 Android 资源结论；此前 Release Android 实机证据仍以顶部 f4152 包记录为准。
+## 2026-10-02 Android Haruki 实机补验
+
+- 以 `4e0fc43` 源码构建的 Android 测试包安装到 `emulator-5554`，冷启动后进入生产 API `https://api.sekai-tools.cn`。
+- 虚拟 Live `ID 1` 详情实际显示 `状态：部分可用`、`节目 11`、`MC 事件 85`、`歌曲 3`、`可播放音频 47`。播放面板实际渲染队列末段按钮；点击末段语音后界面变为“停止/正在播放”，logcat 确认 `audio/mpeg`、`c2.android.mp3.decoder`、44100Hz 和 `AudioTrack`。
+- 切换 CN 区并搜索服装 `261011`，列表显示 `共 1 项 · 资料已同步`，卡片的 `content-desc` 为“锋芒古着”，Haruki 图片在 Android 页面实际解码显示。
+- 以上只证明代表性 Android 数据、图片和音频链路已跑通；Live2D 全动作、剧情模型和所有内容页仍需逐项验收，不能据此宣称 Android 全部完成。
