@@ -775,18 +775,26 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 公网下载 `https://sekai-tools.cn/download/pjsktools-android-0.1.0.apk` 长度 `2,797,933` 字节，SHA256 与本地完全一致：`0113ce7ddf163b72d2ea0967c27969f3117a44c56dc66255584ed94ff56ef49e`。
 - 证据：`.runtime/android-final-public-1002.txt`。
 
+### 2026-10-02 f602a89 缺失标记、漫画边界与 registry 缓存复验
+
+- `f602a89` 已推送 GitHub `main`，并部署到服务器发布归档 `release-snapshots/assets-f602a89`；API/Caddy 容器重建后均健康运行。
+- 生产歌曲目录返回 `contentHash=d3e263e2782af2025339ac0bc4b585d49150a2f97f96cfb9f634c25feb95bfca`，响应 `ETag` 与 registry hash 一致；带同一 `If-None-Match` 的条件请求实际返回 `304`，并带 `X-Master-Content-Hash`。Web IndexedDB 目录缓存已保存该字段，API 变化时由 registry hash 触发重新验证。
+- 生产漫画 `id=89` 返回 `assetStatus=upstream-missing`、`sourcePolicy=upstream-missing`、空候选及“已确认 Team-Haruki 上游未提供该资源”标记；普通漫画返回 Haruki-only 候选，不再自动退化到 Moe/旧镜像。明确标记 `legacy-only` 的记录才保留旧源候选。
+- 五区 registry 和音乐元数据端点、生产歌曲目录、漫画缺失标记均已用公网请求复核；前端谱面 `GET /api/master/jp/music/1/charts/expert` 返回 Haruki SUS 地址，实际 SVG/PNG 渲染端点均返回对应图片类型（示例 PNG 1,792,054 bytes）。
+- 本轮定向 API 测试 `20/20`、缺失资产测试、Web 构建、API 构建、OpenAPI 导出/生成/一致性检查通过；Android JDK17 `testDebugUnitTest` 与 `assembleRelease` 也通过。Android 全量矩阵仍按最后阶段执行。
+
 ## 当前未完成项清单（2026-10-02）
 
 以下项目仍不能标记为全量完成：
 
 1. **全库图片逐条实显**：五区目录共 65,984 条记录的候选审计已完成，但仍有 288 条候选链无可用图（其中 26 条无候选、6 条复核为全 404）；这证明缺口存在，不等于每条都已在浏览器逐条打开。
-2. **已确认上游缺失资源**：JP 63 条 legacy tips 没有 Haruki 图、KR 称号 20059–20062、CN 素材 3004、部分 CN future costume、特殊故事背景等，Haruki 与旧源均有 404 或无等价资源；这些必须保留明确不可用/旧源回退状态，不能用其他图片替代。
-3. **漫画来源边界**：JP `comic_0001`–`0040` 已由 Haruki 实显；其余 63 条 legacy tips 仍走旧 Moe 图源，未伪造 `haruki-comic_xx` 名称。
+2. **已确认上游缺失资源**：JP 63 条 legacy tips 没有 Haruki 图、KR 称号 20059–20062、CN 素材 3004、部分 CN future costume、特殊故事背景等，现已进入 `upstream-missing` 标记路径；故事/Live2D 的同类缺口也需要按该标志收口。剩余工作是逐项把生产页面/Android 表现与标记证据归档。
+3. **漫画来源边界**：Haruki 可提供的漫画现在只返回 Haruki-only 候选；经确认没有 Haruki 资源的记录返回 `upstream-missing`；只有显式 `legacy-only` 的旧记录才保留旧源。`haruki-comic_xx` 只作为已有上游数据的记录 ID，不再为缺失项伪造名称。仍需把全库旧源保留清单做一次最终核对。
 4. **Android 全量矩阵**：最终 APK 已发布并完成核心生产路径实测，但五区所有图鉴、所有详情、所有 MySekai 类别、全部故事类型、全部 Live2D 模型和全部媒体仍未逐项实机验收。
 5. **故事与 Live2D**：卡牌故事代表章节、特殊故事控制器和 Miku 模型样本已通过；特殊故事缺背景、完整动作/表情目录及 legacy motion bridge 仍未达到全量通过。
-6. **谱面与外部展示资源**：Haruki SUS 和代表性 PNG 已通过；全歌曲/全难度渲染未逐项验收，音符皮肤仍有外部旧源依赖。
+6. **谱面与外部展示资源**：前端谱面 API 已返回 Haruki SUS，生产示例的 SVG/PNG 均实际生成并返回正确媒体类型；全歌曲/全难度渲染仍未逐项验收，音符皮肤仍有外部旧源依赖。
 7. **World Link 与识别服务**：角色榜样本已通过；churn/parking、部分详情轨迹仍依赖 rks-n 或处于 source-unavailable。卡片识别 fingerprint manifest 仍是旧外部依赖，当前没有仓内完整消费者。
-8. **新 registry 的缓存字段**：服务端已消费 `contentHash`、sha256 blob、ETag/304；Web/Android 对外仍主要使用 `masterVersion`（schema/syncedAt），尚未把 registry `contentHash` 作为前端 IndexedDB 版本字段完整贯通。
+8. **新 registry 的缓存字段**：服务端已消费 `contentHash`、sha256 blob、ETag/304；Web 目录响应的 ETag/X-Master-Content-Hash 已与 registry hash 对齐，IndexedDB 已保存并用于条件请求。Android DTO 已暴露 `contentHash`，但 Android 本地缓存与全量矩阵仍未完成最终实测。
 9. **登录数据页面**：`/me/deck`、`/me/scores`、档案分析及 Android 账号收藏/成绩/卡组需要真实登录数据的全路径验收，当前只有契约/部分样本。
 10. **本地工作树同步**：迁移代码已部署，GitHub `main` 和服务器 API/Android 下载文件已同步；本地仍保留用户 UI 改动（2 个已跟踪文件及新增 UI 资源/文档），因此不能声称工作树与 GitHub 完全一致，也不能擅自丢弃这些 UI 内容。
 
