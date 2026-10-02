@@ -866,3 +866,9 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 
 - 生产浏览器实际打开 `/section/forecast`、`/section/tools`、`/section/deckCompare`、`/section/share`，页面均完成首屏渲染；工具页显示“请先明确选择一首歌曲”的正常输入前置提示，未出现资源错误。
 - 未登录打开 `/me/deck`、`/me/scores`、`/me/profile`、`/me/favorites` 均正确跳转 `/login`，登录刷新请求的 401 是无会话边界，不记为数据源故障。真实登录数据仍需专用测试会话。
+
+### 2026-10-02 五区全谱面元数据矩阵
+
+- 通过生产 API 遍历五区全部歌曲的全部难度，共 `17,148` 个 `/api/master/{region}/music/{id}/charts/{difficulty}` 端点：JP `3,758`、EN `3,306`、TW `3,328`、KR `3,382`、CN `3,374`，全部 HTTP 200，无失败。
+- 每个成功响应均提供 Haruki SUS 地址及服务端生成的 SVG/PNG 图表地址；响应的 `partial` 只对应已登记的可选 note skin 外部依赖，并带本地矢量回退。代表歌曲/难度的 SVG/PNG 已在浏览器实际渲染，矩阵本身证明全库端点没有断链，不把元数据请求等同于逐张视觉验收。
+- 结构化结果保留在 `.runtime/chart-matrix-20261002.json`。
