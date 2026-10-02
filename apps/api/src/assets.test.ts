@@ -174,4 +174,19 @@ describe("Haruki asset mappings", () => {
     expect(ticketGacha.logoUrl).toBe(`${harukiJp}/ondemand/gacha/ab_gacha_593/logo/logo.png`);
     expect(ticketGacha.imageCandidates).toContain(ticketGacha.logoUrl);
   });
+
+  it("marks the confirmed upstream gap instead of inventing a fallback URL", () => {
+    const missing = getCollectionItemAssetDetail("jp", "comics", { id: "89", raw: { id: 89 } });
+    expect(missing.imageCandidates).toEqual([]);
+    expect(missing.assetStatus).toBe("upstream-missing");
+    expect(missing.sourcePolicy).toBe("upstream-missing");
+    expect(missing.unavailableReason).toContain("Team-Haruki");
+  });
+
+  it("keeps an explicitly legacy-only comic on the old source list", () => {
+    const legacy = getCollectionItemAssetDetail("jp", "comics", { id: "9001", raw: { id: 9001, assetbundleName: "comic_9001", legacySource: true } });
+    expect(legacy.imageCandidates[0]).toBe("https://storage.sekai.best/sekai-comics/comic/one_frame/comic_9001.webp");
+    expect(legacy.assetStatus).toBe("legacy-only");
+    expect(legacy.sourcePolicy).toBe("legacy-only");
+  });
 });

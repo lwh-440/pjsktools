@@ -282,8 +282,16 @@ function catalogResponse(reply: any, request: any, payload: unknown) {
   if (payload && typeof payload === "object" && "items" in payload && "page" in payload && "pageSize" in payload && "total" in payload && "totalPages" in payload) {
     payload = withPaginationFlags(payload as any);
   }
-  const etag = `W/\"${createHash("sha1").update(JSON.stringify(payload)).digest("base64url")}\"`;
+  const contentHash = payload && typeof payload === "object" && typeof (payload as { contentHash?: unknown }).contentHash === "string"
+    ? (payload as { contentHash: string }).contentHash
+    : undefined;
+  // The registry content hash is stable across filtered pages. Reusing it as
+  // the catalog ETag lets the browser keep an IndexedDB page entirely local
+  // until Haruki publishes a new registry version.
+  const etagValue = contentHash ?? createHash("sha1").update(JSON.stringify(payload)).digest("base64url");
+  const etag = `W/\"${etagValue}\"`;
   reply.header("etag", etag);
+  if (contentHash) reply.header("x-master-content-hash", contentHash);
   reply.header("cache-control", "public, max-age=60, stale-while-revalidate=600");
   if (request.headers["if-none-match"] === etag) return reply.code(304).send();
   return payload;

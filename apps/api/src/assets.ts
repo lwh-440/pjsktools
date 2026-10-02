@@ -1,6 +1,7 @@
 import { config, regions, type RegionId } from "./config.js";
 import { externalAssetSources } from "./externalData.js";
 import { harukiAssetPath } from "./harukiAssetPaths.js";
+import { isConfirmedUpstreamMissingAsset } from "./fixtures/confirmedUpstreamMissingAssets.js";
 import type { Card, EventInfo, MasterCollectionItem, Song } from "./types.js";
 
 const sekaiBestAssetBase = "https://storage.sekai.best";
@@ -163,6 +164,18 @@ export function getCharacterIconCandidates(region: RegionId, characterId?: strin
 
 function uniqueStrings(values: Array<string | undefined>) {
   return values.filter((value): value is string => Boolean(value && value.trim())).filter((value, index, array) => array.indexOf(value) === index);
+}
+
+function legacyComicCandidates(region: RegionId, assetbundleName: string, numericId?: number) {
+  return uniqueStrings([
+    assetbundleName ? `${comicsAssetBase}/comic/one_frame/${assetbundleName}.webp` : undefined,
+    assetbundleName ? moeAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`) : undefined,
+    assetbundleName ? moeOverseasAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`) : undefined,
+    assetbundleName ? `${comicsAssetBase}/comic/${assetbundleName}/${assetbundleName}.webp` : undefined,
+    assetbundleName ? sekaiBestAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`) : undefined,
+    numericId ? `${moeStaticBase}/mangas/${numericId}.webp` : undefined,
+    numericId ? `${moeStaticBase}/assets/mangas/${numericId}.webp` : undefined
+  ]);
 }
 
 export function getAssetConfig(region: RegionId) {
@@ -432,20 +445,20 @@ function collectionAssetCandidates(region: RegionId, type: string, id: string, a
         ...getAssetCandidates(region, `stamp/${assetbundleName}/${assetbundleName}.png`)
       ]) : [];
     case "comics":
-      return uniqueStrings(assetbundleName ? [
-        ...harukiAssetCandidates(region, `comic/one_frame/${assetbundleName}.webp`),
-        ...harukiAssetCandidates(region, `comic/${assetbundleName}/${assetbundleName}.webp`),
-        `${comicsAssetBase}/comic/one_frame/${assetbundleName}.webp`,
-        moeAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
-        moeOverseasAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
-        `${comicsAssetBase}/comic/${assetbundleName}/${assetbundleName}.webp`,
-        sekaiBestAssetUrl(region, `comic/one_frame/${assetbundleName}.webp`),
-        sekaiBestAssetUrl(region, `comic/${assetbundleName}/${assetbundleName}.webp`),
-      ] : [
-        ...(numericId ? harukiAssetCandidates(region, `comic/one_frame/comic_${String(numericId).padStart(4, "0")}.webp`) : []),
-        numericId ? `${moeStaticBase}/mangas/${numericId}.webp` : undefined,
-        numericId ? `${moeStaticBase}/assets/mangas/${numericId}.webp` : undefined
-      ]);
+      // Haruki is authoritative for comics that it publishes. Legacy mirrors are
+      // allowed only when the record explicitly says it is legacy-only. A record
+      // already confirmed missing across every probe gets a visible marker and no
+      // speculative fallback URL.
+      if (isConfirmedUpstreamMissingAsset(region, type, id)) return [];
+      if (raw.legacySource === true || raw.sourcePolicy === "legacy-only") return legacyComicCandidates(region, assetbundleName, numericId);
+      return assetbundleName
+        ? uniqueStrings([
+          ...harukiAssetCandidates(region, `comic/one_frame/${assetbundleName}.webp`),
+          ...harukiAssetCandidates(region, `comic/${assetbundleName}/${assetbundleName}.webp`)
+        ])
+        : numericId
+          ? harukiAssetCandidates(region, `comic/one_frame/comic_${String(numericId).padStart(4, "0")}.webp`)
+          : [];
     case "mysekai": {
       const fixtureType = stringField(raw, ["mysekaiFixtureType"]);
       const layoutType = stringField(raw, ["mysekaiSettableLayoutType"]);
@@ -477,6 +490,8 @@ export function getCollectionItemAssetDetail(region: RegionId, type: string, ite
   const iconAssetbundleName = stringField(raw, ["iconAssetbundleName"]);
   const imageCandidates = collectionAssetCandidates(region, type, item.id, assetbundleName, raw);
   const imageUrl = imageCandidates[0] ?? "";
+  const upstreamMissing = isConfirmedUpstreamMissingAsset(region, type, item.id);
+  const legacyOnly = type === "comics" && (raw.legacySource === true || raw.sourcePolicy === "legacy-only");
   const gachaId = stringField(raw, ["id"]) || item.id;
   const gachaBannerUrl = type === "gachas" && gachaId ? assetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined;
   const gachaLogoUrl = type === "gachas" && assetbundleName ? assetUrl(region, `gacha/${assetbundleName}/logo/logo.webp`) : undefined;
@@ -493,6 +508,9 @@ export function getCollectionItemAssetDetail(region: RegionId, type: string, ite
     imageUrl,
     thumbnailUrl: imageUrl,
     imageCandidates,
+    assetStatus: upstreamMissing ? "upstream-missing" : imageCandidates.length ? (legacyOnly ? "legacy-only" : "haruki-primary") : "unavailable",
+    unavailableReason: upstreamMissing ? "已确认 Team-Haruki 上游未提供该资源" : imageCandidates.length ? undefined : "未找到可用资源路径",
+    sourcePolicy: legacyOnly ? "legacy-only" : upstreamMissing ? "upstream-missing" : "haruki-only",
     bannerUrl: gachaBannerUrl,
     logoUrl: gachaLogoUrl,
     bannerFallbackUrl: type === "gachas" && gachaId ? moeOverseasAssetUrl(region, `home/banner/banner_gacha${gachaId}/banner_gacha${gachaId}.webp`) : undefined,
@@ -508,7 +526,7 @@ export function getCollectionItemAssetDetail(region: RegionId, type: string, ite
             ? "moe-sekai/Moesekai metadata + asset rules"
             : "Sekai Viewer / Moesekai asset mirror"
         )
-      : "真实资源路径暂不可用"
+      : upstreamMissing ? "Team-Haruki 上游缺失（已标记）" : "真实资源路径暂不可用"
   };
 }
 

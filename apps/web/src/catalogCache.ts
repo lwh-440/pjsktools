@@ -1,6 +1,6 @@
 import { API_BASE_URL } from "./api";
 
-type CacheEntry<T> = { key: string; data: T; etag?: string; cachedAt: number };
+type CacheEntry<T> = { key: string; data: T; etag?: string; contentHash?: string; cachedAt: number };
 
 const databaseName = "pjsktools-cache";
 const storeName = "catalogs";
@@ -59,6 +59,12 @@ async function writeCache<T>(entry: CacheEntry<T>) {
   }
 }
 
+function contentHashOf(value: unknown) {
+  if (!value || typeof value !== "object") return undefined;
+  const contentHash = (value as { contentHash?: unknown }).contentHash;
+  return typeof contentHash === "string" && contentHash.length > 0 ? contentHash : undefined;
+}
+
 export async function loadCachedCatalog<T>(
   path: string,
   options: { signal?: AbortSignal; onCached?: (data: T) => void } = {}
@@ -80,7 +86,7 @@ export async function loadCachedCatalog<T>(
     if (response.status === 304 && cached) return cached.data;
     if (!response.ok) throw new Error((await response.text()) || `Catalog request failed: ${response.status}`);
     const data = await response.json() as T;
-    void writeCache({ key, data, etag: response.headers.get("etag") ?? undefined, cachedAt: Date.now() });
+    void writeCache({ key, data, etag: response.headers.get("etag") ?? undefined, contentHash: contentHashOf(data), cachedAt: Date.now() });
     return data;
   })();
   const pending: PendingRequest<T> = { promise: request, signal: options.signal };

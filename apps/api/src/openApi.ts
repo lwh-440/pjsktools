@@ -577,7 +577,8 @@ const catalogAssetSchema: Schema = {
     imageUrl: nullable({ type: "string" }), thumbnailUrl: nullable({ type: "string" }), imageCandidates: stringArray,
     logoUrl: nullable({ type: "string" }), bannerUrl: nullable({ type: "string" }), screenUrl: nullable({ type: "string" }),
     degreeMainUrl: nullable({ type: "string" }), degreeSubUrl: nullable({ type: "string" }), rankMainUrl: nullable({ type: "string" }),
-    scrollUrl: nullable({ type: "string" }), frameUrl: nullable({ type: "string" }), source: nullable({ type: "string" })
+    scrollUrl: nullable({ type: "string" }), frameUrl: nullable({ type: "string" }), source: nullable({ type: "string" }),
+    assetStatus: nullable({ type: "string" }), sourcePolicy: nullable({ type: "string" }), unavailableReason: nullable({ type: "string" })
   }
 };
 schemas.CatalogAssets = catalogAssetSchema;
@@ -625,7 +626,7 @@ const catalogItemProperties: Record<string, Schema> = {
   id: { type: "string" }, type: { type: "string" }, name: { type: "string" }, title: nullable({ type: "string" }),
   description: nullable({ type: "string" }), category: nullable({ type: "string" }), rarity: nullable({ type: "string" }),
   characterId: nullable({ type: "integer" }), startAt: nullable({ type: "string" }), endAt: nullable({ type: "string" }),
-  relatedCardIds: stringArray, assets: ref("CatalogAssets"), facets: { type: "array", items: ref("CatalogItemFacet") }
+  relatedCardIds: stringArray, assets: ref("CatalogAssets"), assetStatus: nullable({ type: "string" }), facets: { type: "array", items: ref("CatalogItemFacet") }
 };
 const catalogItemExtras: Record<string, Record<string, Schema>> = {
   Gacha: { gachaType: nullable({ type: "string" }) },
@@ -657,7 +658,7 @@ for (const [name, item] of [
     type: "object", required: ["items", "page", "pageSize", "total", "totalPages", "hasNextPage", "hasPreviousPage"],
     properties: {
       items: { type: "array", items: ref(item) }, page: { type: "integer" }, pageSize: { type: "integer" }, total: { type: "integer" }, totalPages: { type: "integer" },
-      hasNextPage: { type: "boolean" }, hasPreviousPage: { type: "boolean" }, region: ref("RegionId"), type: nullable({ type: "string" }), masterVersion: nullable({ type: "string" }),
+      hasNextPage: { type: "boolean" }, hasPreviousPage: { type: "boolean" }, region: ref("RegionId"), type: nullable({ type: "string" }), masterVersion: nullable({ type: "string" }), contentHash: nullable({ type: "string" }),
       sourceHealth: ref("SourceHealth"), source: nullable({ type: "string" }), unavailableReason: nullable({ type: "string" }),
       filterMeta: ref("CatalogFilterMeta"), appliedFilters: ref("AppliedCatalogFilters")
     }

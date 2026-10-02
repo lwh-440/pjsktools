@@ -52,16 +52,17 @@ import kotlinx.serialization.Serializable
 @Serializable data class CardRelationsDto(val relatedEvents: List<CardRelationItemDto> = emptyList(), val relatedGachas: List<CardRelationItemDto> = emptyList())
 @Serializable data class CardDetailDto(val region: String, val card: CardDto, val assets: AssetCandidatesDto, val relations: CardRelationsDto? = null)
 @Serializable data class PlayerProfileDto(val region: String, val userId: String, val nickname: String, val rank: Int, val comment: String? = null, val titles: List<String> = emptyList(), val updatedAt: String, val source: String)
-@Serializable data class SongPageDto(val items: List<SongSummaryDto>, val page: Int, val pageSize: Int, val total: Int, val totalPages: Int, val hasNextPage: Boolean, val hasPreviousPage: Boolean, val region: String? = null, val type: String? = null, val masterVersion: String? = null, val sourceHealth: SourceHealthDto? = null, val filterMeta: CatalogFilterMetaDto = CatalogFilterMetaDto())
-@Serializable data class CardPageDto(val items: List<CardSummaryDto>, val page: Int, val pageSize: Int, val total: Int, val totalPages: Int, val hasNextPage: Boolean, val hasPreviousPage: Boolean, val region: String? = null, val type: String? = null, val masterVersion: String? = null, val sourceHealth: SourceHealthDto? = null, val filterMeta: CatalogFilterMetaDto = CatalogFilterMetaDto())
-@Serializable data class EventPageDto(val items: List<EventSummaryDto>, val page: Int, val pageSize: Int, val total: Int, val totalPages: Int, val hasNextPage: Boolean, val hasPreviousPage: Boolean, val sourceHealth: SourceHealthDto? = null, val filterMeta: CatalogFilterMetaDto = CatalogFilterMetaDto())
+@Serializable data class SongPageDto(val items: List<SongSummaryDto>, val page: Int, val pageSize: Int, val total: Int, val totalPages: Int, val hasNextPage: Boolean, val hasPreviousPage: Boolean, val region: String? = null, val type: String? = null, val masterVersion: String? = null, val contentHash: String? = null, val sourceHealth: SourceHealthDto? = null, val filterMeta: CatalogFilterMetaDto = CatalogFilterMetaDto())
+@Serializable data class CardPageDto(val items: List<CardSummaryDto>, val page: Int, val pageSize: Int, val total: Int, val totalPages: Int, val hasNextPage: Boolean, val hasPreviousPage: Boolean, val region: String? = null, val type: String? = null, val masterVersion: String? = null, val contentHash: String? = null, val sourceHealth: SourceHealthDto? = null, val filterMeta: CatalogFilterMetaDto = CatalogFilterMetaDto())
+@Serializable data class EventPageDto(val items: List<EventSummaryDto>, val page: Int, val pageSize: Int, val total: Int, val totalPages: Int, val hasNextPage: Boolean, val hasPreviousPage: Boolean, val region: String? = null, val type: String? = null, val masterVersion: String? = null, val contentHash: String? = null, val sourceHealth: SourceHealthDto? = null, val filterMeta: CatalogFilterMetaDto = CatalogFilterMetaDto())
 @Serializable data class RankingEntryPageDto(val items: List<RankingEntryDto>, val page: Int, val pageSize: Int, val total: Int, val totalPages: Int, val hasNextPage: Boolean, val hasPreviousPage: Boolean)
 
 @Serializable data class CatalogAssetDto(
     val imageUrl: String? = null, val thumbnailUrl: String? = null, val imageCandidates: List<String> = emptyList(),
     val logoUrl: String? = null, val bannerUrl: String? = null, val screenUrl: String? = null,
     val degreeMainUrl: String? = null, val degreeSubUrl: String? = null, val rankMainUrl: String? = null,
-    val scrollUrl: String? = null, val frameUrl: String? = null, val source: String? = null
+    val scrollUrl: String? = null, val frameUrl: String? = null, val source: String? = null,
+    val assetStatus: String? = null, val sourcePolicy: String? = null, val unavailableReason: String? = null
 )
 @Serializable data class CostumeColorVariantDto(val colorId: Int? = null, val colorName: String? = null, val assetbundleName: String? = null)
 @Serializable data class CostumePartDto(val partType: String, val variants: List<CostumeColorVariantDto> = emptyList())
@@ -80,7 +81,7 @@ import kotlinx.serialization.Serializable
 @Serializable data class CatalogPageDto(
     val items: List<CatalogItemDto>, val page: Int, val pageSize: Int, val total: Int, val totalPages: Int,
     val hasNextPage: Boolean, val hasPreviousPage: Boolean, val region: String? = null, val type: String? = null,
-    val masterVersion: String? = null, val sourceHealth: SourceHealthDto? = null,
+    val masterVersion: String? = null, val contentHash: String? = null, val sourceHealth: SourceHealthDto? = null,
     val source: String? = null, val unavailableReason: String? = null,
     val filterMeta: CatalogFilterMetaDto = CatalogFilterMetaDto()
 )

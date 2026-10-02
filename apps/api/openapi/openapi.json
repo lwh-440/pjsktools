@@ -247,7 +247,7 @@
             "required": false,
             "schema": {
               "type": "array",
-              "maxItems": 3,
+              "maxItems": 12,
               "items": {
                 "type": "string",
                 "format": "uri"
@@ -15969,6 +15969,36 @@
                 "type": "null"
               }
             ]
+          },
+          "assetStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourcePolicy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -16407,6 +16437,16 @@
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
           },
+          "assetStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "facets": {
             "type": "array",
             "items": {
@@ -16552,6 +16592,16 @@
           },
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
+          },
+          "assetStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "facets": {
             "type": "array",
@@ -16709,6 +16759,16 @@
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
           },
+          "assetStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "facets": {
             "type": "array",
             "items": {
@@ -16855,6 +16915,16 @@
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
           },
+          "assetStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "facets": {
             "type": "array",
             "items": {
@@ -16918,16 +16988,6 @@
             "items": {
               "$ref": "#/components/schemas/CostumePart"
             }
-          },
-          "assetStatus": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         }
       },
@@ -17058,6 +17118,16 @@
           },
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
+          },
+          "assetStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "facets": {
             "type": "array",
@@ -17205,6 +17275,16 @@
           "assets": {
             "$ref": "#/components/schemas/CatalogAssets"
           },
+          "assetStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "facets": {
             "type": "array",
             "items": {
@@ -17312,6 +17392,16 @@
               }
             ]
           },
+          "contentHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sourceHealth": {
             "$ref": "#/components/schemas/SourceHealth"
           },
@@ -17393,6 +17483,16 @@
             ]
           },
           "masterVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contentHash": {
             "anyOf": [
               {
                 "type": "string"
@@ -17492,6 +17592,16 @@
               }
             ]
           },
+          "contentHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sourceHealth": {
             "$ref": "#/components/schemas/SourceHealth"
           },
@@ -17573,6 +17683,16 @@
             ]
           },
           "masterVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contentHash": {
             "anyOf": [
               {
                 "type": "string"
@@ -17672,6 +17792,16 @@
               }
             ]
           },
+          "contentHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sourceHealth": {
             "$ref": "#/components/schemas/SourceHealth"
           },
@@ -17753,6 +17883,16 @@
             ]
           },
           "masterVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contentHash": {
             "anyOf": [
               {
                 "type": "string"
@@ -17852,6 +17992,16 @@
               }
             ]
           },
+          "contentHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sourceHealth": {
             "$ref": "#/components/schemas/SourceHealth"
           },
@@ -17933,6 +18083,16 @@
             ]
           },
           "masterVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contentHash": {
             "anyOf": [
               {
                 "type": "string"
@@ -18032,6 +18192,16 @@
               }
             ]
           },
+          "contentHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sourceHealth": {
             "$ref": "#/components/schemas/SourceHealth"
           },
@@ -18113,6 +18283,16 @@
             ]
           },
           "masterVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contentHash": {
             "anyOf": [
               {
                 "type": "string"

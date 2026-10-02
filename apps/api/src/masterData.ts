@@ -13,7 +13,7 @@ import {
   supportsCardSpecialTraining
 } from "./assets.js";
 import { config, regions, type RegionId } from "./config.js";
-import { fetchHarukiMasterJson, harukiMasterConfigured, HarukiMasterError, type HarukiMasterFetchResult } from "./harukiMasterClient.js";
+import { fetchHarukiMasterJson, getHarukiMasterManifestMetadata, harukiMasterConfigured, HarukiMasterError, type HarukiMasterFetchResult } from "./harukiMasterClient.js";
 import { getReferenceMaster, getReferenceMasterHealth, isFormulaMasterKey, syncReferenceMasterRegion } from "./referenceMaster.js";
 import { getExternalCollection } from "./externalData.js";
 import { sampleCards, sampleSongs } from "./sampleData.js";
@@ -176,6 +176,10 @@ export type MasterCache = {
   region: RegionId;
   repository: string;
   syncedAt: string;
+  /** Team-Haruki registry content hash for the files used by this cache. */
+  contentHash?: string;
+  /** Team-Haruki registry data version paired with contentHash. */
+  dataVersion?: string;
   source: string;
   songs: Song[];
   cards: Card[];
@@ -1224,7 +1228,11 @@ function typedCatalogAssets(value: unknown) {
     imageUrl: url("imageUrl"), thumbnailUrl: url("thumbnailUrl"), imageCandidates,
     logoUrl: url("logoUrl"), bannerUrl: url("bannerUrl"), screenUrl: url("screenUrl"),
     degreeMainUrl: url("degreeMainUrl"), degreeSubUrl: url("degreeSubUrl"), rankMainUrl: url("rankMainUrl"),
-    scrollUrl: url("scrollUrl"), frameUrl: url("frameUrl"), source: typeof assets.source === "string" ? assets.source : undefined
+    scrollUrl: url("scrollUrl"), frameUrl: url("frameUrl"),
+    source: typeof assets.source === "string" ? assets.source : undefined,
+    assetStatus: typeof assets.assetStatus === "string" ? assets.assetStatus : undefined,
+    sourcePolicy: typeof assets.sourcePolicy === "string" ? assets.sourcePolicy : undefined,
+    unavailableReason: typeof assets.unavailableReason === "string" ? assets.unavailableReason : undefined
   };
 }
 
@@ -1266,6 +1274,7 @@ function typedCollectionItem(type: string, value: unknown) {
     endAt: typeof item.endAt === "string" ? item.endAt : undefined,
     relatedCardIds: strings("relatedCardIds"),
     assets: typedCatalogAssets(item.assets),
+    assetStatus: typeof item.assetStatus === "string" ? item.assetStatus : undefined,
     facets
   };
   if (type === "gachas") return { ...common, gachaType: typeof raw.gachaType === "string" ? raw.gachaType : common.category };
@@ -1311,6 +1320,18 @@ export async function getAndroidCatalogDetail(region: RegionId, type: string, id
 export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
   const regionConfig = getRegionConfig(region);
   const existingCache = await readMasterCache(region);
+  let registryContentHash = existingCache?.contentHash;
+  let registryDataVersion = existingCache?.dataVersion;
+  if (harukiMasterConfigured()) {
+    try {
+      const metadata = await getHarukiMasterManifestMetadata(region);
+      registryContentHash = metadata.contentHash ?? registryContentHash;
+      registryDataVersion = metadata.dataVersion ?? registryDataVersion;
+    } catch {
+      // A previously synced registry version remains valid while the source is
+      // temporarily unavailable; the sync path records source health below.
+    }
+  }
   const previousCollections = existingCache?.collections ?? {};
   let collectionHealth: Record<string, MasterCollectionHealth> = {};
   let musics: RawMusic[];
@@ -1496,6 +1517,8 @@ export async function syncMasterRegion(region: RegionId): Promise<MasterCache> {
     region,
     repository: regionConfig.repository,
     syncedAt: new Date().toISOString(),
+    ...(registryContentHash ? { contentHash: registryContentHash } : {}),
+    ...(registryDataVersion ? { dataVersion: registryDataVersion } : {}),
     source: masterSourceSummary(region),
     songs: transformSongs(musics, musicDifficulties, musicMetas, musicBpms),
     cards: transformedCards,
@@ -1802,6 +1825,7 @@ function collectionText(item: MasterCollectionItem) {
 export async function getMasterCatalog(region: RegionId, type: string, query: MasterCatalogQuery = {}) {
   const cache = await readMasterCache(region);
   const masterVersion = `${cache?.schemaVersion ?? schemaVersion}:${cache?.syncedAt ?? "unavailable"}`;
+  const contentHash = cache?.contentHash;
   if (type === "cards") {
     const baseCards = await getCards(region);
     const supplyItems = cache?.collections?.cardSupplies ?? [];
@@ -1836,7 +1860,7 @@ export async function getMasterCatalog(region: RegionId, type: string, query: Ma
       })),
       filterMeta: filtered.filterMeta,
       appliedFilters: filtered.appliedFilters,
-      region, type, masterVersion, sourceHealth: { status: cache ? "fresh" : "missing-data", syncedAt: cache?.syncedAt ?? null }
+      region, type, masterVersion, ...(contentHash ? { contentHash } : {}), sourceHealth: { status: cache ? "fresh" : "missing-data", syncedAt: cache?.syncedAt ?? null }
     };
   }
   if (type === "songs") {
@@ -1862,7 +1886,7 @@ export async function getMasterCatalog(region: RegionId, type: string, query: Ma
       items: page.items.map((song) => ({ id: song.id, title: song.title, unit: song.unit, musicTags: song.musicTags, durationSeconds: song.durationSeconds, categories: song.categories, publishedAt: song.publishedAt, assetbundleName: song.assetbundleName, jacketAssetbundleName: song.jacketAssetbundleName, assets: song.assets, facets: filtered.facets(song) })),
       filterMeta: filtered.filterMeta,
       appliedFilters: filtered.appliedFilters,
-      region, type, masterVersion, sourceHealth: { status: cache ? "fresh" : "missing-data", syncedAt: cache?.syncedAt ?? null }
+      region, type, masterVersion, ...(contentHash ? { contentHash } : {}), sourceHealth: { status: cache ? "fresh" : "missing-data", syncedAt: cache?.syncedAt ?? null }
     };
   }
   if (type === "events") {
@@ -1915,7 +1939,7 @@ export async function getMasterCatalog(region: RegionId, type: string, query: Ma
       items: page.items.map((event) => ({ ...event, facets: filtered.facets(event) })),
       filterMeta: filtered.filterMeta,
       appliedFilters: filtered.appliedFilters,
-      region, type, masterVersion,
+      region, type, masterVersion, ...(contentHash ? { contentHash } : {}),
       sourceHealth: { status: cache ? "fresh" : "missing-data", syncedAt: cache?.syncedAt ?? null }
     };
   }
@@ -2024,6 +2048,7 @@ export async function getMasterCatalog(region: RegionId, type: string, query: Ma
     region,
     type,
     masterVersion: collectionMasterVersion,
+    ...(contentHash ? { contentHash } : {}),
     sourceHealth: { status: collection.unavailableReason ? "source-unavailable" : "fresh", syncedAt: collection.syncedAt ?? null, unavailableReason: collection.unavailableReason },
     source: collection.source
   };

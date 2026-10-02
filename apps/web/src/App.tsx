@@ -79,7 +79,7 @@ type SkillInfo = { id: string; name?: string; description?: string; formattedDes
 type FullCard = { card: Card & { skill?: SkillInfo; specialTrainingSkill?: SkillInfo }; assets: AssetInfo; relations: { relatedEvents: EventInfo[]; relatedGachas: CollectionItem[] } };
 type FullEvent = { event: EventInfo; assets: AssetInfo; relations: { relatedSongs: Song[]; relatedCards: Card[]; relatedGachas: CollectionItem[] } };
 type CollectionResponse = { source?: string; unavailableReason?: string; sourceMetadata?: unknown; items: CollectionItem[] };
-type CatalogResponse<T> = { items: T[]; page: number; pageSize: number; total: number; totalPages: number; hasNextPage?: boolean; hasPreviousPage?: boolean; masterVersion?: string; sourceHealth?: Record<string, unknown>; source?: string; filterMeta?: CatalogFilterMeta; appliedFilters?: Record<string, string[] | boolean> };
+type CatalogResponse<T> = { items: T[]; page: number; pageSize: number; total: number; totalPages: number; hasNextPage?: boolean; hasPreviousPage?: boolean; masterVersion?: string; contentHash?: string; sourceHealth?: Record<string, unknown>; source?: string; filterMeta?: CatalogFilterMeta; appliedFilters?: Record<string, string[] | boolean> };
 type CatalogLoadState = { status: "idle" | "loading" | "ready" | "error"; error?: string; hasVisibleData?: boolean };
 type PendingDetail = { kind: "song" | "card" | "event" | "collection"; id: string; title: string; collectionType?: string; preserveParent?: boolean; error?: string };
 type ContentPreviewItem = { id: string; name: string; category?: string; description?: string; storyType?: string; raw?: any };
@@ -351,6 +351,13 @@ function collectionImageVariant(type: string): "square" | "honor" | "gacha" | "c
   if (type === "gachas") return "gacha";
   if (type === "comics") return "comic";
   return "square";
+}
+
+function assetStatusLabel(status: unknown, reason?: unknown) {
+  if (status === "upstream-missing") return "上游缺失，已标记";
+  if (status === "legacy-only") return "旧源保留";
+  if (status === "unavailable") return "资源不可用";
+  return typeof reason === "string" && reason.trim() ? reason : undefined;
 }
 
 function paginate<T>(items: T[], page: number, pageSize: number) {
@@ -1960,7 +1967,7 @@ export function App() {
             ? "暂时不可用"
             : "等待数据";
     return (
-      <section className="rank-page">
+      <section className="rank-page current-event-page">
         <div className="rank-hero">
           <div><span className="home-kicker">活动排名每 10 秒更新 · 当前查看 {boardLabel}</span><h2>{event?.name ?? "正在加载活动"}</h2><div className="rank-meta"><span>{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</span><span>{ranking.length} 条 T100 数据</span><span>{borders.length} 条{rankingBoard === "worldlink" ? "角色" : "总榜"}分数线</span><span>{sourceLabel}</span><span>更新 {formatDate(rankingUpdatedAt ?? undefined)}</span><span>{rankingRefreshing ? "刷新中" : <><RankingCountdown nextRefreshAt={rankingNextRefreshAt} />s 后刷新</>}</span></div></div>
           <div className="rank-actions"><button type="button" onClick={() => loadRankings(region, rankingBoard, worldLinkCharacterId)} disabled={rankingRefreshing}><RefreshCw size={16} />{rankingRefreshing ? "刷新中" : "立即刷新"}</button><button type="button" className="secondary" onClick={() => goSection("forecast")}>预测线</button></div>
@@ -2204,7 +2211,8 @@ export function App() {
         {pageData && renderCatalogFilters(pageData)}
         <CatalogBody {...bodyProps}><div className={`catalog-grid collection-grid collection-grid-${collectionType}`}>{pageData?.items.map((item: CollectionItem) => {
           const candidates = collectionImageCandidates(collectionType, item.assets);
-          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card collection-card collection-card-${collectionType}`}><button type="button" className="catalog-card-main" onClick={() => void openCollection(collectionType, item.id, item.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : collectionCategoryLabel(collectionType, item.category ?? item.rarity)}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
+          const assetNotice = assetStatusLabel(item.assetStatus, item.assets?.unavailableReason);
+          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card collection-card collection-card-${collectionType}`}><button type="button" className="catalog-card-main" onClick={() => void openCollection(collectionType, item.id, item.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : collectionCategoryLabel(collectionType, item.category ?? item.rarity)}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}{assetNotice && <small className="warning-text">{assetNotice}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
         })}</div>
         {pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody>
       </section>
@@ -3454,7 +3462,3 @@ export function App() {
     </main>
   );
 }
-
-
-
-

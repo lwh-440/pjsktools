@@ -125,6 +125,18 @@ describe("Haruki master registry client", () => {
     ]);
   });
 
+  it("exposes the manifest content hash and data version", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/v1/master/jp/current")) {
+        return new Response(JSON.stringify({ contentHash: "d".repeat(64), dataVersion: "7.0.0.15", files: [] }), { status: 200, headers: { etag: '"manifest-meta"' } });
+      }
+      return new Response("missing", { status: 404 });
+    }));
+    const { getHarukiMasterManifestMetadata } = await import("./harukiMasterClient.js");
+    await expect(getHarukiMasterManifestMetadata("jp")).resolves.toEqual({ contentHash: "d".repeat(64), dataVersion: "7.0.0.15" });
+  });
+
   it("falls back to files when a published blob is missing", async () => {
     const digest = "c".repeat(64);
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {

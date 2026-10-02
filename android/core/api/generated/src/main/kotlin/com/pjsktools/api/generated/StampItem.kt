@@ -37,6 +37,7 @@ import kotlinx.serialization.Contextual
  * @param characterId 
  * @param startAt 
  * @param endAt 
+ * @param assetStatus 
  * @param facets 
  * @param stampType 
  */
@@ -79,6 +80,9 @@ data class StampItem (
 
     @SerialName(value = "endAt")
     val endAt: kotlin.String? = null,
+
+    @SerialName(value = "assetStatus")
+    val assetStatus: kotlin.String? = null,
 
     @SerialName(value = "facets")
     val facets: kotlin.collections.List<CatalogItemFacet>? = null,

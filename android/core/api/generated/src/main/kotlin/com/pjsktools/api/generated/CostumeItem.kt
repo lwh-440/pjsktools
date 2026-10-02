@@ -38,6 +38,7 @@ import kotlinx.serialization.Contextual
  * @param characterId 
  * @param startAt 
  * @param endAt 
+ * @param assetStatus 
  * @param facets 
  * @param costumeNumber 
  * @param designer 
@@ -46,7 +47,6 @@ import kotlinx.serialization.Contextual
  * @param partTypes 
  * @param characterIds 
  * @param parts 
- * @param assetStatus 
  */
 @Serializable
 
@@ -88,6 +88,9 @@ data class CostumeItem (
     @SerialName(value = "endAt")
     val endAt: kotlin.String? = null,
 
+    @SerialName(value = "assetStatus")
+    val assetStatus: kotlin.String? = null,
+
     @SerialName(value = "facets")
     val facets: kotlin.collections.List<CatalogItemFacet>? = null,
 
@@ -110,10 +113,7 @@ data class CostumeItem (
     val characterIds: kotlin.collections.List<kotlin.Int>? = null,
 
     @SerialName(value = "parts")
-    val parts: kotlin.collections.List<CostumePart>? = null,
-
-    @SerialName(value = "assetStatus")
-    val assetStatus: kotlin.String? = null
+    val parts: kotlin.collections.List<CostumePart>? = null
 
 ) {
 

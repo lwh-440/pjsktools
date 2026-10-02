@@ -38,6 +38,7 @@ import kotlinx.serialization.Contextual
  * @param region 
  * @param type 
  * @param masterVersion 
+ * @param contentHash 
  * @param sourceHealth 
  * @param source 
  * @param unavailableReason 
@@ -77,6 +78,9 @@ data class RankingEntryPage (
 
     @SerialName(value = "masterVersion")
     val masterVersion: kotlin.String? = null,
+
+    @SerialName(value = "contentHash")
+    val contentHash: kotlin.String? = null,
 
     @SerialName(value = "sourceHealth")
     val sourceHealth: SourceHealth? = null,

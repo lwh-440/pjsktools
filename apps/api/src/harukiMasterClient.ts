@@ -26,6 +26,11 @@ export type HarukiMasterFetchResult<T> = {
   manifestDataVersion?: string;
 };
 
+export type HarukiMasterManifestMetadata = {
+  contentHash?: string;
+  dataVersion?: string;
+};
+
 export class HarukiMasterError extends Error {
   constructor(
     readonly kind: "not-configured" | "not-found" | "upstream-error" | "network-error" | "invalid-response",
@@ -173,6 +178,19 @@ async function fetchManifest(region: RegionId): Promise<HarukiMasterManifest> {
     .finally(() => pendingManifests.delete(region));
   pendingManifests.set(region, load);
   return load;
+}
+
+/**
+ * Return the registry version that owns the cached master files for a region.
+ * The manifest client already performs the ETag/304 negotiation, so callers do
+ * not need to fetch the current manifest a second time during a sync.
+ */
+export async function getHarukiMasterManifestMetadata(region: RegionId): Promise<HarukiMasterManifestMetadata> {
+  const manifest = await fetchManifest(region);
+  return {
+    ...(typeof manifest.contentHash === "string" ? { contentHash: manifest.contentHash } : {}),
+    ...(typeof manifest.dataVersion === "string" ? { dataVersion: manifest.dataVersion } : {})
+  };
 }
 
 function manifestFile(manifest: HarukiMasterManifest, name: string) {

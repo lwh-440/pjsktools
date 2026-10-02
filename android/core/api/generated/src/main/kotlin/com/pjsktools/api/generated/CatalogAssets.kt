@@ -35,6 +35,9 @@ import kotlinx.serialization.Contextual
  * @param scrollUrl 
  * @param frameUrl 
  * @param source 
+ * @param assetStatus 
+ * @param sourcePolicy 
+ * @param unavailableReason 
  */
 @Serializable
 
@@ -74,7 +77,16 @@ data class CatalogAssets (
     val frameUrl: kotlin.String? = null,
 
     @SerialName(value = "source")
-    val source: kotlin.String? = null
+    val source: kotlin.String? = null,
+
+    @SerialName(value = "assetStatus")
+    val assetStatus: kotlin.String? = null,
+
+    @SerialName(value = "sourcePolicy")
+    val sourcePolicy: kotlin.String? = null,
+
+    @SerialName(value = "unavailableReason")
+    val unavailableReason: kotlin.String? = null
 
 ) {
 
