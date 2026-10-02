@@ -766,3 +766,5 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - CDN 与 Direct 的 `/v1/master/jp/current` 均返回 200；清单含 417 个文件，`dataVersion=7.0.0.15`，`contentHash=d3e263e2782af2025339ac0bc4b585d49150a2f97f96cfb9f634c25feb95bfca`，响应带 `Cache-Control: no-cache` 与 ETag。
 - Direct 端点携带相同 ETag 的条件请求实际返回 `304 Not Modified`；`/v1/metas/jp/music_metas.json` 返回 200、ETag 和 3,761 条元数据。
 - 生产 API 歌曲 `id=1` 返回的主封面 URL 为 Haruki CDN，`sources.jacketUrl` 为 `Haruki asset storage`。证据保存在 `.runtime/haruki-registry-prod-1002.txt`。
+
+- 五区 registry Direct 端点当前均可访问并返回版本/ETag：JP `7.0.0.15`、EN `6.0.0.10`、TW/KR `6.4.0.9`、CN `6.4.1.0`；证据为 `.runtime/haruki-registry-regions-1002.txt`。
