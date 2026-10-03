@@ -894,3 +894,9 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - JP/CN 公告显示 `ok`；EN/TW/KR 公告显示 `empty`，对应区域公告正文接口对测试 ID 返回 404，属于已登记的官方公告外部依赖/无上游资料，不是 Haruki 图片代理失败。
 - TW/KR/CN 任务显示 `部分可用`，页面同时显示 `availableGroups=4` 与 `unavailableGroups=0` 或对应诊断，按已有缺失/外部标记处理；CN Live2D 列表显示“没有符合条件的内容”，保留为区域未引用模型的空结果。
 - 结构化报告和 35 张截图保存在 `.runtime/android-content-matrix-v5-20261003/report.json` 与同目录 PNG。账号登录、UID 绑定、个人数据页面不在本轮范围内。
+
+### 2026-10-03 生产 Web registry 缓存贯通复验
+
+- 在全新浏览器上下文打开 JP 歌曲图鉴，再刷新同一页面。冷启动歌曲 catalog 返回 200，包含 `contentHash=d3e263e2782af2025339ac0bc4b585d49150a2f97f96cfb9f634c25feb95bfca` 与响应 ETag。
+- 刷新后图鉴请求实际携带 `If-None-Match`，服务端返回 `304`，同一个 `x-master-content-hash` 保持不变；页面复用缓存仍显示歌曲列表和 12 张 `256×256` 封面，备案图标也正常解码。
+- 该证据确认当前生产 Web 的 catalog 缓存版本和条件请求已贯通，非仅源码存在。报告 `.runtime/registry-cache-production-20261003.json`。
