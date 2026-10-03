@@ -879,3 +879,10 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 生产 `https://api.sekai-tools.cn/health` 返回 200，`harukiApiConfigured=true`、`harukiFeatureEnabled=true`；生产 `GET /api/master/jp/exchanges/context` 返回 200、`sourceHealth.status=ok`、`items=4225`、`unavailableGroups=0`。
 - API 测试本轮为 `260 passed / 3 failed / 5 skipped`。3 个失败均为本机测试环境的 Supabase/Postgres 租户域名 `postgres.wwvzbxfbekmuojydscuo` 无法解析，集中在注册与绑定数据库路径；Haruki 资源、代理、谱面、分享卡等相关测试均通过，未据此判定资源接入失败。
 - Android 五区图鉴 `35/35` 和 JP 内容入口证据继续有效；此前自动化五区内容脚本因抽屉导航和区域切换时序问题产生的截图不作为验收证据，避免把首页/错误区域页面误算为公告内容通过。
+
+### 2026-10-03 生产 Web 内容入口实显复验
+
+- 重新打开生产 `/section/information`、`/section/exchanges`、`/section/missions`、`/section/virtualLives`、`/section/live2d`、`/section/mysekai`、`/section/stories`，每个入口等待数据和图片完成后检查自然尺寸与可见状态。
+- 共检查 104 张页面图片，`104/104` 的 `naturalWidth` 与 `naturalHeight` 均大于 0；页面没有错误提示。各页分别为公告 `7/7`、兑换所 `55/55`、任务 `19/19`、Virtual Live `4/4`、Live2D `1/1`、MySekai `17/17`、故事 `1/1`。
+- 七个入口唯一的 API 失败请求均为未登录状态下的 `/api/auth/web/refresh` 返回 401；业务数据接口均返回 200。MySekai 的技术提示是正常的字段/估算说明，不是资源加载错误。
+- 证据保存在 `.runtime/migration-remaining-results.json` 及对应 `migration-*.png`，不把图片数量或 HTTP 200 单独当作视觉通过依据。
