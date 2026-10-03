@@ -926,3 +926,12 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 1. 将 Live2D 变体修复与任务奖励 lookup 修复完成定向测试，提交并部署 API，再复验生产 Live2D 变体和 TW/KR/CN 任务的缺失标记。
 2. 更新本记录、推送 GitHub、同步服务器文档和运行代码；保留现有 UI 工作树内容，不执行回滚。
 3. 运行清理脚本并关闭任务模拟器。账号/UID 登录测试继续保留到用户提供真实账号后执行。
+
+### 2026-10-03 e703080 部署与生产复验
+
+- `e703080` 已推送 GitHub `main`，并通过服务器 `deploy-assets.sh` 部署到 `/opt/pjsktools/release-snapshots/assets-e703080`；API/Caddy 重建后 healthy，`/health` 返回 `status=ok`、五区列表、`harukiApiConfigured=true`。
+- 生产 Live2D 查询 `q=v2_01ichika_casual` 返回 4 个结果：同一目录下的 `t06/t09/t10` 已分别使用 `modelPath#modelFile` ID，黑色变体保留独立路径 ID。新启动的 Android 正式包通过“全局共享”筛选实际显示三个可区分的变体名称和完整 ID，证据为 `.runtime/android-live2d-variants-postdeploy.png`。
+- 生产 TW 任务上下文的 `costume_3d` lookup 已切换到 Haruki `costume3ds.json`，`lookupDiagnostics.status=matched`、`count=122222`；任务源文件四组均 matched、`availableGroups=4/unavailableGroups=0`。奖励中已解析的服装不再因为旧 `moe_costume.json` ID 空间而标成 `lookup-missing`；剩余 7 个 lookup 缺项属于其他资源类型，仍按 `lookupStatus=missing-data` 和 `assetStatus=lookup-missing` 标记。
+- 变更定向测试 `31/31`（Live2D 变体与服装奖励解析）通过，API build 通过；完整 API 测试为 `263 passed / 3 failed / 5 skipped`，3 个失败仍是本机 Supabase/Postgres 测试租户 DNS 不可解析，与本次资源修复无关。
+
+账号外的公开数据、图片、音频、故事文本、Live2D 局部舞台、五区 Android 图鉴/内容、歌曲谱面、公开工具、分享卡、缓存 304 和服务器生产链均已完成实测；确认的上游缺失和外部依赖保留页面标记。账号/UID 页面仍按用户要求等待真实账号，不在本轮阻断。
