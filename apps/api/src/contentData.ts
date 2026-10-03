@@ -513,22 +513,29 @@ async function loadExchangeLookups(region: RegionId, resourceTypes: Set<string>)
       const legacy = await getOptionalMetadata(region, "moe_costume.json");
       if (result.status === "missing-data" && legacy.status === "matched") {
         const legacyRows = rowsFromExchangeLookup(type, legacy.data).map((row) => ({ ...row, sourcePolicy: "legacy-fallback" }));
-        return [type, "moe_costume.json", { ...legacy, data: legacyRows }] as const;
+        return [type, "moe_costume.json", { ...legacy, data: legacyRows, canonicalCount: 0, fallbackCount: legacyRows.length }] as const;
       }
       if (result.status === "matched" && legacy.status === "matched") {
         const primaryRows = rowsFromExchangeLookup(type, result.data);
         const legacyRows = rowsFromExchangeLookup(type, legacy.data);
-        return [type, file, { ...result, data: mergeCostumeLookupRows(primaryRows, legacyRows) }] as const;
+        const mergedRows = mergeCostumeLookupRows(primaryRows, legacyRows);
+        return [type, file, { ...result, data: mergedRows, canonicalCount: primaryRows.length, fallbackCount: mergedRows.length - primaryRows.length }] as const;
       }
     }
     return [type, file, result] as const;
   }));
   const maps = new Map<string, Map<number, Record<string, any>>>();
-  const diagnostics: Record<string, { file: string; status: string; count: number; warning?: string }> = {};
+  const diagnostics: Record<string, { file: string; status: string; count: number; fallbackCount?: number; warning?: string }> = {};
   for (const [type, file, result] of results) {
     const rows = rowsFromExchangeLookup(type, result.data);
     maps.set(type, new Map(rows.map((item) => [Number(item.id), item])));
-    diagnostics[type] = { file, status: result.status, count: rows.length, warning: result.warning };
+    diagnostics[type] = {
+      file,
+      status: result.status,
+      count: Number((result as any).canonicalCount ?? rows.length),
+      ...(Number((result as any).fallbackCount ?? 0) ? { fallbackCount: Number((result as any).fallbackCount) } : {}),
+      warning: result.warning
+    };
   }
   return { maps, diagnostics };
 }
