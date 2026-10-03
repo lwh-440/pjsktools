@@ -940,6 +940,6 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 
 - `1c176fd` 已推送 GitHub `main`，并通过 `/tmp/deploy-assets.sh` 部署到服务器 `release-snapshots/assets-1c176fd`；API/Caddy 重建后健康，生产 `/health` 返回 `status=ok`、五区列表、`harukiApiConfigured=true`。
 - 任务奖励的 `costume_3d` 查找以 Haruki `costume3ds.json` 为主。Haruki 缺少某个 ID 时才按相同 ID 查旧 `moe_costume.json`，命中时返回 `sourcePolicy=legacy-fallback`；两个来源都没有时返回 `sourcePolicy=upstream-missing`，Haruki 有记录但没有可下载资源时保留 `asset-unavailable`。
-- 生产 CN/TW/KR 复核：CN `costume3ds.json` canonical `122267` 条、旧源补充 `824` 条，任务奖励中 Haruki `3820` 条，`upstream-missing` `440` 条；这 `440` 个 `905xxx` ID 在 Haruki 与旧源均无记录，确认是上游缺失。TW canonical `122222`、旧源补充 `782`，服装奖励 `8223` 条均已匹配；KR 服装奖励 `15215` 条均已匹配。TW/KR 的 `asset-unavailable` 仅表示记录存在但上游未提供可下载 bundle，不是 lookup 断链。
+- 生产 CN/TW/KR 复核：CN `costume3ds.json` canonical `122267` 条、旧源补充 `824` 条，任务奖励中 Haruki `3820` 条，`upstream-missing` `440` 条；这 `440` 个 `905xxx` ID 在 Haruki 与旧源均无记录，确认是上游缺失。TW canonical `122222`、旧源补充 `782`，服装奖励 `8223` 条均已匹配；KR canonical `124267`、旧源补充 `801`，服装奖励 `15215` 条均已匹配。TW/KR 的 `asset-unavailable` 仅表示记录存在但上游未提供可下载 bundle，不是 lookup 断链。
 - 新增诊断字段 `fallbackCount`，避免把旧源补充记录混入 Haruki canonical `count`；相关 `contentData`/`externalData` 定向测试 `33/33` 通过，API build 通过。生产 CN 诊断实际返回 `count=122267`、`fallbackCount=824`。
 - 账号外收口验收已完成：公开 API/计算、五区 Web 内容入口与图片、五区 Android 非账号内容矩阵、故事文本/舞台代表路径、Live2D 代表模型、全谱面端点、谱面代表渲染、分享卡和 registry `contentHash`/ETag 304 均有生产证据；确认的上游缺失和外部依赖均保留标志。仍待真实账号/玩家 UID 的 `/me/*`、Android 账号数据、玩家分享卡和绑定/同步流程。
