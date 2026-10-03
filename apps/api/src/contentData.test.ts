@@ -34,7 +34,7 @@ vi.mock("./externalData.js", async (importOriginal) => ({
   getMysekaiFullContext: vi.fn(async () => ({ groups, sourceHealth: {} }))
 }));
 
-import { getMysekaiDetail, resolveExchangeResource, rowsFromExchangeLookup } from "./contentData.js";
+import { getMysekaiDetail, mergeCostumeLookupRows, resolveExchangeResource, rowsFromExchangeLookup } from "./contentData.js";
 
 describe("MySekai blueprint targets", () => {
   it("uses tool targets for tool blueprints and keeps fixture and canvas reverse links separate", async () => {
@@ -77,5 +77,30 @@ describe("Haruki costume reward lookups", () => {
     expect(result.lookupStatus).toBe("matched");
     expect(result.assetStatus).toBe("asset-unavailable");
     expect(result.imageCandidates).toEqual([]);
+    expect(result.sourcePolicy).toBe("haruki");
+  });
+
+  it("fills only Haruki-missing IDs from the legacy mirror and marks their source", () => {
+    const rows = mergeCostumeLookupRows(
+      [{ id: 149065, name: "Haruki" }],
+      [{ id: 149065, name: "Legacy duplicate" }, { id: 9, name: "Legacy only", representativeAssetbundleName: "cos0009_body" }]
+    );
+    expect(rows).toEqual([
+      { id: 149065, name: "Haruki" },
+      { id: 9, name: "Legacy only", representativeAssetbundleName: "cos0009_body", sourcePolicy: "legacy-fallback" }
+    ]);
+    const result = resolveExchangeResource("cn", { resourceType: "costume_3d", resourceId: 9 }, new Map(), new Map(), new Map(), new Map([
+      ["costume_3d", new Map([[9, rows[1]]])]
+    ]));
+    expect(result.lookupStatus).toBe("matched");
+    expect(result.sourcePolicy).toBe("legacy-fallback");
+    expect(result.imageCandidates[0]).not.toContain("haruki.seiunx.com");
+  });
+
+  it("marks a costume absent from both sources as upstream-missing", () => {
+    const result = resolveExchangeResource("cn", { resourceType: "costume_3d", resourceId: 905002 }, new Map(), new Map(), new Map(), new Map());
+    expect(result.lookupStatus).toBe("missing-data");
+    expect(result.assetStatus).toBe("lookup-missing");
+    expect(result.sourcePolicy).toBe("upstream-missing");
   });
 });

@@ -422,7 +422,16 @@ function exchangeMaterialCandidates(region: RegionId, resourceType: string, reso
     return getAssetCandidates(region, `stamp/${item.assetbundleName}/${item.assetbundleName}.png`);
   }
   if (resourceType === "costume_3d" && item?.representativeAssetbundleName) {
-    return getAssetCandidates(region, `thumbnail/costume/${item.representativeAssetbundleName}.webp`);
+    const candidates = getAssetCandidates(region, `thumbnail/costume/${item.representativeAssetbundleName}.webp`);
+    // A legacy row is used only when the canonical Haruki registry has no
+    // record. Prefer its legacy mirror candidates while retaining the full
+    // candidate list as a recovery path.
+    if (item.sourcePolicy === "legacy-fallback") {
+      const legacy = candidates.filter((candidate) => !candidate.includes("haruki.seiunx.com"));
+      const haruki = candidates.filter((candidate) => candidate.includes("haruki.seiunx.com"));
+      return uniqueStrings([...legacy, ...haruki]);
+    }
+    return candidates;
   }
   if (resourceType === "honor") {
     const assets = asRecord(item?.assets);
@@ -483,15 +492,34 @@ export function rowsFromExchangeLookup(resourceType: string, value: unknown) {
   }));
 }
 
+export function mergeCostumeLookupRows(primary: Record<string, any>[], legacy: Record<string, any>[]) {
+  const seen = new Set(primary.map((row) => Number(row.id)));
+  return [
+    ...primary,
+    ...legacy
+      .filter((row) => Number.isFinite(Number(row.id)) && !seen.has(Number(row.id)))
+      .map((row) => ({ ...row, sourcePolicy: "legacy-fallback" }))
+  ];
+}
+
 async function loadExchangeLookups(region: RegionId, resourceTypes: Set<string>) {
   const requested = Object.entries(exchangeLookupPaths).filter(([type]) => resourceTypes.has(type));
   const results = await Promise.all(requested.map(async ([type, file]) => {
     const result = await getOptionalMetadata(region, file);
-    // `moe_costume.json` remains a source boundary fallback only when the
-    // canonical Haruki collection is genuinely unavailable.
-    if (type === "costume_3d" && result.status === "missing-data") {
+    if (type === "costume_3d") {
+      // Haruki remains the canonical lookup. Fetch the compact legacy mirror
+      // as a per-record fallback so an ID absent from Haruki can still be
+      // rendered when the old source has that exact record.
       const legacy = await getOptionalMetadata(region, "moe_costume.json");
-      if (legacy.status === "matched") return [type, "moe_costume.json", legacy] as const;
+      if (result.status === "missing-data" && legacy.status === "matched") {
+        const legacyRows = rowsFromExchangeLookup(type, legacy.data).map((row) => ({ ...row, sourcePolicy: "legacy-fallback" }));
+        return [type, "moe_costume.json", { ...legacy, data: legacyRows }] as const;
+      }
+      if (result.status === "matched" && legacy.status === "matched") {
+        const primaryRows = rowsFromExchangeLookup(type, result.data);
+        const legacyRows = rowsFromExchangeLookup(type, legacy.data);
+        return [type, file, { ...result, data: mergeCostumeLookupRows(primaryRows, legacyRows) }] as const;
+      }
     }
     return [type, file, result] as const;
   }));
@@ -575,6 +603,9 @@ export function resolveExchangeResource(
       : exchangeMaterialCandidates(region, resourceType, resourceId, resolvedItem);
   const lookupRequired = Boolean(exchangeLookupPaths[resourceType]) || resourceType === "honor";
   const lookupStatus = lookupRequired ? (item ? "matched" : "missing-data") : "not-required";
+  const sourcePolicy = resourceType === "costume_3d"
+    ? (item?.sourcePolicy ?? (item ? "haruki" : "upstream-missing"))
+    : undefined;
   const assetStatus = imageCandidates.length
     ? "matched"
     : !exchangeReferenceImageTypes.has(resourceType)
@@ -592,7 +623,8 @@ export function resolveExchangeResource(
     imageUrl: imageCandidates[0],
     imageCandidates,
     lookupStatus,
-    assetStatus
+    assetStatus,
+    ...(sourcePolicy ? { sourcePolicy } : {})
   };
 }
 
