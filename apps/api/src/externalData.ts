@@ -1755,18 +1755,30 @@ export async function getLive2dModels(region: RegionId, options: Live2dCatalogOp
   try {
     const rows = await fetchJsonUrl<unknown[]>(sourceMetadata.primaryUrl);
     const references = live2dRegionReferences.get(region) ?? new Map();
-    const models = rows.map((item, index): Live2dModelSummary => {
+    // model_list.json repeats modelPath for costume variants (for example
+    // t06/t09/t10).  Using modelPath as the id made those rows
+    // indistinguishable and routed every detail click to the first variant.
+    // Preserve the historical path id for unique rows, and append the model
+    // file only when a shared path has multiple upstream variants.
+    const rawRows = rows.map((item, index) => {
       const raw = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const modelPath = String(raw.modelPath ?? raw.path ?? raw.modelBase ?? "");
       const modelFile = String(raw.modelFile ?? raw.file ?? "model.model3.json");
+      return { raw, modelPath, modelFile, fallbackId: String(raw.modelName ?? raw.name ?? raw.id ?? raw.modelId ?? raw.modelBase ?? modelPath ?? index + 1) };
+    });
+    const modelPathCounts = new Map<string, number>();
+    for (const row of rawRows) if (row.modelPath) modelPathCounts.set(row.modelPath, (modelPathCounts.get(row.modelPath) ?? 0) + 1);
+    const models = rawRows.map(({ raw, modelPath, modelFile, fallbackId }): Live2dModelSummary => {
       const modelBaseUrl = modelPath ? harukiRegionAssetCandidates(region, `startapp/live2d/model/${modelPath}/`)[0] : undefined;
       const buildModelDataUrl = modelBaseUrl ? `${modelBaseUrl}buildmodeldata.json` : undefined;
       const legacyModel3JsonUrl = modelPath ? `${live2dAssetBase}/live2d/model/${modelPath}/${modelFile}` : undefined;
-      const id = String(raw.id ?? raw.modelId ?? raw.name ?? modelPath ?? index + 1);
+      const id = modelPathCounts.get(modelPath)! > 1 && modelPath
+        ? `${modelPath}#${modelFile}`
+        : modelPath || fallbackId;
       const referencedStories = [...(references.get(id)?.values() ?? [])];
       return {
         id,
-        name: typeof raw.name === "string" ? raw.name : undefined,
+        name: typeof raw.name === "string" ? raw.name : typeof raw.modelName === "string" ? raw.modelName : undefined,
         modelPath,
         modelFile,
         model3JsonUrl: undefined,
@@ -1777,7 +1789,7 @@ export async function getLive2dModels(region: RegionId, options: Live2dCatalogOp
         modelAssetSource: "haruki-buildmodeldata",
         motionAssetSource: legacyModel3JsonUrl ? "sekai-viewer-legacy" : "none",
         characterId: live2dCharacterId(modelPath),
-        costumeType: modelPath.split("/").filter(Boolean).at(-1) ?? modelPath,
+        costumeType: typeof raw.modelBase === "string" && raw.modelBase ? raw.modelBase : modelPath.split("/").filter(Boolean).at(-1) ?? modelPath,
         scope: "global-shared-model-asset",
         regionReferenceStatus: referencedStories.length ? "region-referenced" : "global-only",
         referencedStories,

@@ -34,7 +34,7 @@ vi.mock("./externalData.js", async (importOriginal) => ({
   getMysekaiFullContext: vi.fn(async () => ({ groups, sourceHealth: {} }))
 }));
 
-import { getMysekaiDetail } from "./contentData.js";
+import { getMysekaiDetail, resolveExchangeResource, rowsFromExchangeLookup } from "./contentData.js";
 
 describe("MySekai blueprint targets", () => {
   it("uses tool targets for tool blueprints and keeps fixture and canvas reverse links separate", async () => {
@@ -53,5 +53,29 @@ describe("MySekai blueprint targets", () => {
     expect(wall?.materialCosts.map((cost) => cost.material?.name)).toEqual(["Wood"]);
     expect(canvas?.blueprints.map((blueprint) => blueprint.id)).toEqual([444]);
     expect(canvas?.item.imageCandidates.some((candidate) => decodeURIComponent(candidate).includes("mysekai/thumbnail/fixture/canvas_444_1.png"))).toBe(true);
+  });
+});
+
+describe("Haruki costume reward lookups", () => {
+  it("accepts canonical costume3ds rows and preserves legacy wrapper rows", () => {
+    expect(rowsFromExchangeLookup("costume_3d", [
+      { id: 149065, costume3dGroupId: 149009, partType: "head" },
+      { id: 149066, costume3dGroupId: 149009, partType: "body" }
+    ])).toEqual([
+      { id: 149065, costume3dGroupId: 149009, partType: "head", representativeAssetbundleName: undefined },
+      { id: 149066, costume3dGroupId: 149009, partType: "body", representativeAssetbundleName: undefined }
+    ]);
+    expect(rowsFromExchangeLookup("costume_3d", {
+      costumes: [{ costumeNumber: 9, name: "Legacy costume", parts: { body: [{ assetbundleName: "cos0009_body" }] } }]
+    })).toEqual([{ costumeNumber: 9, name: "Legacy costume", parts: { body: [{ assetbundleName: "cos0009_body" }] }, id: 9, representativeAssetbundleName: "cos0009_body" }]);
+  });
+
+  it("marks a canonical row with no asset bundle as an unavailable image, not a missing lookup", () => {
+    const result = resolveExchangeResource("tw", { resourceType: "costume_3d", resourceId: 149065 }, new Map(), new Map(), new Map(), new Map([
+      ["costume_3d", new Map([[149065, { id: 149065, costume3dGroupId: 149009 }]])]
+    ]));
+    expect(result.lookupStatus).toBe("matched");
+    expect(result.assetStatus).toBe("asset-unavailable");
+    expect(result.imageCandidates).toEqual([]);
   });
 });

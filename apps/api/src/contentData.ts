@@ -434,7 +434,10 @@ function exchangeMaterialCandidates(region: RegionId, resourceType: string, reso
 
 const exchangeLookupPaths: Record<string, string> = {
   stamp: "stamps.json",
-  costume_3d: "moe_costume.json",
+  // Haruki's canonical costume IDs are the game master `costume3ds.json`
+  // rows.  `moe_costume.json` is a compact legacy mirror keyed by a smaller
+  // costume-number namespace and cannot resolve overseas mission rewards.
+  costume_3d: "costume3ds.json",
   mysekai_blueprint: "mysekaiBlueprints.json",
   mysekai_fixture: "mysekaiFixtures.json",
   practice_ticket: "practiceTickets.json",
@@ -453,7 +456,8 @@ const exchangeReferenceImageTypes = new Set([
 ]);
 
 function representativeCostumeAsset(costume: Record<string, any>) {
-  for (const group of [costume.body, costume.hair, costume.head]) {
+  const parts = asRecord(costume.parts);
+  for (const group of [costume.body, costume.hair, costume.head, parts.body, parts.hair, parts.head]) {
     const first = array(group)[0];
     if (first?.assetbundleName) return String(first.assetbundleName);
     const variant = array(first?.variants)[0];
@@ -466,18 +470,31 @@ function representativeCostumeAsset(costume: Record<string, any>) {
   return undefined;
 }
 
-function rowsFromExchangeLookup(resourceType: string, value: unknown) {
+export function rowsFromExchangeLookup(resourceType: string, value: unknown) {
   if (resourceType !== "costume_3d") return array(value).map(rawItem);
-  return array(asRecord(value).costumes).map(rawItem).map((costume) => ({
+  // Haruki serves the canonical collection as a plain array.  Keep support
+  // for the old wrapper so the confirmed legacy fallback remains usable when
+  // a region has no costume3ds file.
+  const rows = Array.isArray(value) ? array(value) : array(asRecord(value).costumes);
+  return rows.map(rawItem).map((costume) => ({
     ...costume,
     id: costume.costumeNumber ?? costume.id,
-    representativeAssetbundleName: representativeCostumeAsset(costume)
+    representativeAssetbundleName: costume.representativeAssetbundleName ?? representativeCostumeAsset(costume)
   }));
 }
 
 async function loadExchangeLookups(region: RegionId, resourceTypes: Set<string>) {
   const requested = Object.entries(exchangeLookupPaths).filter(([type]) => resourceTypes.has(type));
-  const results = await Promise.all(requested.map(async ([type, file]) => [type, file, await getOptionalMetadata(region, file)] as const));
+  const results = await Promise.all(requested.map(async ([type, file]) => {
+    const result = await getOptionalMetadata(region, file);
+    // `moe_costume.json` remains a source boundary fallback only when the
+    // canonical Haruki collection is genuinely unavailable.
+    if (type === "costume_3d" && result.status === "missing-data") {
+      const legacy = await getOptionalMetadata(region, "moe_costume.json");
+      if (legacy.status === "matched") return [type, "moe_costume.json", legacy] as const;
+    }
+    return [type, file, result] as const;
+  }));
   const maps = new Map<string, Map<number, Record<string, any>>>();
   const diagnostics: Record<string, { file: string; status: string; count: number; warning?: string }> = {};
   for (const [type, file, result] of results) {
@@ -522,7 +539,7 @@ function resourceFallbackName(resourceType: string, resourceId?: number) {
   return `${labels[resourceType] ?? resourceType}${showId ? ` #${resourceId}` : ""}`;
 }
 
-function resolveExchangeResource(
+export function resolveExchangeResource(
   region: RegionId,
   detailValue: unknown,
   materialMap: Map<number, Record<string, any>>,

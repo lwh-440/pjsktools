@@ -900,3 +900,29 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 在全新浏览器上下文打开 JP 歌曲图鉴，再刷新同一页面。冷启动歌曲 catalog 返回 200，包含 `contentHash=d3e263e2782af2025339ac0bc4b585d49150a2f97f96cfb9f634c25feb95bfca` 与响应 ETag。
 - 刷新后图鉴请求实际携带 `If-None-Match`，服务端返回 `304`，同一个 `x-master-content-hash` 保持不变；页面复用缓存仍显示歌曲列表和 12 张 `256×256` 封面，备案图标也正常解码。
 - 该证据确认当前生产 Web 的 catalog 缓存版本和条件请求已贯通，非仅源码存在。报告 `.runtime/registry-cache-production-20261003.json`。
+
+### 2026-10-03 账号外公开入口收口复验（进行中）
+
+本轮只验收无需登录或 UID 的公开数据入口；`/me/*`、玩家档案/成绩、保存卡组仍等待真实账号。生产公开 GET 路由矩阵当前为 `31/31` 成功：歌曲、卡牌、活动详情/资源/关系、活动 bonus-config 与 calculation-context、故事目录/context、content-status、旧版 catalog 别名、工具 schema、Live2D 全局目录、JP 公告集合，以及歌曲/卡牌/活动三类分享 PNG。三类分享响应均为 `image/png`，谱面响应包含 Haruki SUS 与服务端图表地址；报告为 `.runtime/nonaccount-api-matrix-20261003.json`。
+
+公开计算 POST 也已现场验证：`score-control`、`event-point-calc`、`deck-compare`、`deck-recommend`、`music-recommend`、`area-item-recommend`、`normal-event-plan`、`mysekai-calc` 共 `8/8` 返回 200 和计算结果。`deck-recommend` 返回的 Haruki 卡面/缩略图以及 `music-recommend` 返回的 Haruki jacket 已实际 GET 并通过 PNG 签名检查；`area-item-recommend` 本样例没有图片字段，属于正常的材料计算结果。
+
+当前正式 Android 包 `d1478566` 的账号外入口补验结果：
+
+- 歌曲目录打开第一首歌曲详情，封面实际显示；EASY 真实谱面面板在滚动后实际显示音符图，页面列出 EASY 至 APPEND 难度及音符数。证据为 `.runtime/android-song-detail-smoke.png`、`.runtime/android-chart-easy-scrolled.png`。
+- 计算工具页已打开当前活动、往期活动、预测与历史三个活动工具页签；当前活动的榜线文本显示 `来源状态：fresh`，来源 URL 为 Team-Haruki `toolbox-api-direct.haruki.seiunx.com`，往期活动列出 Event ID 218/217，预测页显示 5000 条真实样本。控分参数面板也已打开。证据为 `.runtime/android-tools-calc-wait.png`、`.runtime/android-tools-history.png`、`.runtime/android-tools-control.png`。
+- 卡组比较页实际打开并显示公开模式字段、难度、Live/计分模式；未填持有卡牌时保留公开模式提示，不伪造玩家卡组。证据为 `.runtime/android-deck-compare.png`。
+- 分享卡页使用活动 ID 219 生成并加载分享卡，页面实际显示活动正文、PNG 卡片和公网分享 URL；玩家档案分享 ID 1 返回 404，属于需要有效 UID 的账号边界。证据为 `.runtime/android-share-event-scrolled.png`。
+- Live2D 目录先打开“全局共享”筛选，再打开 `clb01_21miku` 详情；页面显示 `播放能力：部分可用`、`动作 20 · 表情 0 · 贴图 1`，并实际解码 Miku 纹理图。非 JP 的“本区已引用”空列表是运行时故事引用筛选为空，不能写成上游没有模型；五区全局目录均有 828 个模型。证据为 `.runtime/android-live2d-global-list.png`、`.runtime/android-live2d-global-detail.png`。
+
+本轮纠正三项状态描述：EN/TW/KR 公告空页是代码明确的 `external-dependency`（当前只确认 JP/CN 公告源），不能据此断言对应正文请求 404；TW/KR/CN 任务的 `sourceHealth` 为 `availableGroups=4/unavailableGroups=0`，`partial` 来自 Haruki 任务奖励 ID 的 lookup 缺项，缺项已带 `lookupStatus=missing-data`/`assetStatus=lookup-missing`，不应标成 master 文件断链；Live2D 重复卡片来自同一 `modelPath` 下不同 `modelFile` 变体，后续修复会让变体可独立寻址并在页面上可区分。
+
+### 2026-10-03 Live2D 变体 ID 修复（待部署）
+
+当前工作树已加入最小修复：唯一模型路径继续保持兼容的路径 ID，同一路径下多个 Haruki `modelFile` 变体改为 `modelPath#modelFile` 唯一 ID，`modelName` 作为显示名，`modelBase` 作为服装类型；新增定向测试验证 `t06/t09/t10` 三个变体均可独立寻址。`externalData.test.ts` 为 `28/28`，API build 通过。该修复尚未提交和部署，生产验收需在提交部署后复验。
+
+### 当前账号外剩余步骤
+
+1. 将 Live2D 变体修复与任务奖励 lookup 修复完成定向测试，提交并部署 API，再复验生产 Live2D 变体和 TW/KR/CN 任务的缺失标记。
+2. 更新本记录、推送 GitHub、同步服务器文档和运行代码；保留现有 UI 工作树内容，不执行回滚。
+3. 运行清理脚本并关闭任务模拟器。账号/UID 登录测试继续保留到用户提供真实账号后执行。

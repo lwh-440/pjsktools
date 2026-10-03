@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { config } from "./config.js";
-import { applyCnCostumeThumbnailMappings, buildCnCostumeThumbnailAssetbundleName, createCnCostumeThumbnailIndex, getExternalCollection, getOptionalMetadata, getVirtualLivePlaybackContext, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData, parseLive2dModel3, resetCnCostumeThumbnailIndexForTests, resolveLive2dModelAssetRegion } from "./externalData.js";
+import { applyCnCostumeThumbnailMappings, buildCnCostumeThumbnailAssetbundleName, createCnCostumeThumbnailIndex, getExternalCollection, getLive2dModels, getOptionalMetadata, getVirtualLivePlaybackContext, isAllowedExternalAssetUrl, isPublicCostumeItem, live2dMotionReferencesFromManifest, model3FromHarukiBuildModelData, normalizeScenarioData, parseLive2dModel3, resetCnCostumeThumbnailIndexForTests, resolveLive2dModelAssetRegion } from "./externalData.js";
 import { resetHarukiMasterClientStateForTests } from "./harukiMasterClient.js";
 
 describe("Haruki Live2D BuildModelData adapter", () => {
@@ -480,6 +480,35 @@ describe("Story Live2D costume coverage", () => {
     expect((result.actions[0] as any).voice.url).toMatch(
       /\/startapp\/sound\/scenario\/voice\/story_connect_live_parallelpaaaarty_01\/connectlive_12_beforestory_01_21_piapro\.mp3$/
     );
+  });
+});
+
+describe("Live2D model catalog identity", () => {
+  it("keeps modelName variants addressable when modelPath is shared", async () => {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([
+      { modelName: "01ichika_clothes2_4_t06", modelBase: "v2_01ichika_casual", modelPath: "v2/main/01_ichika/v2_01ichika_casual", modelFile: "01ichika_clothes2_4_t06.model3.json" },
+      { modelName: "01ichika_clothes2_4_t09", modelBase: "v2_01ichika_casual", modelPath: "v2/main/01_ichika/v2_01ichika_casual", modelFile: "01ichika_clothes2_4_t09.model3.json" },
+      { modelName: "01ichika_clothes2_4_t10", modelBase: "v2_01ichika_casual", modelPath: "v2/main/01_ichika/v2_01ichika_casual", modelFile: "01ichika_clothes2_4_t10.model3.json" }
+    ]), { status: 200, headers: { "content-type": "application/json" } })));
+    try {
+      const result = await getLive2dModels("jp", { page: 1, pageSize: 20, availability: "all" });
+      expect(result.items?.map((model) => model.id)).toEqual([
+        "v2/main/01_ichika/v2_01ichika_casual#01ichika_clothes2_4_t06.model3.json",
+        "v2/main/01_ichika/v2_01ichika_casual#01ichika_clothes2_4_t09.model3.json",
+        "v2/main/01_ichika/v2_01ichika_casual#01ichika_clothes2_4_t10.model3.json"
+      ]);
+      expect(new Set(result.items?.map((model) => model.id)).size).toBe(3);
+      expect(result.items?.every((model) => model.modelPath === "v2/main/01_ichika/v2_01ichika_casual")).toBe(true);
+      expect(result.items?.map((model) => model.modelFile)).toEqual([
+        "01ichika_clothes2_4_t06.model3.json",
+        "01ichika_clothes2_4_t09.model3.json",
+        "01ichika_clothes2_4_t10.model3.json"
+      ]);
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 
