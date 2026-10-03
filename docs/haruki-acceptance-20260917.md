@@ -886,3 +886,11 @@ master的scenarioId为 `story_connect_live_parallelpaaaarty_01`，成功加载�
 - 共检查 104 张页面图片，`104/104` 的 `naturalWidth` 与 `naturalHeight` 均大于 0；页面没有错误提示。各页分别为公告 `7/7`、兑换所 `55/55`、任务 `19/19`、Virtual Live `4/4`、Live2D `1/1`、MySekai `17/17`、故事 `1/1`。
 - 七个入口唯一的 API 失败请求均为未登录状态下的 `/api/auth/web/refresh` 返回 401；业务数据接口均返回 200。MySekai 的技术提示是正常的字段/估算说明，不是资源加载错误。
 - 证据保存在 `.runtime/migration-remaining-results.json` 及对应 `migration-*.png`，不把图片数量或 HTTP 200 单独当作视觉通过依据。
+
+### 2026-10-03 Android 五区非账号内容矩阵实机复验
+
+- 使用服务器公开发布 APK（SHA-256 `d14785660a0c1ff61f7c8092fe25a863ebede702f3a41079fbb04e488af8d903`）在新启动的 `emulator-5554` 上重新安装，完成 JP/EN/TW/KR/CN 五区的公告资讯、兑换所、任务、Virtual Live、Live2D、MySekai、故事共 `35/35` 个入口打开和截图。
+- 五区页面标题均与所选区域一致；兑换所、任务、Virtual Live、MySekai、故事均显示实际数据状态或条目，页面截图已确认数据卡片和可用图片自然显示。代表截图包括 JP 公告、EN 兑换所、TW 任务、KR Virtual Live、JP MySekai、CN 故事；Live2D 列表也已逐区打开。
+- JP/CN 公告显示 `ok`；EN/TW/KR 公告显示 `empty`，对应区域公告正文接口对测试 ID 返回 404，属于已登记的官方公告外部依赖/无上游资料，不是 Haruki 图片代理失败。
+- TW/KR/CN 任务显示 `部分可用`，页面同时显示 `availableGroups=4` 与 `unavailableGroups=0` 或对应诊断，按已有缺失/外部标记处理；CN Live2D 列表显示“没有符合条件的内容”，保留为区域未引用模型的空结果。
+- 结构化报告和 35 张截图保存在 `.runtime/android-content-matrix-v5-20261003/report.json` 与同目录 PNG。账号登录、UID 绑定、个人数据页面不在本轮范围内。
