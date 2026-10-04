@@ -640,7 +640,7 @@ function confidenceFor(sampleCount: number, sampleHours: number) {
   };
 }
 
-function forecastLineFromSeries(line: { rank: number; score: number; updatedAt?: string; hourlyGrowth?: number }, samples: any[], windowHours?: number) {
+function forecastLineFromSeries(line: { rank: number; score: number; updatedAt?: string; hourlyGrowth?: number }, samples: any[], windowHours?: number, eventEndAt?: string, generatedAt?: string) {
   const rank = line.rank;
   const series: Array<{ sampledAt: string; score: number; sourceMetadata?: unknown }> = [];
   for (const sample of samples) {
@@ -668,6 +668,14 @@ function forecastLineFromSeries(line: { rank: number; score: number; updatedAt?:
   const confidence = confidenceFor(filteredSeries.length, sampleHours);
   const sourceMetadata = windowLast?.sourceMetadata && typeof windowLast.sourceMetadata === "object" ? windowLast.sourceMetadata as Record<string, unknown> : {};
   const sampleSource = String(sourceMetadata.source ?? "ranking-history");
+  const eventEndMs = eventEndAt ? Date.parse(eventEndAt) : Number.NaN;
+  const generatedMs = generatedAt ? Date.parse(generatedAt) : Date.now();
+  const hoursUntilEventEnd = Number.isFinite(eventEndMs) && Number.isFinite(generatedMs) && eventEndMs > generatedMs
+    ? (eventEndMs - generatedMs) / 3_600_000
+    : null;
+  const forecastEnd = hourlyGrowth != null && hoursUntilEventEnd != null
+    ? Math.round(line.score + hourlyGrowth * hoursUntilEventEnd)
+    : null;
   return {
     rank,
     currentScore: line.score,
@@ -681,7 +689,7 @@ function forecastLineFromSeries(line: { rank: number; score: number; updatedAt?:
     speedPerHour: hourlyGrowth == null ? null : Math.round(hourlyGrowth),
     forecast1h: hourlyGrowth != null ? Math.round(line.score + hourlyGrowth) : null,
     forecast3h: hourlyGrowth != null ? Math.round(line.score + hourlyGrowth * 3) : null,
-    forecastEnd: null,
+    forecastEnd,
     ...confidence,
     sampleSource,
     sourceHealth: {
@@ -694,7 +702,7 @@ function forecastLineFromSeries(line: { rank: number; score: number; updatedAt?:
   };
 }
 
-export async function forecastRanking(region: RegionId, eventId: string, options: { windowHours?: number } = {}) {
+export async function forecastRanking(region: RegionId, eventId: string, options: { windowHours?: number; eventEndAt?: string } = {}) {
   const borders = (await getRankingBorderCached(region, eventId)) as Array<{
     rank: number;
     score: number;
@@ -705,13 +713,14 @@ export async function forecastRanking(region: RegionId, eventId: string, options
   const runtimeSamples = await getRankingSamples(region, eventId);
   const samples = persistentSamples.length ? persistentSamples : runtimeSamples;
   const generatedAt = new Date().toISOString();
+  const eventEndAt = options.eventEndAt;
   const windowHours = options.windowHours && options.windowHours > 0 ? options.windowHours : undefined;
   const windowOptions = [undefined, 1, 3, 6];
   const windows = Object.fromEntries(windowOptions.map((hours) => [
     hours ? `${hours}h` : "all",
-    borders.map((line) => forecastLineFromSeries(line, samples, hours))
+    borders.map((line) => forecastLineFromSeries(line, samples, hours, eventEndAt, generatedAt))
   ]));
-  const lines = windowHours ? windows[`${windowHours}h`] ?? borders.map((line) => forecastLineFromSeries(line, samples, windowHours)) : windows.all;
+  const lines = windowHours ? windows[`${windowHours}h`] ?? borders.map((line) => forecastLineFromSeries(line, samples, windowHours, eventEndAt, generatedAt)) : windows.all;
   const windowSummaries = Object.fromEntries(Object.entries(windows).map(([key, value]) => {
     const sampleCounts = value.map((line: any) => Number(line.sampleCount ?? 0));
     const spanHours = value.map((line: any) => Number(line.sampleSpanHours ?? line.sampleHours ?? 0));
@@ -740,6 +749,7 @@ export async function forecastRanking(region: RegionId, eventId: string, options
     region,
     eventId,
     generatedAt,
+    eventEndAt: eventEndAt ?? null,
     experimental: true,
     basis: "real ranking samples cached from upstream; reliability depends on sample history length",
     sampleCount: samples.length,
