@@ -179,3 +179,12 @@ export function forecastSamplingReason(value: unknown) {
   if (/enough samples across at least one hour for a basic trend estimate/i.test(raw)) return "样本覆盖至少 1 小时，可用于基础趋势估算。";
   return "采样说明已记录";
 }
+
+export function forecastWarningMessage(value: unknown) {
+  const raw = technicalDiagnosticMessage(value);
+  if (/no persistent ranking history samples yet|no ranking history samples/i.test(raw)) return "历史记录暂不可用。";
+  if (/no active event|active event not found/i.test(raw)) return "当前没有进行中的活动。";
+  if (/network|fetch|failed to fetch|offline|econn|timeout|timed out|service unavailable|5\d\d/i.test(raw)) return "预测服务暂时不可用，请稍后重试。";
+  if (/[㐀-鿿]/.test(raw)) return raw;
+  return "部分预测数据暂不可用，请稍后再试。";
+}

@@ -1,0 +1,829 @@
+/* Decorative materials are scoped to the live ranking page so the surrounding tools stay quiet. */
+.current-event-page {
+  --event-teal: #00a7a5;
+  --event-teal-deep: #007f82;
+  --event-line: rgba(0, 127, 130, .18);
+  position: relative;
+  isolation: isolate;
+}
+
+.current-event-page .rank-event-summary {
+  border-color: rgba(0, 127, 130, .25);
+  background-image:
+    url("/assets/ui/event-rhythm.svg"),
+    linear-gradient(121deg, rgba(255,255,255,.97) 5%, rgba(241,251,249,.91) 56%, rgba(226,247,244,.84));
+  background-position: right center, center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: min(62%, 760px) auto, cover;
+  box-shadow: 0 14px 34px rgba(0, 103, 105, .10), inset 0 1px rgba(255,255,255,.94);
+}
+
+.current-event-page .rank-event-summary::before {
+  top: auto;
+  right: 6.5%;
+  bottom: -92px;
+  width: 248px;
+  height: 248px;
+  border-color: rgba(0, 167, 165, .15);
+  box-shadow: 0 0 0 28px rgba(0, 167, 165, .045), 0 0 0 56px rgba(241, 200, 75, .035);
+}
+
+.current-event-page .rank-event-copy {
+  position: relative;
+  padding-left: 27px;
+}
+
+.current-event-page .rank-event-copy::before {
+  position: absolute;
+  top: 25px;
+  bottom: 25px;
+  left: 14px;
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(to bottom, transparent, var(--event-teal) 18%, var(--event-teal) 80%, transparent);
+  box-shadow: 0 0 14px rgba(0, 167, 165, .36);
+  content: "";
+}
+
+.current-event-page .rank-event-cover {
+  background-color: #e7f7f4;
+  background-image: url("/assets/ui/event-cover-corners.svg"), linear-gradient(145deg, #dff4f1, #f9fdfc 67%, #edf9f7);
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, cover;
+}
+
+.current-event-page .rank-event-cover::after {
+  border-color: rgba(0, 167, 165, .38);
+  box-shadow: inset 0 0 26px rgba(0, 127, 130, .10), 0 0 18px rgba(0, 167, 165, .10);
+}
+
+.current-event-page .rank-update-state {
+  border-left-color: rgba(0, 127, 130, .22);
+  background: linear-gradient(160deg, rgba(255,255,255,.71), rgba(224,247,243,.86));
+}
+
+.current-event-page .ranking-scope-card,
+.current-event-page .ranking-list-card {
+  border-color: rgba(0, 127, 130, .20);
+  background-color: rgba(255,255,255,.78);
+  box-shadow: 0 12px 28px rgba(0, 96, 98, .075), inset 0 1px rgba(255,255,255,.96);
+}
+
+.current-event-page .ranking-scope-card {
+  position: relative;
+  overflow: hidden;
+  background-image: linear-gradient(127deg, rgba(255,255,255,.90), rgba(231,248,245,.70));
+}
+
+.current-event-page .ranking-scope-card::after {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  width: 86px;
+  height: 54px;
+  border-top: 1px solid rgba(0, 167, 165, .30);
+  border-right: 1px solid rgba(0, 167, 165, .30);
+  background: radial-gradient(circle at 3px 3px, rgba(0, 167, 165, .34) 1.3px, transparent 1.7px) 0 0 / 13px 13px;
+  content: "";
+  opacity: .8;
+  pointer-events: none;
+}
+
+.current-event-page .ranking-scope-card > * { position: relative; z-index: 1; }
+
+.current-event-page .ranking-list-heading {
+  position: relative;
+  border-bottom-color: rgba(0, 127, 130, .17);
+  background-color: rgba(240, 251, 249, .75);
+  background-image: url("/assets/ui/ranking-header-accent.svg"), linear-gradient(90deg, rgba(255,255,255,.88), rgba(238,250,248,.80));
+  background-position: right center, center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: min(53%, 620px) auto, cover;
+}
+
+.current-event-page .ranking-list-heading::before {
+  position: absolute;
+  top: 8px;
+  left: 22px;
+  width: 54px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--event-teal), rgba(0, 167, 165, .14));
+  box-shadow: 0 0 12px rgba(0, 167, 165, .26);
+  content: "";
+}
+
+.current-event-page .ranking-head {
+  border-bottom: 1px solid rgba(0, 127, 130, .10);
+  background: linear-gradient(90deg, #ecfaf8, #f7fcfb);
+}
+
+/* The ranking board is the dense working surface: texture stays at its left rail and behind translucent rows. */
+.current-event-page .ranking-table {
+  position: relative;
+  background-color: #eaf7f5;
+  background-image:
+    linear-gradient(90deg, rgba(0, 127, 130, .12) 0 1px, transparent 1px),
+    radial-gradient(circle, rgba(0, 127, 130, .28) 1.1px, transparent 1.5px),
+    linear-gradient(180deg, rgba(255,255,255,.34), rgba(223,246,242,.58));
+  background-position: 89px 0, 20px 9px, center;
+  background-size: 1px 100%, 13px 13px, cover;
+}
+
+.current-event-page .ranking-row,
+.current-event-page .ranking-border-row {
+  position: relative;
+  isolation: isolate;
+  border-bottom-color: rgba(0, 127, 130, .105);
+  background: linear-gradient(90deg, rgba(229,248,245,.79) 0, rgba(246,252,251,.73) 17%, rgba(255,255,255,.80) 45%, rgba(255,255,255,.72));
+}
+
+.current-event-page .ranking-row:nth-of-type(even),
+.current-event-page .ranking-border-row:nth-of-type(even) {
+  background: linear-gradient(90deg, rgba(218,244,240,.72) 0, rgba(241,251,249,.66) 17%, rgba(255,255,255,.72) 45%, rgba(250,253,252,.68));
+}
+
+.current-event-page .ranking-row::before,
+.current-event-page .ranking-border-row::before {
+  position: absolute;
+  z-index: 1;
+  top: 13px;
+  bottom: 13px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(to bottom, rgba(0, 167, 165, .12), rgba(0, 127, 130, .68), rgba(0, 167, 165, .12));
+  box-shadow: 0 0 10px rgba(0, 167, 165, .18);
+  content: "";
+}
+
+.current-event-page .ranking-row:nth-of-type(3n)::before,
+.current-event-page .ranking-border-row:nth-of-type(3n)::before {
+  background: linear-gradient(to bottom, rgba(241, 200, 75, .08), rgba(0, 167, 165, .54), rgba(241, 200, 75, .08));
+}
+
+.current-event-page .ranking-row > strong,
+.current-event-page .ranking-border-row > strong {
+  position: relative;
+  padding-left: 8px;
+  color: #007f82;
+  text-shadow: 0 1px rgba(255,255,255,.72);
+}
+
+.current-event-page .ranking-row > strong::after,
+.current-event-page .ranking-border-row > strong::after {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(0, 167, 165, .48);
+  content: "";
+  transform: translateY(-50%);
+}
+
+.current-event-page .ranking-score-cell b,
+.current-event-page .ranking-border-score b { color: #173f43; }
+
+.current-event-page .ranking-border-speed {
+  color: #008f78;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: .02em;
+}
+
+.current-event-page .ranking-row em,
+.current-event-page .ranking-border-row em { color: #007f82; font-weight: 600; }
+
+.current-event-page .ranking-row:hover {
+  background: linear-gradient(90deg, rgba(202,239,234,.88), rgba(239,251,249,.86) 25%, rgba(255,255,255,.90));
+}
+
+.current-event-page .ranking-row:focus-visible {
+  background: linear-gradient(90deg, rgba(198,238,233,.92), rgba(241,252,250,.90) 25%, rgba(255,255,255,.94));
+}
+
+.current-event-page .ranking-border-list {
+  border-top: 0;
+  background: linear-gradient(90deg, rgba(0, 167, 165, .16), rgba(0, 167, 165, .03) 28%, rgba(241, 200, 75, .13) 100%) top / 100% 5px no-repeat;
+}
+
+.current-event-page .ranking-border-heading {
+  padding-top: 18px;
+  border-bottom-color: rgba(0, 127, 130, .14);
+  background: rgba(245, 252, 251, .68);
+}
+
+@supports (backdrop-filter: blur(12px)) {
+  .current-event-page .ranking-scope-card,
+  .current-event-page .ranking-list-card { backdrop-filter: blur(14px) saturate(1.06); }
+}
+
+@media (min-width: 761px) and (max-width: 1120px) {
+  .current-event-page .rank-event-copy { padding-left: 26px; }
+  .current-event-page .rank-event-copy::before { top: 20px; bottom: 20px; left: 12px; }
+  .current-event-page .rank-update-state { border-top-color: rgba(0, 127, 130, .18); }
+}
+
+@media (max-width: 760px) {
+  .current-event-page .rank-event-summary { background-size: 720px auto, cover; background-position: 56% bottom, center; }
+  .current-event-page .rank-event-copy { padding-left: 26px; }
+  .current-event-page .rank-event-copy::before { top: 17px; bottom: 17px; left: 12px; }
+  .current-event-page .rank-update-state { border-top-color: rgba(0, 127, 130, .18); }
+  .current-event-page .ranking-scope-card::after { right: 11px; width: 58px; height: 43px; opacity: .64; }
+  .current-event-page .ranking-list-heading { background-size: 460px auto, cover; background-position: 74% bottom, center; }
+  .current-event-page .ranking-list-heading::before { top: 7px; left: 14px; width: 43px; }
+  .current-event-page .ranking-table { background-position: 57px 0, 13px 9px, center; }
+  .current-event-page .ranking-row::before,
+  .current-event-page .ranking-border-row::before { top: 10px; bottom: 10px; width: 2px; }
+  .current-event-page .ranking-row > strong,
+  .current-event-page .ranking-border-row > strong { padding-left: 6px; }
+  .current-event-page .ranking-row > strong::after,
+  .current-event-page .ranking-border-row > strong::after { height: 15px; width: 2px; }
+}
+
+/* The Top100 block is intentionally collapsed so the real border lines remain in view. */
+.current-event-page .ranking-player-section {
+  margin: 0;
+  min-width: 0;
+}
+
+.current-event-page .ranking-player-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 9px 20px;
+  border-bottom: 1px solid rgba(0, 127, 130, .14);
+  background: linear-gradient(90deg, rgba(237, 250, 248, .92), rgba(248, 252, 251, .78));
+  color: #315b60;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.current-event-page .ranking-player-section > summary strong { font-size: 13px; font-weight: 650; }
+.current-event-page .ranking-player-section > summary span { color: #007f82; font-size: 12px; font-weight: 650; letter-spacing: .02em; }
+.current-event-page .ranking-player-section > summary:focus-visible { outline: 3px solid rgba(0, 167, 165, .42); outline-offset: -3px; }
+.current-event-page .ranking-player-section[open] > summary { background: rgba(238, 250, 248, .68); }
+
+@media (max-width: 760px) {
+  .current-event-page .ranking-player-section > summary { padding-inline: 14px; }
+}
+
+@media (max-width: 420px) {
+  .current-event-page .ranking-player-section > summary { gap: 8px; padding-inline: 12px; }
+  .current-event-page .ranking-player-section > summary span { text-align: right; }
+}
+
+@media (max-width: 420px) {
+  .current-event-page .rank-event-summary { background-size: 600px auto, cover; background-position: 55% bottom, center; }
+  .current-event-page .rank-event-copy::before { top: 14px; bottom: 14px; }
+  .current-event-page .ranking-list-heading { background-size: 370px auto, cover; }
+}
+
+/* The activity context is one card: title/actions stay above the cover,
+   description, and update state instead of duplicating a second hero card. */
+.current-event-page .current-event-overview {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid rgba(0, 127, 130, .20);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255,255,255,.97), rgba(235,249,247,.90));
+  box-shadow: 0 12px 28px rgba(0, 96, 98, .075), inset 0 1px rgba(255,255,255,.96);
+}
+
+.current-event-page .current-event-overview-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 20px;
+  padding: 20px 22px 16px;
+}
+
+.current-event-page .current-event-overview .current-event-hero-copy { min-width: 0; }
+.current-event-page .current-event-overview .current-event-hero-copy h1 { margin: 4px 0 6px; color: #1d373b; font-size: clamp(25px, 2.5vw, 34px); font-weight: 600; letter-spacing: -.025em; line-height: 1.2; }
+.current-event-page .current-event-overview .current-event-hero-copy p { max-width: 700px; margin: 0; color: #60797c; font-size: 13px; line-height: 1.55; }
+.current-event-page .current-event-overview .current-event-hero-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.current-event-page .current-event-overview .current-event-hero-actions button { min-height: 42px; font-size: 13px; }
+
+.current-event-page .current-event-overview-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 34%) minmax(0, 1fr) minmax(174px, .32fr);
+  min-height: 218px;
+  border-top: 1px solid rgba(0, 127, 130, .14);
+}
+
+.current-event-page .current-event-overview-body .rank-event-cover { min-height: 0; }
+.current-event-page .current-event-overview-body .rank-event-copy { min-height: 0; }
+.current-event-page .current-event-overview-body .rank-update-state { min-height: 0; }
+
+/* Reference layout: a full-width event image followed by one continuous
+   information row, with no blank split between hero and overview. */
+.current-event-page .current-event-overview-cover {
+  padding: 16px 18px 0;
+  background: linear-gradient(180deg, rgba(231, 248, 245, .82), rgba(255,255,255,.72));
+}
+
+.current-event-page .current-event-overview-cover .rank-event-cover {
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(0, 127, 130, .18);
+  border-radius: 13px;
+  background: #e7f7f4;
+}
+
+.current-event-page .current-event-overview-cover .rank-event-cover .art-frame,
+.current-event-page .current-event-overview-cover .rank-event-cover .art-image,
+.current-event-page .current-event-overview-cover .rank-event-cover .art-fallback {
+  width: 100%;
+  max-width: none;
+  border-radius: 12px;
+}
+
+/* ArtImage positions event artwork absolutely; give its frame a real box so
+   the cover remains visible in the merged overview card. */
+.current-event-page .current-event-overview-cover .rank-event-cover .art-frame.event {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 488 / 208;
+  height: auto;
+  min-height: 0;
+}
+
+.current-event-page .current-event-overview-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(174px, .28fr);
+  min-width: 0;
+  border-top: 1px solid rgba(0, 127, 130, .12);
+}
+
+.current-event-page .current-event-overview-copy {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 19px 22px 21px;
+}
+
+.current-event-page .current-event-overview-copy .current-event-hero-copy p { display: none; }
+.current-event-page .current-event-overview-copy .rank-event-copy { padding: 0 0 0 14px; }
+.current-event-page .current-event-overview-copy .rank-event-copy::before { top: 0; bottom: 0; left: 0; }
+.current-event-page .current-event-overview-copy .rank-event-outline { -webkit-line-clamp: 5; }
+.current-event-page .current-event-overview-copy .current-event-hero-actions { display: flex; }
+.current-event-page .current-event-overview-copy .current-event-hero-actions button { min-height: 44px; }
+
+@media (min-width: 761px) and (max-width: 1120px) {
+  .current-event-page .current-event-overview-content { grid-template-columns: minmax(0, 1fr) minmax(170px, .32fr); }
+  .current-event-page .current-event-overview-copy { padding-inline: 18px; }
+}
+
+@media (max-width: 760px) {
+  .current-event-page .current-event-overview-cover { padding: 10px 10px 0; }
+  .current-event-page .current-event-overview-content { grid-template-columns: 1fr; }
+  .current-event-page .current-event-overview-copy { gap: 9px; padding: 16px 15px 17px; }
+  .current-event-page .current-event-overview-copy .rank-event-copy { padding-left: 12px; }
+  .current-event-page .current-event-overview-copy .rank-event-outline { -webkit-line-clamp: 7; }
+  .current-event-page .current-event-overview-content .rank-update-state { border-top: 1px solid #dceae7; border-left: 0; }
+}
+
+/* Continue the overview's quiet surface into the ranking card instead of
+   switching abruptly to a hard-edged white panel. */
+.current-event-page { gap: 13px; }
+.current-event-page .ranking-list-card {
+  border-color: rgba(0, 127, 130, .16);
+  background: linear-gradient(145deg, rgba(255,255,255,.94), rgba(239,250,248,.86));
+  box-shadow: 0 10px 24px rgba(0, 96, 98, .06), inset 0 1px rgba(255,255,255,.94);
+}
+
+.current-event-page .ranking-player-section > summary {
+  position: relative;
+  border-top: 1px solid rgba(0, 127, 130, .12);
+  background:
+    radial-gradient(circle at 92% 50%, rgba(0, 167, 165, .14) 1px, transparent 1.6px) 0 0 / 13px 13px,
+    linear-gradient(90deg, rgba(230,248,245,.74), rgba(255,255,255,.54));
+}
+
+.current-event-page .ranking-player-section > summary::after {
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid #008f8e;
+  border-bottom: 1.5px solid #008f8e;
+  content: "";
+  transform: translateY(-70%) rotate(45deg);
+  transition: transform 160ms ease;
+}
+
+.current-event-page .ranking-player-section[open] > summary::after {
+  transform: translateY(-30%) rotate(225deg);
+}
+
+.current-event-page .ranking-player-section[open] > summary {
+  border-bottom: 1px solid rgba(0, 127, 130, .10);
+  background: linear-gradient(90deg, rgba(225,247,243,.72), rgba(255,255,255,.68));
+}
+
+@media (max-width: 760px) {
+  .current-event-page { gap: 11px; }
+  .current-event-page .ranking-player-section > summary { padding-inline: 12px; }
+  .current-event-page .ranking-player-section > summary::after { right: 14px; }
+}
+
+@media (min-width: 761px) and (max-width: 1120px) {
+  .current-event-page .current-event-overview-head { padding-inline: 18px; }
+  .current-event-page .current-event-overview-body { grid-template-columns: minmax(175px, .7fr) minmax(0, 1.3fr); }
+  .current-event-page .current-event-overview-body .rank-update-state { grid-column: 1 / -1; border-top: 1px solid rgba(0, 127, 130, .18); border-left: 0; }
+}
+
+@media (max-width: 760px) {
+  .current-event-page .current-event-overview-head { grid-template-columns: 1fr; align-items: start; gap: 13px; padding: 17px; }
+  .current-event-page .current-event-overview .current-event-hero-actions { width: 100%; }
+  .current-event-page .current-event-overview .current-event-hero-actions button { flex: 1 1 0; min-width: 0; min-height: 44px; }
+  .current-event-page .current-event-overview-body { grid-template-columns: 1fr; min-height: 0; }
+  .current-event-page .current-event-overview-body .rank-event-cover { padding: 12px; border-bottom: 1px solid #dceae7; }
+  .current-event-page .current-event-overview-body .rank-event-copy { padding: 16px; }
+  .current-event-page .current-event-overview .rank-actions button { min-height: 44px; }
+  .current-event-page .current-event-overview-body .rank-update-state { border-top: 1px solid #dceae7; border-left: 0; }
+  .current-event-page .current-event-overview-body .rank-actions button { min-height: 44px; }
+}
+
+/* Current event hero: keep the banner as the primary visual, then present
+   title, period, description, refresh action, and status as one vertical flow. */
+.current-event-page .current-event-overview {
+  grid-template-columns: 1fr;
+}
+.current-event-page .current-event-overview-cover {
+  grid-column: 1 / -1;
+  padding: 16px 18px 0;
+}
+.current-event-page .current-event-overview-content {
+  grid-template-columns: 1fr;
+  border-top: 1px solid rgba(0, 127, 130, .12);
+}
+.current-event-page .current-event-overview-copy {
+  align-content: start;
+  gap: 12px;
+  padding: 20px 22px 18px;
+}
+.current-event-page .current-event-overview-content .rank-update-state {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 5px 12px;
+  border-top: 1px solid rgba(0, 127, 130, .14);
+  border-left: 0;
+  padding: 13px 22px 15px;
+}
+.current-event-page .current-event-overview-content .rank-update-state small { grid-column: 2; }
+
+@media (max-width: 760px) {
+  .current-event-page .current-event-overview-cover { padding: 10px 10px 0; }
+  .current-event-page .current-event-overview-copy { gap: 10px; padding: 16px 15px 17px; }
+  .current-event-page .current-event-overview-content .rank-update-state {
+    grid-template-columns: auto 1fr;
+    padding: 12px 15px 14px;
+  }
+  .current-event-page .current-event-overview-content .rank-update-state small { grid-column: 2; }
+}
+
+.current-event-page .ranking-player-section {
+  grid-column: 1 / -1;
+  min-width: 0;
+  border-bottom: 1px solid rgba(0, 127, 130, .12);
+}
+
+.current-event-page .ranking-player-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 9px 20px;
+  color: #345d60;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.current-event-page .ranking-player-section > summary::marker { color: #008f8e; }
+.current-event-page .ranking-player-section > summary strong { font-size: 13px; font-weight: 650; }
+.current-event-page .ranking-player-section > summary span { color: #718789; font-size: 11px; }
+.current-event-page .ranking-player-section > summary:hover { background: rgba(234, 249, 246, .72); }
+.current-event-page .ranking-player-section > summary:focus-visible { outline: 2px solid #00a7a5; outline-offset: -2px; }
+.current-event-page .ranking-player-section > .ranking-row { width: 100%; }
+
+@media (max-width: 760px) {
+  .current-event-page .ranking-player-section > summary { padding-inline: 12px; }
+  .current-event-page .ranking-player-section > summary span { text-align: right; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .current-event-page .current-event-overview *,
+  .current-event-page .ranking-player-section > summary { transition: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .current-event-page .current-event-overview,
+  .current-event-page .current-event-overview * { animation: none !important; transition: none !important; }
+}
+
+/* Keep the two data surfaces legible: the player list is a browsable section,
+   while the following rows are score-line thresholds. */
+.current-event-page .ranking-border-list {
+  margin-top: 11px;
+  border-top: 2px solid rgba(0, 127, 130, .16);
+  border-radius: 10px 10px 0 0;
+  background:
+    linear-gradient(180deg, rgba(231, 248, 245, .55), rgba(255, 255, 255, .18)) top / 100% 100% no-repeat;
+}
+.current-event-page .ranking-border-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 18px 9px 24px;
+  border-bottom: 1px solid rgba(0, 127, 130, .13);
+}
+.current-event-page .ranking-border-heading strong {
+  color: #28575b;
+  font-size: 13px;
+  font-weight: 650;
+}
+.current-event-page .ranking-border-heading span {
+  color: #6a8586;
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .current-event-page .ranking-border-list { margin-top: 9px; }
+  .current-event-page .ranking-border-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+    padding: 11px 12px 8px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .current-event-page .ranking-player-section > summary::after { animation: none !important; transition: none !important; }
+}
+
+/* Final ranking surface polish: keep Top100 and score lines on the same calm glass system. */
+.current-event-page .ranking-player-section > summary strong,
+.current-event-page .ranking-player-section > summary span,
+.current-event-page .ranking-player-section > .ranking-row > strong,
+.current-event-page .ranking-border-heading strong,
+.current-event-page .ranking-border-row > strong,
+.current-event-page .ranking-border-label b {
+  color: #007f82;
+}
+.current-event-page .ranking-player-section > .ranking-row,
+.current-event-page .ranking-border-row {
+  border: 1px solid rgba(112, 177, 174, .26);
+  border-bottom-color: rgba(88, 157, 153, .3);
+  border-radius: 8px;
+  background: linear-gradient(110deg, rgba(255, 255, 255, .82), rgba(236, 249, 246, .64));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .78), 0 2px 8px rgba(33, 104, 103, .045);
+}
+.current-event-page .ranking-player-section > .ranking-row:hover,
+.current-event-page .ranking-border-row:hover {
+  background: linear-gradient(110deg, rgba(255, 255, 255, .92), rgba(224, 246, 241, .76));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .88), 0 3px 10px rgba(33, 104, 103, .07);
+}
+.current-event-page .ranking-border-heading {
+  padding-left: 28px;
+}
+
+/* Score-line rows keep the rank in the original left column and place the
+   returned PT plus speed together in the second column. */
+.current-event-page .ranking-border-row {
+  grid-template-columns: 82px minmax(90px, 1fr) minmax(150px, .8fr);
+}
+.current-event-page .ranking-border-row > strong {
+  grid-column: 1;
+  min-width: 0;
+  visibility: hidden;
+  font-size: 1px;
+}
+.current-event-page .ranking-border-label {
+  grid-column: 2;
+  padding-left: 9px;
+}
+.current-event-page .ranking-border-label b {
+  color: #007f82;
+  font-size: 16px;
+  font-weight: 650;
+}
+.current-event-page .ranking-border-score {
+  grid-column: 3;
+  justify-items: end;
+  text-align: right;
+}
+.current-event-page .ranking-border-speed {
+  display: block;
+  color: #168c83;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+@media (max-width: 760px) {
+  .current-event-page .ranking-border-heading { padding-left: 18px; }
+  .current-event-page .ranking-border-row { grid-template-columns: 64px minmax(84px, 1fr) minmax(132px, .8fr); }
+  .current-event-page .ranking-border-label { grid-column: 2; padding-left: 7px; }
+  .current-event-page .ranking-border-score { grid-column: 3; }
+}
+
+/* Final vertical activity hero: cover first, then activity copy and status. */
+.current-event-page .current-event-overview { grid-template-columns: 1fr; }
+.current-event-page .current-event-overview-cover { grid-column: 1 / -1; padding: 16px 18px 0; }
+.current-event-page .current-event-overview-content {
+  grid-template-columns: 1fr;
+  border-top: 1px solid rgba(0, 127, 130, .12);
+}
+.current-event-page .current-event-overview-copy {
+  align-content: start;
+  gap: 12px;
+  padding: 20px 22px 18px;
+}
+.current-event-page .current-event-overview-content .rank-update-state {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 5px 12px;
+  border-top: 1px solid rgba(0, 127, 130, .14);
+  border-left: 0;
+  padding: 13px 22px 15px;
+}
+.current-event-page .current-event-overview-content .rank-update-state small { grid-column: 2; }
+@media (max-width: 760px) {
+  .current-event-page .current-event-overview-cover { padding: 10px 10px 0; }
+  .current-event-page .current-event-overview-copy { gap: 10px; padding: 16px 15px 17px; }
+  .current-event-page .current-event-overview-content .rank-update-state { padding: 12px 15px 14px; }
+}
+
+/* Scoreline finish: give the list breathing room and a quieter glass rhythm. */
+.current-event-page .ranking-border-list {
+  position: relative;
+  padding: 0 18px 18px;
+  background:
+    radial-gradient(circle at 8% 16%, rgba(0, 167, 165, .14) 1px, transparent 1.8px) 0 0 / 15px 15px,
+    linear-gradient(180deg, rgba(234, 249, 246, .72), rgba(255, 255, 255, .34));
+}
+.current-event-page .ranking-border-heading {
+  position: relative;
+  margin: 0 -18px 12px;
+  padding: 16px 28px 13px;
+  border-bottom: 1px solid rgba(0, 127, 130, .16);
+  background: linear-gradient(90deg, rgba(225, 247, 243, .92), rgba(255, 255, 255, .62));
+}
+.current-event-page .ranking-border-heading::before {
+  position: absolute;
+  left: 28px;
+  bottom: -2px;
+  width: 58px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #18aaa5, rgba(24, 170, 165, .12));
+  content: "";
+}
+.current-event-page .ranking-border-heading::after {
+  position: absolute;
+  right: 28px;
+  top: 50%;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(0, 167, 165, .22);
+  border-radius: 50%;
+  box-shadow: 0 0 0 7px rgba(0, 167, 165, .06);
+  content: "";
+  transform: translateY(-50%);
+}
+.current-event-page .ranking-border-heading strong { font-size: 20px; letter-spacing: .02em; }
+.current-event-page .ranking-border-row {
+  min-height: 60px;
+  margin: 0 0 6px;
+  padding: 8px 18px;
+  border: 1px solid rgba(112, 177, 174, .24);
+  border-radius: 14px;
+  background: linear-gradient(110deg, rgba(255, 255, 255, .72), rgba(226, 247, 243, .54));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .88), 0 5px 14px rgba(33, 104, 103, .055);
+  backdrop-filter: blur(8px);
+}
+.current-event-page .ranking-border-row::before { top: 16px; bottom: 16px; left: -1px; width: 3px; }
+.current-event-page .ranking-border-row::after {
+  position: absolute;
+  right: 20%;
+  top: 50%;
+  width: 92px;
+  height: 92px;
+  border: 1px solid rgba(0, 167, 165, .08);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+  transform: translate(50%, -50%);
+}
+.current-event-page .ranking-border-row:hover {
+  border-color: rgba(0, 146, 148, .38);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .94), 0 8px 18px rgba(33, 104, 103, .10);
+  transform: translateY(-1px);
+}
+.current-event-page .ranking-border-label b { font-size: 16px; }
+.current-event-page .ranking-border-score b { font-size: 18px; }
+.current-event-page .ranking-border-speed { font-size: 12px; }
+
+/* Use the same rounded glass boundary for Top100 and score lines. */
+.current-event-page .ranking-player-section {
+  margin: 0 18px 12px;
+  overflow: hidden;
+  border: 1px solid rgba(112, 177, 174, .24);
+  border-radius: 14px;
+  background: linear-gradient(110deg, rgba(255, 255, 255, .72), rgba(226, 247, 243, .54));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .88), 0 5px 14px rgba(33, 104, 103, .055);
+}
+.current-event-page .ranking-player-section > summary {
+  min-height: 58px;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(0, 127, 130, .14);
+  background: linear-gradient(90deg, rgba(225, 247, 243, .86), rgba(255, 255, 255, .58));
+  font-size: 18px;
+  font-weight: 650;
+}
+.current-event-page .ranking-player-section > summary span { color: #007f82; font-size: 18px; font-weight: 650; }
+.current-event-page .ranking-player-section > .ranking-row { border-radius: 0; border-left: 0; border-right: 0; box-shadow: none; }
+.current-event-page .ranking-player-section {
+  margin: 0 0 12px;
+  border-top: 0;
+  border-radius: 0 0 14px 14px;
+  box-shadow: inset 0 -1px rgba(255, 255, 255, .9), 0 5px 14px rgba(33, 104, 103, .055);
+}
+.current-event-page .ranking-player-section > summary {
+  border-radius: 0;
+  border-top: 0;
+}
+.current-event-page .ranking-border-row {
+  background-image:
+    linear-gradient(90deg, rgba(0, 127, 130, .10), transparent 22%, transparent 78%, rgba(0, 127, 130, .10)),
+    linear-gradient(110deg, rgba(255, 255, 255, .72), rgba(226, 247, 243, .54));
+  background-position: center, center;
+  background-size: 100% 1px, 100% 100%;
+  background-repeat: no-repeat;
+}
+.current-event-page .ranking-border-row::after {
+  left: 29%;
+  right: auto;
+  top: 8px;
+  width: 34%;
+  height: calc(100% - 16px);
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(135deg, transparent 0 42%, rgba(0, 127, 130, .16) 42.4% 43%, transparent 43.4% 57%, rgba(0, 127, 130, .09) 57.4% 58%, transparent 58.4%),
+    linear-gradient(90deg, transparent 0 18%, rgba(0, 127, 130, .12) 18.5% 19%, transparent 19.5% 72%, rgba(0, 127, 130, .09) 72.5% 73%, transparent 73.5%),
+    radial-gradient(circle at 12% 72%, rgba(0, 167, 165, .2) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 84% 26%, rgba(0, 167, 165, .14) 0 1.5px, transparent 2px);
+  opacity: .72;
+  transform: none;
+}
+.current-event-page .ranking-border-row:nth-of-type(2n)::after {
+  left: 34%;
+  width: 28%;
+  background:
+    linear-gradient(25deg, transparent 0 35%, rgba(0, 127, 130, .13) 35.5% 36%, transparent 36.5% 66%, rgba(0, 127, 130, .08) 66.5% 67%, transparent 67.5%),
+    linear-gradient(90deg, transparent 0 38%, rgba(0, 127, 130, .11) 38.5% 39%, transparent 39.5% 86%, rgba(0, 127, 130, .08) 86.5% 87%, transparent 87.5%),
+    radial-gradient(circle at 18% 24%, rgba(0, 167, 165, .18) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 78% 76%, rgba(0, 167, 165, .12) 0 1.5px, transparent 2px);
+  opacity: .64;
+}
+.current-event-page .ranking-border-row:nth-of-type(3n)::after {
+  left: 25%;
+  width: 40%;
+  background:
+    linear-gradient(158deg, transparent 0 47%, rgba(0, 127, 130, .14) 47.5% 48%, transparent 48.5% 69%, rgba(0, 127, 130, .08) 69.5% 70%, transparent 70.5%),
+    linear-gradient(90deg, transparent 0 12%, rgba(0, 127, 130, .1) 12.5% 13%, transparent 13.5% 62%, rgba(0, 127, 130, .08) 62.5% 63%, transparent 63.5%),
+    radial-gradient(circle at 92% 65%, rgba(0, 167, 165, .17) 0 2px, transparent 2.5px);
+  opacity: .68;
+}
+@media (max-width: 760px) {
+  .current-event-page .ranking-player-section { margin-inline: 0; border-radius: 0 0 12px 12px; }
+  .current-event-page .ranking-player-section > summary { min-height: 54px; padding-inline: 14px; }
+  .current-event-page .ranking-player-section > summary span { font-size: 16px; }
+  .current-event-page .ranking-border-row::after { left: 28%; width: 35%; height: calc(100% - 14px); top: 7px; }
+}
+@media (max-width: 760px) {
+  .current-event-page .ranking-border-list { padding: 0 10px 12px; }
+  .current-event-page .ranking-border-heading { margin-inline: -10px; padding-inline: 18px; }
+  .current-event-page .ranking-border-heading::before { left: 18px; }
+  .current-event-page .ranking-border-heading::after { right: 18px; }
+  .current-event-page .ranking-border-row { min-height: 58px; margin-bottom: 6px; padding: 8px 12px; }
+  .current-event-page .ranking-border-row::before { top: 13px; bottom: 13px; }
+  .current-event-page .ranking-border-row::after { right: 15%; width: 64px; height: 64px; }
+  .current-event-page .ranking-border-score b { font-size: 16px; }
+}

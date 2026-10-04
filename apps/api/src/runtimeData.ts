@@ -318,10 +318,27 @@ export function resolveRankingPlayerIdentity(raw: Record<string, any>, liveEntry
   };
 }
 
-export function selectRankingDetailChurnEntry(churn: RankingChurnResult | null, userId: unknown, rank: number) {
+function rankingScoreMatches(left: unknown, right: unknown) {
+  const leftScore = Number(left);
+  const rightScore = Number(right);
+  if (!Number.isFinite(leftScore) || !Number.isFinite(rightScore) || leftScore < 0 || rightScore < 0) return false;
+  return Math.abs(leftScore - rightScore) <= Math.max(2, Math.abs(leftScore) * 0.005);
+}
+
+export function selectRankingDetailChurnEntry(churn: RankingChurnResult | null, userId: unknown, rank: number, score?: unknown, name?: unknown) {
   const resolvedUserId = normalizedRankingUserId(userId);
-  return (resolvedUserId ? churn?.entries.find((entry) => entry.userId && String(entry.userId) === resolvedUserId) : undefined)
-    ?? churn?.entries.find((entry) => entry.isTierLine && entry.rank === rank);
+  const targetName = String(name ?? "").trim().toLowerCase();
+  const direct = resolvedUserId ? churn?.entries.find((entry) => entry.userId && String(entry.userId) === resolvedUserId) : undefined;
+  if (direct) return direct;
+  const ranked = churn?.entries.filter((entry) => entry.rank === rank) ?? [];
+  const sameRank = ranked.filter((entry) => rankingScoreMatches(entry.score, score));
+  const playerMatches = sameRank.filter((entry) => !entry.isTierLine);
+  const candidates = playerMatches.length ? playerMatches : sameRank.filter((entry) => entry.isTierLine);
+  return candidates.sort((a, b) => {
+    const aName = targetName && String(a.name ?? "").trim().toLowerCase() === targetName ? 0 : 1;
+    const bName = targetName && String(b.name ?? "").trim().toLowerCase() === targetName ? 0 : 1;
+    return aName - bName || Math.abs(Number(a.score) - Number(score)) - Math.abs(Number(b.score) - Number(score));
+  })[0];
 }
 
 async function normalizeTop100(region: RegionId, entries: RealtimeRankingEntry[]) {
@@ -446,7 +463,7 @@ export async function getRankingPlayerDetail(
     const recent = trace.filter((point: any) => Number(point.timestamp) >= latestTimestamp - 3600);
     return recent.slice(1).reduce((count: number, point: any, index: number) => count + (Number(point.score) !== Number(recent[index]?.score) ? 1 : 0), 0);
   })();
-  const churnEntry = selectRankingDetailChurnEntry(churn, enriched.userId, rank);
+  const churnEntry = selectRankingDetailChurnEntry(churn, enriched.userId, rank, enriched.score, enriched.playerName ?? enriched.name);
   return {
     ...enriched,
     ...((identity.identityMismatch || worldLinkTraceUnavailable) ? { warnings: [...new Set([...(Array.isArray(enriched.warnings) ? enriched.warnings : []), ...(identity.identityMismatch ? ["identity-mismatch"] : []), ...(worldLinkTraceUnavailable ? ["trace-unavailable"] : [])])] } : {}),
@@ -486,13 +503,35 @@ export function attachRankingBorderHourlyGrowth<T extends RankingBorderLine>(
 ): Array<T & { hourlyGrowth?: number; growthSampleSeconds?: number }> {
   const byRank = new Map<number, RankingBorderHourlyGrowth>();
   for (const growth of growths) {
-    if (growth.region !== region || growth.eventId !== eventId || !Number.isInteger(growth.rank) || growth.rank <= 100) continue;
+    if (growth.region !== region || growth.eventId !== eventId || !Number.isInteger(growth.rank) || growth.rank <= 0) continue;
     if (!Number.isFinite(growth.hourlyGrowth) || !Number.isFinite(growth.sampleSpanSeconds) || growth.sampleSpanSeconds <= 0 || growth.sampleSpanSeconds > 3_600) continue;
     byRank.set(growth.rank, growth);
   }
   return lines.map((line) => {
     const growth = byRank.get(line.rank);
     return growth ? { ...line, hourlyGrowth: growth.hourlyGrowth, growthSampleSeconds: growth.sampleSpanSeconds } : line;
+  });
+}
+
+function attachHistoryBorderHourlyGrowth<T extends RankingBorderLine>(
+  lines: Array<T & { hourlyGrowth?: number; growthSampleSeconds?: number }>,
+  history: Array<{ rank: number; score: number; sampledAt: string }>
+) {
+  const byRank = new Map<number, Array<{ score: number; sampledAt: string }>>();
+  for (const row of history) {
+    if (!Number.isInteger(row.rank) || !Number.isFinite(row.score) || !row.sampledAt) continue;
+    const values = byRank.get(row.rank) ?? [];
+    values.push({ score: row.score, sampledAt: row.sampledAt });
+    byRank.set(row.rank, values);
+  }
+  return lines.map((line) => {
+    if (typeof line.hourlyGrowth === "number") return line;
+    const values = (byRank.get(line.rank) ?? []).sort((left, right) => Date.parse(left.sampledAt) - Date.parse(right.sampledAt));
+    const first = values[0];
+    const last = values.at(-1);
+    const spanSeconds = first && last ? (Date.parse(last.sampledAt) - Date.parse(first.sampledAt)) / 1000 : 0;
+    if (!first || !last || spanSeconds <= 0) return line;
+    return { ...line, hourlyGrowth: Math.max(0, Math.round((last.score - first.score) * 3600 / spanSeconds)), growthSampleSeconds: Math.round(spanSeconds) };
   });
 }
 
@@ -685,7 +724,7 @@ async function refreshLiveRanking(
     ? await harukiClient.getRankingBorderHourlyGrowths(region, eventId).catch(() => [])
     : [];
   const borderLines = options.boardType === "overall"
-    ? attachRankingBorderHourlyGrowth(region, eventId, rawBorderLines, borderGrowths)
+    ? attachHistoryBorderHourlyGrowth(attachRankingBorderHourlyGrowth(region, eventId, rawBorderLines, borderGrowths), await getRankingHistory({ region, eventId, sampleType: "border", limit: 5000 }))
     : rawBorderLines;
   const sampledAt = latest.updatedAt;
   const resolvedWorldLinkCharacters = await worldLinkCharacters(region, eventId, event, matchingSnapshot?.groups.map((group) => group.gameCharacterId) ?? []);

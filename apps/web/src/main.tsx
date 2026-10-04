@@ -5,6 +5,8 @@ import { App } from "./App";
 import { AuthProvider } from "./AuthContext";
 import "./styles.css";
 import "./product-theme.css";
+import "./current-event-materials.css";
+import "./ranking-detail-parking.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

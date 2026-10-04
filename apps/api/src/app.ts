@@ -2264,7 +2264,8 @@ export async function buildApp(options: {
     }
     const query = request.query as { windowHours?: string };
     const windowHours = query.windowHours == null ? undefined : Number(query.windowHours);
-    return forecastRanking(region, eventId, { windowHours: Number.isFinite(windowHours) ? windowHours : undefined });
+    const event = await getEventDetail(region, eventId).catch(() => null);
+    return forecastRanking(region, eventId, { windowHours: Number.isFinite(windowHours) ? windowHours : undefined, eventEndAt: event?.endAt });
   });
 
   app.get("/api/events/:region/:eventId/ranking-player/:rank", async (request, reply) => {

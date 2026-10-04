@@ -39,7 +39,7 @@ import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from
 import { apiGet, apiGetWithSignal, apiPost, apiResourceUrl } from "./api";
 import { loadCachedCatalog } from "./catalogCache";
 import { resolveCatalogUiState } from "./catalogUiState";
-import { cardAttributeLabel, collectionCategoryLabel, eventTypeLabel, eventUnitLabel, forecastConfidenceLabel, forecastSamplingReason, playerErrorMessage, playerFieldLabel, playerStatusLabel, playerWarningMessage, technicalDiagnosticMessage } from "./playerLabels";
+import { cardAttributeLabel, collectionCategoryLabel, eventTypeLabel, eventUnitLabel, forecastWarningMessage, playerErrorMessage, playerFieldLabel, playerStatusLabel, playerWarningMessage, technicalDiagnosticMessage } from "./playerLabels";
 import { finiteNumber } from "./numberValue";
 import { useAuth } from "./AuthContext";
 import type { DeckConfig, PlayerBinding } from "./accountTypes";
@@ -85,7 +85,13 @@ type PendingDetail = { kind: "song" | "card" | "event" | "collection"; id: strin
 type ContentPreviewItem = { id: string; name: string; category?: string; description?: string; storyType?: string; raw?: any };
 type ContentDisplayGroup = { key: string; label?: string; count?: number; previewItems?: ContentPreviewItem[] };
 type SourceMetadata = { sourceType?: string; primaryUrl?: string; fallbackUrl?: string; sourceProject?: string; fetchedAt?: string; unavailableReason?: string };
-type RankingBorder = { rank: number; score: number; updatedAt?: string };
+type RankingBorder = {
+  rank: number;
+  score: number;
+  updatedAt?: string;
+  hourlyGrowth?: number;
+  growthSampleSeconds?: number;
+};
 type RankingSourceHealth = {
   status?: string;
   primarySource?: string;
@@ -130,6 +136,7 @@ type ForecastLine = {
 type Forecast = {
   source?: string;
   generatedAt?: string;
+  eventEndAt?: string | null;
   experimental?: boolean;
   sampleCount?: number;
   windowHours?: string | number;
@@ -158,7 +165,7 @@ type RankingHistorySummary = {
   unavailableReason?: string;
 };
 type Profile = { region: string; userId: string; nickname: string; rank: number; comment?: string; titles?: string[]; source?: string };
-type ShareCard = { type: string; id: string; title: string; imageUrl: string; summary: string };
+type ShareCard = { type: string; id: string; title: string; imageUrl: string; summary: string; width?: number; height?: number; mimeType?: string; region?: string };
 type DeckCompareCandidateMode = "manual" | "cards" | "saved";
 type DeckCompareCandidateForm = { id: string; name: string; mode: DeckCompareCandidateMode; power: string; effectiveness: string; cardIds: string; deckConfigId: string };
 type DeckCompareTeammateForm = { power: string; effectiveness: string };
@@ -621,6 +628,7 @@ export function App() {
   const [event, setEvent] = useState<EventInfo | null>(null);
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
   const [borders, setBorders] = useState<RankingBorder[]>([]);
+  const [rankingPlayersOpen, setRankingPlayersOpen] = useState(false);
   const [forecast, setForecast] = useState<Forecast | null>(null);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [forecastWindow, setForecastWindow] = useState<"all" | "1" | "3" | "6">("all");
@@ -684,6 +692,8 @@ export function App() {
   const [mysekaiDetail, setMysekaiDetail] = useState<any>(null);
   const [profileId, setProfileId] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
   const [historyEventId, setHistoryEventId] = useState("");
   const [selectedSong, setSelectedSong] = useState<FullSong | null>(null);
   const [selectedCard, setSelectedCard] = useState<FullCard | null>(null);
@@ -700,6 +710,8 @@ export function App() {
   const [shareType, setShareType] = useState("profile");
   const [shareId, setShareId] = useState("");
   const [shareCard, setShareCard] = useState<ShareCard | null>(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState("");
   const [controlForm, setControlForm] = useState({ currentPt: "0", targetPt: "1000000", remainingMinutes: "180", ptPerRun: "25000", availableRuns: "50" });
   const [controlResult, setControlResult] = useState<any>(null);
   const [deckOwnedIds, setDeckOwnedIds] = useState("");
@@ -713,10 +725,10 @@ export function App() {
   const [areaRecommendForm, setAreaRecommendForm] = useState({ cardIds: "", sortBy: "coin-efficiency", includeUnaffordable: true, limit: "5" });
   const [boundToolResult, setBoundToolResult] = useState<any>(null);
   const [boundPlanResult, setBoundPlanResult] = useState<any>(null);
-  const [normalPlanForm, setNormalPlanForm] = useState({ targetPt: "1000000", currentPt: "0", remainingMinutes: "180", boost: "3", musicId: "1", difficulty: "expert", liveType: "multi", baseScore: "", eventBonusPercent: "", ownedCardIds: "1,2,3,4,5" });
+  const [normalPlanForm, setNormalPlanForm] = useState({ targetPt: "1000000", currentPt: "0", remainingMinutes: "180", boost: "3", musicId: "", difficulty: "expert", liveType: "multi", baseScore: "", eventBonusPercent: "", ownedCardIds: "" });
   const [normalPlanResult, setNormalPlanResult] = useState<any>(null);
   const [deckCompareForm, setDeckCompareForm] = useState({
-    musicId: "1",
+    musicId: "",
     difficulty: "expert",
     liveType: "multi",
     boost: "3",
@@ -862,6 +874,10 @@ export function App() {
   }, [filter]);
 
   useEffect(() => {
+    if (activeSection === "currentEvent" && filter.trim()) setRankingPlayersOpen(true);
+  }, [activeSection, filter]);
+
+  useEffect(() => {
     const isCatalog = activeSection === "historyEvents" || activeSection === "songs" || activeSection === "cards" || activeSection in collectionMeta;
     if (!isCatalog || !location.pathname.startsWith("/section/")) return;
     const params = new URLSearchParams();
@@ -972,7 +988,13 @@ export function App() {
     setToolSongsError("");
     setToolDataError("");
     setToolSongSearch("");
-    setNormalPlanForm((current) => ({ ...current, musicId: "" }));
+    setNormalPlanForm((current) => ({ ...current, musicId: "", ownedCardIds: "" }));
+     setDeckCompareForm((current) => ({ ...current, musicId: "" }));
+     setDeckCompareResult(null);
+     setDeckCompareError("");
+     setShareCard(null);
+     setShareError("");
+     setShareLoading(false);
     setCards([]);
     setEvents([]);
     setEvent(null);
@@ -1134,6 +1156,18 @@ export function App() {
     setRankingHistorySummary(nextHistorySummary);
     setRankingHistory(nextHistory);
     setForecastLoading(false);
+  }
+
+  function selectForecastWindow(nextWindow: "all" | "1" | "3" | "6") {
+    if (nextWindow === forecastWindow) return;
+    forecastWindowRef.current = nextWindow;
+    forecastRequestId.current += 1;
+    setForecastWindow(nextWindow);
+    setForecast(null);
+    setRankingHistorySummary(null);
+    setRankingHistory(null);
+    setForecastPlanResult(null);
+    setForecastLoading(Boolean(event?.id && event.id !== "none"));
   }
 
   function AppearanceSwitch() {
@@ -1474,21 +1508,51 @@ export function App() {
   }
 
   async function loadProfile() {
-    setProfile(await apiGet<Profile>(`/api/players/${region}/${profileId}/profile`));
+    const requestedId = profileId.trim();
+    if (!requestedId) {
+      setProfile(null);
+      setProfileError("请输入玩家 UID 后再查询。");
+      return;
+    }
+    setProfileLoading(true);
+    setProfileError("");
+    setProfile(null);
+    try {
+      setProfile(await apiGet<Profile>(`/api/players/${region}/${encodeURIComponent(requestedId)}/profile`));
+    } catch (error) {
+      setProfileError(playerErrorMessage(error));
+    } finally {
+      setProfileLoading(false);
+    }
   }
 
   async function loadShareCard() {
-    setShareCard(await apiGet<ShareCard>(`/api/share/cards/${shareType}/${encodeURIComponent(shareId)}?region=${region}`));
+    const requestedId = shareId.trim();
+    if (!requestedId) return;
+    setShareLoading(true);
+    setShareError("");
+    setShareCard(null);
+    try {
+      setShareCard(await apiGet<ShareCard>(`/api/share/cards/${shareType}/${encodeURIComponent(requestedId)}?region=${region}`));
+    } catch (error) {
+      setShareError(playerErrorMessage(error));
+    } finally {
+      setShareLoading(false);
+    }
   }
 
   async function calculateControl() {
-    setControlResult(await apiPost("/api/tools/score-control", {
-      currentPt: Number(controlForm.currentPt),
-      targetPt: Number(controlForm.targetPt),
-      remainingMinutes: Number(controlForm.remainingMinutes),
-      ptPerRun: Number(controlForm.ptPerRun),
-      availableRuns: Number(controlForm.availableRuns)
-    }));
+    try {
+      setControlResult(await apiPost("/api/tools/score-control", {
+        currentPt: Number(controlForm.currentPt),
+        targetPt: Number(controlForm.targetPt),
+        remainingMinutes: Number(controlForm.remainingMinutes),
+        ptPerRun: Number(controlForm.ptPerRun),
+        availableRuns: Number(controlForm.availableRuns)
+      }));
+    } catch (error) {
+      setMessage(playerErrorMessage(error));
+    }
   }
 
   async function calculateDeck() {
@@ -1511,31 +1575,39 @@ export function App() {
   }
 
   async function calculateMusicRecommend() {
-    setMusicRecommendResult(await apiPost("/api/tools/music-recommend", {
-      region,
-      eventId: event?.id === "none" ? undefined : event?.id,
-      targetPt: Number(musicRecommendForm.targetPt),
-      currentPt: Number(musicRecommendForm.currentPt),
-      eventBonusPercent: Number(musicRecommendForm.eventBonusPercent),
-      preferredDifficulties: [musicRecommendForm.preferredDifficulty],
-      maxDurationSeconds: musicRecommendForm.maxDurationSeconds ? Number(musicRecommendForm.maxDurationSeconds) : undefined,
-      minNoteCount: musicRecommendForm.minNoteCount ? Number(musicRecommendForm.minNoteCount) : undefined,
-      limit: Number(musicRecommendForm.limit),
-      liveType: musicRecommendForm.liveType,
-      boost: Number(musicRecommendForm.boost),
-      baseScore: musicRecommendForm.baseScore ? Number(musicRecommendForm.baseScore) : undefined
-    }));
+    try {
+      setMusicRecommendResult(await apiPost("/api/tools/music-recommend", {
+        region,
+        eventId: event?.id === "none" ? undefined : event?.id,
+        targetPt: Number(musicRecommendForm.targetPt),
+        currentPt: Number(musicRecommendForm.currentPt),
+        eventBonusPercent: Number(musicRecommendForm.eventBonusPercent),
+        preferredDifficulties: [musicRecommendForm.preferredDifficulty],
+        maxDurationSeconds: musicRecommendForm.maxDurationSeconds ? Number(musicRecommendForm.maxDurationSeconds) : undefined,
+        minNoteCount: musicRecommendForm.minNoteCount ? Number(musicRecommendForm.minNoteCount) : undefined,
+        limit: Number(musicRecommendForm.limit),
+        liveType: musicRecommendForm.liveType,
+        boost: Number(musicRecommendForm.boost),
+        baseScore: musicRecommendForm.baseScore ? Number(musicRecommendForm.baseScore) : undefined
+      }));
+    } catch (error) {
+      setMessage(playerErrorMessage(error));
+    }
   }
 
   async function calculateAreaRecommend() {
     const cardIds = areaRecommendForm.cardIds.split(/[,\s]+/).filter(Boolean).slice(0, 5);
-    setAreaRecommendResult(await apiPost("/api/tools/area-item-recommend", {
-      region,
-      cardIds: cardIds.length ? cardIds : undefined,
-      sortBy: areaRecommendForm.sortBy,
-      includeUnaffordable: areaRecommendForm.includeUnaffordable,
-      limit: Number(areaRecommendForm.limit)
-    }));
+    try {
+      setAreaRecommendResult(await apiPost("/api/tools/area-item-recommend", {
+        region,
+        cardIds: cardIds.length ? cardIds : undefined,
+        sortBy: areaRecommendForm.sortBy,
+        includeUnaffordable: areaRecommendForm.includeUnaffordable,
+        limit: Number(areaRecommendForm.limit)
+      }));
+    } catch (error) {
+      setMessage(playerErrorMessage(error));
+    }
   }
 
   function renderRelatedCardTile(card: Card, key: string) {
@@ -1583,6 +1655,7 @@ export function App() {
       if (!cardIds.length) throw new Error(`${base.name} 未填写 cardIds。`);
       return { ...base, cardIds };
     }
+    if (!candidate.power.trim() || !candidate.effectiveness.trim()) throw new Error(`${base.name} 请填写综合力和技能值。`);
     const power = Number(candidate.power);
     const effectiveness = Number(candidate.effectiveness);
     if (!Number.isFinite(power) || !Number.isFinite(effectiveness)) throw new Error(`${base.name} 的综合力或技能值不是有效数字。`);
@@ -1598,6 +1671,19 @@ export function App() {
 
   async function calculateDeckCompare() {
     const binding = defaultBinding();
+    if (!deckCompareForm.musicId) {
+      setDeckCompareError("请先选择一首歌曲，再运行比较。");
+      return;
+    }
+    if (toolSongsStatus !== "ready" || toolDataLoading || toolDataError || !songs.length) {
+      setDeckCompareError("歌曲数据尚未就绪，请等待加载完成后重试。");
+      return;
+    }
+    const usesSavedDeck = deckCompareCandidates.some((candidate) => candidate.mode === "saved");
+    if (usesSavedDeck && (!binding || binding.region !== region)) {
+      setDeckCompareError(`保存卡组属于 ${binding?.region?.toUpperCase() ?? "未知区服"}，请切换到绑定区服后再比较。`);
+      return;
+    }
     const useAuthenticated = Boolean(auth.token && binding && deckCompareCandidates.some((candidate) => candidate.mode === "saved"));
     const endpoint = useAuthenticated ? "/api/me/tools/deck-compare" : "/api/tools/deck-compare";
     try {
@@ -1608,7 +1694,7 @@ export function App() {
       const payload: Record<string, any> = {
         region: useAuthenticated && binding ? binding.region : region,
         bindingId: useAuthenticated && binding ? binding.id : undefined,
-        musicId: deckCompareForm.musicId || songs[0]?.id,
+        musicId: deckCompareForm.musicId,
         difficulty: deckCompareForm.difficulty,
         liveType: deckCompareForm.liveType,
         boost: Number(deckCompareForm.boost),
@@ -1621,6 +1707,7 @@ export function App() {
       };
       if (deckCompareForm.scoreMode === "exact") {
         payload.skills = deckCompareForm.exactSkills.split(/[,\s]+/).map((item) => Number(item)).filter((item) => Number.isFinite(item));
+        if (payload.skills.length !== 6) throw new Error("Exact 模式需要填写恰好 6 个技能值。");
       }
       const result = await apiPost<any>(endpoint, payload, useAuthenticated ? auth.token : undefined);
       setDeckCompareResult(result);
@@ -1694,7 +1781,11 @@ export function App() {
         : tool === "area"
           ? "/api/me/tools/area-item-recommend"
           : "/api/me/tools/mysekai-calc";
-    setBoundToolResult({ tool, result: await apiPost(endpoint, payload, auth.token) });
+    try {
+      setBoundToolResult({ tool, result: await apiPost(endpoint, payload, auth.token) });
+    } catch (error) {
+      setMessage(playerErrorMessage(error));
+    }
   }
 
   async function calculateBoundPlan() {
@@ -1948,10 +2039,15 @@ export function App() {
 
   function RankingPage() {
     const keyword = filter.trim().toLowerCase();
-    const filteredRanking = keyword ? ranking.filter((entry) => `${entry.rank} ${entry.playerName ?? entry.name ?? ""} ${entry.userId ?? ""}`.toLowerCase().includes(keyword)) : ranking;
+    const filteredRanking = keyword
+      ? ranking.filter((entry) => (String(entry.rank) + " " + (entry.playerName ?? entry.name ?? "") + " " + (entry.userId ?? "")).toLowerCase().includes(keyword))
+      : ranking;
+    const filteredBorders = keyword
+      ? borders.filter((line) => ("t" + line.rank + " " + line.score).toLowerCase().includes(keyword))
+      : borders;
     const selectedWorldLinkCharacter = worldLinkCharacters.find((character) => character.id === worldLinkCharacterId);
     const boardLabel = rankingBoard === "worldlink"
-      ? `${selectedWorldLinkCharacter?.name ?? `角色 ${worldLinkCharacterId ?? "-"}`}单角色榜`
+      ? ((selectedWorldLinkCharacter?.name ?? ("角色 " + (worldLinkCharacterId ?? "-"))) + "单角色榜")
       : "总榜";
     const showWorldLinkControls = event?.eventType === "world_bloom"
       && worldLinkAvailable
@@ -1966,57 +2062,166 @@ export function App() {
           : sourceStatus === "source-unavailable"
             ? "暂时不可用"
             : "等待数据";
+    const eventArt = eventBannerCandidates(event);
+    const activeEvent = Boolean(event?.id && event.id !== "none");
+    const eventLoadFailed = Boolean(rankingLoadError) && !event;
+    const rankingErrorMessage = rankingLoadError.includes("Failed to fetch")
+      ? "暂时无法连接榜单服务，活动资料仍可浏览。请恢复 API 代理后重试。"
+      : rankingLoadError;
+
     return (
       <section className="rank-page current-event-page">
-        <div className="rank-hero">
-          <div><span className="home-kicker">活动排名每 10 秒更新 · 当前查看 {boardLabel}</span><h2>{event?.name ?? "正在加载活动"}</h2><div className="rank-meta"><span>{event?.id === "none" ? "当前没有正在进行的活动" : `${formatDate(event?.startAt)} - ${formatDate(event?.endAt)}`}</span><span>{ranking.length} 条 T100 数据</span><span>{borders.length} 条{rankingBoard === "worldlink" ? "角色" : "总榜"}分数线</span><span>{sourceLabel}</span><span>更新 {formatDate(rankingUpdatedAt ?? undefined)}</span><span>{rankingRefreshing ? "刷新中" : <><RankingCountdown nextRefreshAt={rankingNextRefreshAt} />s 后刷新</>}</span></div></div>
-          <div className="rank-actions"><button type="button" onClick={() => loadRankings(region, rankingBoard, worldLinkCharacterId)} disabled={rankingRefreshing}><RefreshCw size={16} />{rankingRefreshing ? "刷新中" : "立即刷新"}</button><button type="button" className="secondary" onClick={() => goSection("forecast")}>预测线</button></div>
-        </div>
-        {showWorldLinkControls && <article className="panel wide ranking-board-controls" aria-label="榜单类型和角色选择">
-          <div className="panel-heading"><div><h2>榜单范围</h2><p>总榜与单角色榜完全独立；切换角色后只显示该角色的 World Link 数据。</p></div></div>
-          <div className="ranking-board-switch" role="group" aria-label="榜单类型">
-            <button type="button" className={rankingBoard === "overall" ? "" : "secondary"} aria-pressed={rankingBoard === "overall"} onClick={() => selectRankingBoard("overall")}>总榜</button>
-            <button type="button" className={rankingBoard === "worldlink" ? "" : "secondary"} aria-pressed={rankingBoard === "worldlink"} onClick={() => selectRankingBoard("worldlink")}>单角色榜</button>
+        <section className="current-event-overview" aria-label="当前活动与榜单概览">
+          <div className="current-event-overview-cover">
+            <div className="rank-event-cover">
+              <ArtImage src={eventArt[0]} srcCandidates={eventArt.slice(1)} label={event?.name ?? "当前活动"} variant="event" fallback={<span>活动封面暂缺</span>} />
+            </div>
           </div>
-          {rankingBoard === "worldlink" && (
-            <div className="world-link-character-list" role="group" aria-label="选择 World Link 角色">
-              {worldLinkCharacters.map((character) => (
-                <button type="button" key={character.id} className={worldLinkCharacterId === character.id ? "world-link-character active" : "world-link-character"} aria-pressed={worldLinkCharacterId === character.id} onClick={() => selectWorldLinkCharacter(character.id)}>
-                  <ArtImage src={character.imageCandidates?.[0]} srcCandidates={character.imageCandidates} label={character.name} variant="avatar" />
-                  <span>{character.name}</span>
+          <div className="current-event-overview-content">
+            <div className="current-event-overview-copy">
+              <div className="current-event-hero-copy">
+                <span className="rank-eyebrow">当前活动 · {boardLabel}</span>
+                <h1>{eventLoadFailed ? "活动资料暂时不可用" : (event?.name ?? "正在加载活动")}</h1>
+                <div className="rank-meta">
+                  <span>{eventLoadFailed ? "活动资料暂时无法获取，请重试" : (activeEvent ? formatDate(event?.startAt) + " - " + formatDate(event?.endAt) : "当前没有正在进行的活动")}</span>
+                </div>
+              </div>
+              <div className="rank-event-copy">
+              <span className="rank-eyebrow">活动简介</span>
+              <p className="rank-event-outline">{eventLoadFailed ? "活动详情暂时无法获取，榜单服务恢复后可重新加载。" : (event?.storyOutline ?? "当前活动简介暂缺，仍可查看榜单数据。")}</p>
+              </div>
+              <div className="current-event-hero-actions">
+                <button type="button" onClick={() => loadRankings(region, rankingBoard, worldLinkCharacterId)} disabled={rankingRefreshing}>
+                  <RefreshCw size={16} aria-hidden="true" />{rankingRefreshing ? "刷新中" : "立即刷新"}
+                </button>
+              </div>
+            </div>
+            <aside className="rank-update-state" aria-label="榜单更新状态">
+              <span className={"rank-source-status " + sourceStatus}>{sourceLabel}</span>
+              <strong>{rankingRefreshing ? "正在更新榜单" : <><RankingCountdown nextRefreshAt={rankingNextRefreshAt} /> 秒后自动刷新</>}</strong>
+              <small>最近更新：{formatDate(rankingUpdatedAt ?? undefined)}</small>
+            </aside>
+          </div>
+        </section>
+
+        {showWorldLinkControls && <article className="panel ranking-scope-card" aria-label="榜单类型和角色选择">
+          <div className="ranking-scope-heading">
+            <div><span className="rank-eyebrow">榜单范围</span><h2>选择要查看的榜单</h2><p>总榜和单角色榜独立加载，切换后不会混用其他榜型数据。</p></div>
+            <div className="ranking-board-switch" role="group" aria-label="榜单类型">
+              <button type="button" className={rankingBoard === "overall" ? "" : "secondary"} aria-pressed={rankingBoard === "overall"} onClick={() => selectRankingBoard("overall")}>总榜</button>
+              <button type="button" className={rankingBoard === "worldlink" ? "" : "secondary"} aria-pressed={rankingBoard === "worldlink"} onClick={() => selectRankingBoard("worldlink")}>单角色榜</button>
+            </div>
+          </div>
+          {rankingBoard === "worldlink" && <div className="world-link-character-list" role="group" aria-label="选择 World Link 角色">
+            {worldLinkCharacters.map((character) => <button type="button" key={character.id} className={worldLinkCharacterId === character.id ? "world-link-character active" : "world-link-character"} aria-pressed={worldLinkCharacterId === character.id} onClick={() => selectWorldLinkCharacter(character.id)}>
+              <ArtImage src={character.imageCandidates?.[0]} srcCandidates={character.imageCandidates} label={character.name} variant="avatar" />
+              <span>{character.name}</span>
+            </button>)}
+            {worldLinkCharacters.length === 0 && <p className="empty-state">当前活动暂未返回可选的 World Link 角色。</p>}
+          </div>}
+        </article>}
+
+        {rankingLoadError && <div className="notice compact error current-event-error" role="alert"><div><strong>榜单暂时不可用</strong><span>{rankingErrorMessage}</span></div><button type="button" className="secondary" onClick={() => loadRankings(region, rankingBoard, worldLinkCharacterId)} disabled={rankingRefreshing}>重试</button></div>}
+        {(rankingWarnings.length > 0 || rankingSourceHealth?.fallbackLine || rankingSourceHealth?.stale) && <div className="notice compact" role="status"><strong>更新状态</strong><span>{rankingSourceHealth?.stale ? "当前内容可能稍有延迟，正在刷新。" : rankingWarnings.slice(0, 2).join(" / ") || "部分内容正在恢复。"}</span></div>}
+
+        <article className="panel wide ranking-list-card">
+          <div className="ranking-list-heading">
+            <div><span className="rank-eyebrow">真实排名</span><h2>{boardLabel} · 排名与分数线</h2></div>
+            <SearchBox value={filter} onChange={setFilter} placeholder="搜索玩家、ID 或 T 档位" />
+          </div>
+          <div className="ranking-table">
+            <div className="ranking-head"><span>排名</span><span>玩家 / 档位</span><span>分数</span><span>增长</span></div>
+            <details className="ranking-player-section" open={rankingPlayersOpen} onToggle={(event) => setRankingPlayersOpen(event.currentTarget.open)}>
+              <summary aria-label="玩家榜 Top100，展开查看玩家列表"><span>Top100</span></summary>
+              {filteredRanking.map((entry) => (
+                <button key={region + ":" + rankingBoard + ":" + (worldLinkCharacterId ?? "overall") + ":" + (entry.userId || entry.rank)} type="button" className="ranking-row" onClick={() => openRankingDetail(entry.rank)}>
+                  <strong>#{entry.rank}</strong>
+                  <span className="ranking-player-cell"><ArtImage src={entry.leaderCardImageUrl} srcCandidates={[...(entry.leaderCardImageCandidates ?? []), ...(entry.leaderCharacterImageCandidates ?? [])]} label={(entry.playerName ?? entry.name) + " 当前队长"} variant="avatar" eager={entry.rank <= 10} /><span><b>{entry.playerName ?? entry.name}</b><small>{entry.profileWord || "暂无公开签名"}</small></span></span>
+                  <span className="ranking-score-cell"><b>{formatNumber(entry.score)} pt</b></span>
+                  <em>{typeof entry.hourlyGrowth === "number" ? "+" + formatNumber(entry.hourlyGrowth) + "/h" : "增长数据暂缺"}</em>
                 </button>
               ))}
-              {worldLinkCharacters.length === 0 && <p className="empty-state">当前活动暂未返回可选的 World Link 角色。</p>}
+              {!rankingRefreshing && filteredRanking.length === 0 && <p className="empty-state">当前没有可显示的玩家排名。</p>}
+            </details>
+            <div className="ranking-border-list">
+              <div className="ranking-border-heading"><strong>分数线档位</strong></div>
+              {filteredBorders.map((line) => (
+                <div key={region + ":" + rankingBoard + ":" + (worldLinkCharacterId ?? "overall") + ":border:" + line.rank} className="ranking-border-row">
+                  <strong>T{line.rank}</strong>
+                  <span className="ranking-border-label"><b>T{line.rank}</b></span>
+                  <span className="ranking-border-score"><b>{formatNumber(line.score)} pt</b>{typeof line.hourlyGrowth === "number" && <small className="ranking-border-speed">+{formatNumber(line.hourlyGrowth)}/h</small>}</span>
+                </div>
+              ))}
+              {filteredBorders.length === 0 && <p className="empty-state">当前没有可显示的真实分数线。</p>}
             </div>
-          )}
-        </article>}
-        {rankingLoadError && <div className="notice compact error"><strong>榜单加载失败</strong><span>{rankingLoadError}</span></div>}
-        {(rankingWarnings.length > 0 || rankingSourceHealth?.fallbackLine || rankingSourceHealth?.stale) && <div className="notice compact"><strong>更新状态</strong><span>{rankingSourceHealth?.stale ? "当前内容可能稍有延迟，正在刷新。" : "部分内容正在恢复。"}</span></div>}
-        <div className="rank-stat-grid">{borders.map((line) => <div key={line.rank}><span>T{line.rank}</span><strong>{formatNumber(line.score)} pt</strong><small>{formatDate(line.updatedAt)}</small></div>)}{borders.length === 0 && <div><span>状态</span><strong>暂无分数线</strong><small>无活动或上游不可用</small></div>}</div>
-        <article className="panel wide">
-          <div className="panel-heading"><h2>{boardLabel} Top 1-100</h2><SearchBox value={filter} onChange={setFilter} placeholder="搜索排名、玩家名或 ID" /></div>
-          <div className="ranking-table">
-            <div className="ranking-head"><span>排名</span><span>玩家</span><span>分数</span><span>增长</span><span>更新时间</span></div>
-            {filteredRanking.map((entry) => (
-              <button key={`${region}:${rankingBoard}:${worldLinkCharacterId ?? "overall"}:${entry.userId || entry.rank}`} type="button" className="ranking-row" onClick={() => openRankingDetail(entry.rank)}>
-                <strong>#{entry.rank}</strong>
-                <span className="ranking-player-cell"><ArtImage src={entry.leaderCardImageUrl} srcCandidates={[...(entry.leaderCardImageCandidates ?? []), ...(entry.leaderCharacterImageCandidates ?? [])]} label={`${entry.playerName ?? entry.name} 当前队长`} variant="avatar" eager={entry.rank <= 10} /><span>{entry.playerName ?? entry.name}<small>{entry.profileWord || "暂无公开签名"}</small></span></span>
-                <b>{formatNumber(entry.score)}</b><em>{typeof entry.hourlyGrowth === "number" ? `+${formatNumber(entry.hourlyGrowth)}/h` : "-"}</em><small>{formatDate(entry.updatedAt)}</small>
-              </button>
-            ))}
-            {!rankingRefreshing && filteredRanking.length === 0 && <p className="empty-state">{rankingBoard === "worldlink" ? "该角色榜当前没有可显示的真实排名数据。" : "当前没有可显示的排名数据。"}</p>}
+            {!rankingRefreshing && filteredRanking.length === 0 && filteredBorders.length === 0 && <p className="empty-state">{rankingBoard === "worldlink" ? "该角色榜当前没有可显示的真实数据。" : "当前没有可显示的排名数据。"}</p>}
           </div>
         </article>
       </section>
     );
   }
-
   function HistoryTrendChart({ samples, lines }: { samples: RankingHistorySample[]; lines: ForecastLine[] }) {
-    const ranks = lines.slice(0, 6).map((line) => line.rank);
+    const availableRanks = Array.from(new Set(lines.map((line) => Number(line.rank)).filter((rank) => Number.isFinite(rank))));
+    const trendRanksStorageKey = `pjsktools:forecast-trend-ranks:${region}:${event?.id ?? "none"}`;
+    const readStoredRanks = () => {
+      try {
+        const raw = window.localStorage.getItem(trendRanksStorageKey);
+        if (raw == null) return null;
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.filter((rank): rank is number => Number.isFinite(Number(rank))).map(Number).slice(0, 3) : null;
+      } catch {
+        return null;
+      }
+    };
+    const storedInitialRanks = readStoredRanks();
+    const [selectedRanks, setSelectedRanks] = useState<number[]>(() => (storedInitialRanks ?? availableRanks.slice(0, 3)).filter((rank) => availableRanks.includes(rank)).slice(0, 3));
+    const [rankMessage, setRankMessage] = useState("");
+    const hydratedRanksRef = useRef(availableRanks.length > 0);
+    const previousTrendRanksKeyRef = useRef(trendRanksStorageKey);
+    useEffect(() => {
+      const storedRanks = readStoredRanks();
+      const storageKeyChanged = previousTrendRanksKeyRef.current !== trendRanksStorageKey;
+      previousTrendRanksKeyRef.current = trendRanksStorageKey;
+      setSelectedRanks((current) => {
+        const available = (ranks: number[]) => ranks.filter((rank) => availableRanks.includes(rank)).slice(0, 3);
+        if (storedRanks !== null) return available(storedRanks);
+        if (storageKeyChanged) return availableRanks.slice(0, 3);
+        if (!hydratedRanksRef.current && availableRanks.length > 0) {
+          hydratedRanksRef.current = true;
+          return availableRanks.slice(0, 3);
+        }
+        hydratedRanksRef.current = hydratedRanksRef.current || availableRanks.length > 0;
+        return available(current);
+      });
+      setRankMessage("");
+    }, [lines, trendRanksStorageKey]);
+    useEffect(() => {
+      if (availableRanks.length === 0) return;
+      try {
+        window.localStorage.setItem(trendRanksStorageKey, JSON.stringify(selectedRanks.filter((rank) => availableRanks.includes(rank)).slice(0, 3)));
+      } catch { /* localStorage may be unavailable in private browsing */ }
+    }, [selectedRanks, availableRanks.join(","), trendRanksStorageKey]);
+    const toggleRank = (rank: number) => {
+      if (selectedRanks.includes(rank)) {
+        setSelectedRanks((current) => current.filter((item) => item !== rank));
+        setRankMessage("");
+        return;
+      }
+      if (selectedRanks.length >= 3) {
+        setRankMessage("最多同时查看 3 条档位趋势。");
+        return;
+      }
+      setSelectedRanks((current) => [...current, rank]);
+      setRankMessage("");
+    };
+    const removeRank = (rank: number) => {
+      setSelectedRanks((current) => current.filter((item) => item !== rank));
+      setRankMessage("");
+    };
+    const ranks = selectedRanks;
     const visible = samples
       .filter((sample) => ranks.includes(Number(sample.rank)))
       .sort((a, b) => Date.parse(a.sampledAt) - Date.parse(b.sampledAt));
-    if (visible.length < 2) return <p className="empty-state">样本不足，至少需要两个采样点才会显示趋势图。</p>;
     const times = visible.map((sample) => Date.parse(sample.sampledAt));
     const scores = visible.map((sample) => Number(sample.score));
     const minTime = Math.min(...times);
@@ -2029,11 +2234,30 @@ export function App() {
     const x = (time: number) => pad + ((time - minTime) / Math.max(1, maxTime - minTime)) * (width - pad * 2);
     const y = (score: number) => height - pad - ((score - minScore) / Math.max(1, maxScore - minScore)) * (height - pad * 2);
     const palette = ["#2f6f88", "#71a45a", "#b56b38", "#6d6bb8", "#c0528a", "#427a99"];
+    const formatAxisTime = (value: number) => Number.isFinite(value) ? new Date(value).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
     return (
       <div className="forecast-chart">
+        <div className="forecast-trend-controls" aria-label="选择趋势档位">
+          <div className="forecast-trend-control-head"><strong>趋势档位</strong><span>可同时查看 {selectedRanks.length}/3 条</span></div>
+          <div className="forecast-trend-rank-chips">
+            {selectedRanks.map((rank) => <button key={rank} type="button" className="forecast-trend-rank-chip" onClick={() => removeRank(rank)} aria-label={`移除 T${rank}`}>T{rank}<span aria-hidden="true">×</span></button>)}
+            {selectedRanks.length === 0 && <span className="forecast-trend-empty">请选择下方档位</span>}
+          </div>
+          <div className="forecast-trend-available" aria-label="可用档位">
+            {availableRanks.map((rank) => <button key={rank} type="button" className={selectedRanks.includes(rank) ? "forecast-trend-available-active" : "ghost"} onClick={() => toggleRank(rank)} aria-pressed={selectedRanks.includes(rank)} disabled={!selectedRanks.includes(rank) && selectedRanks.length >= 3}>T{rank}</button>)}
+          </div>
+          {rankMessage && <p className="forecast-trend-message" role="status">{rankMessage}</p>}
+        </div>
+        {visible.length < 2 ? <p className="empty-state">暂无可用趋势数据。</p> : <>
         <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="分数线历史趋势图">
           <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} />
           <line x1={pad} y1={pad} x2={pad} y2={height - pad} />
+          <text className="forecast-axis-label forecast-axis-label-x" x={width / 2} y={height - 5} textAnchor="middle">时间</text>
+          <text className="forecast-axis-label forecast-axis-label-y" x={10} y={height / 2} textAnchor="middle" transform={`rotate(-90 10 ${height / 2})`}>PT 分数</text>
+          <text className="forecast-axis-tick" x={pad} y={height - pad + 17} textAnchor="start">{formatAxisTime(minTime)}</text>
+          <text className="forecast-axis-tick" x={width - pad} y={height - pad + 17} textAnchor="end">{formatAxisTime(maxTime)}</text>
+          <text className="forecast-axis-tick" x={pad - 5} y={pad + 3} textAnchor="end">{formatNumber(maxScore)}</text>
+          <text className="forecast-axis-tick" x={pad - 5} y={height - pad + 3} textAnchor="end">{formatNumber(minScore)}</text>
           {ranks.map((rank, index) => {
             const points = visible.filter((sample) => Number(sample.rank) === rank).map((sample) => `${x(Date.parse(sample.sampledAt))},${y(Number(sample.score))}`).join(" ");
             return points ? <polyline key={rank} points={points} stroke={palette[index % palette.length]} /> : null;
@@ -2042,6 +2266,7 @@ export function App() {
         <div className="forecast-legend">
           {ranks.map((rank, index) => <span key={rank}><i style={{ background: palette[index % palette.length] }} />T{rank}</span>)}
         </div>
+        </>}
       </div>
     );
   }
@@ -2076,7 +2301,7 @@ export function App() {
     if (!event?.id || event.id === "none") return;
     const targetRank = Number(forecastPlanForm.targetRank);
     const targetLine = (forecast?.lines ?? []).find((line) => line.rank === targetRank) ?? (borders as any[]).find((line) => Number(line.rank) === targetRank);
-    const targetPt = finiteNumber(targetLine?.forecast3h ?? targetLine?.currentScore ?? targetLine?.score);
+    const targetPt = finiteNumber(targetLine?.forecastEnd ?? targetLine?.currentScore ?? targetLine?.score);
     if (targetPt === null) {
       setForecastPlanResult({ note: "当前目标档线没有可用分数，无法用未知值生成规划。" });
       return;
@@ -2094,66 +2319,57 @@ export function App() {
     setForecastPlanResult(result);
   }
 
-  function ForecastPage() {
+  function ForecastPlannerPanel({ activeLines }: { activeLines: Array<{ rank: number }> }) {
     const forecastBinding = defaultBinding();
     const forecastBindingRegionMatches = !forecastBinding || forecastBinding.region === region;
-    const activeLines = forecastWindow === "all" ? forecast?.lines ?? [] : forecast?.windows?.[`${forecastWindow}h`] ?? forecast?.lines ?? [];
-    const windowSummary = forecast?.windowSummaries?.[forecastWindow === "all" ? "all" : `${forecastWindow}h`];
-    const warnings = [...(forecast?.warnings ?? []), ...(rankingHistorySummary?.warnings ?? []), ...(rankingHistory?.warnings ?? [])];
+    const planningLines = activeLines.length ? activeLines : borders;
     const hasForecastControlResult = [forecastPlanResult?.remainingPt, forecastPlanResult?.requiredRuns, forecastPlanResult?.requiredPtPerHour].some((value) => typeof value === "number");
     const controlPtPerRun = finiteNumber(forecastPlanResult?.adjustedPtPerRun);
     const hasBindingPointEstimate = !hasForecastControlResult && typeof forecastPlanResult?.note === "string" && forecastPlanResult.note.includes("绑定 UID 数据估算");
     const bindingPointEstimate = hasBindingPointEstimate ? finiteNumber(forecastPlanResult?.eventPointEstimate?.estimatedPt ?? forecastPlanResult?.eventPointEstimate?.eventPointBreakdown?.estimatedPt ?? forecastPlanResult?.eventPointEstimate?.ptPerRun) : null;
-    const retentionRecommendation = forecast?.retentionRecommendation ?? rankingHistorySummary?.retentionRecommendation;
-    const forecastDiagnostics = unique([retentionRecommendation, rankingHistorySummary?.unavailableReason, rankingHistory?.unavailableReason, ...(rankingHistorySummary?.lines ?? []).map((line) => line.confidenceReason), ...activeLines.map((line) => line.unavailableReason ?? line.confidenceReason)]);
+    return <article className="panel forecast-planner-panel tool-forecast-planner-panel">
+      <div className="panel-heading"><div><span className="forecast-section-kicker">目标规划</span><h2>估算达成路径</h2><p>输入当前进度与可用局数，查看是否接近目标档线。</p></div></div>
+      <div className="two-col forecast-fields">
+        <label><span>目标档线</span><select value={forecastPlanForm.targetRank} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, targetRank: event.target.value })}>{planningLines.map((line) => <option key={line.rank} value={line.rank}>T{line.rank}</option>)}</select></label>
+        <label><span>当前 PT</span><input value={forecastPlanForm.currentPt} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, currentPt: event.target.value })} inputMode="numeric" /></label>
+        <label><span>每局收益</span><input value={forecastPlanForm.ptPerRun} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, ptPerRun: event.target.value })} inputMode="numeric" /></label>
+        <label><span>剩余分钟</span><input value={forecastPlanForm.remainingMinutes} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, remainingMinutes: event.target.value })} inputMode="numeric" /></label>
+        <label><span>可打局数</span><input value={forecastPlanForm.availableRuns} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, availableRuns: event.target.value })} inputMode="numeric" /></label>
+      </div>
+      <div className="button-row"><button type="button" onClick={calculateForecastPlan}>计算路径</button><button type="button" className="secondary" disabled={!forecastBinding || !forecastBindingRegionMatches || !normalPlanForm.musicId} onClick={estimateForecastPlanPtPerRun}>用绑定 UID 估算收益</button></div>
+      {forecastBinding && !forecastBindingRegionMatches && <p className="warning-text">当前页面区服 {region.toUpperCase()} 与绑定区服 {forecastBinding.region.toUpperCase()} 不一致，请先切换区服。</p>}
+      {forecastPlanResult && <div className="forecast-plan-result">{forecastPlanResult.note && <p className="status-message">{forecastPlanResult.note}</p>}{bindingPointEstimate !== null && <div className="tool-result-metrics"><div><span>绑定估算单局 PT</span><strong>{formatNumber(bindingPointEstimate)} pt</strong></div></div>}{hasForecastControlResult && <div className="tool-result-metrics">{controlPtPerRun !== null && <div><span>本次每局收益</span><strong>{formatNumber(controlPtPerRun)} pt</strong></div>}<div><span>还差 PT</span><strong>{formatNumber(forecastPlanResult.remainingPt)} pt</strong></div><div><span>所需局数</span><strong>{formatNumber(forecastPlanResult.requiredRuns)} 局</strong></div><div><span>每小时需打</span><strong>{formatNumber(forecastPlanResult.requiredPtPerHour)} pt/h</strong></div><div><span>计划状态</span><strong>{forecastPlanResult.feasible === true ? "可行" : forecastPlanResult.feasible === false ? "需调整" : "待确认"}</strong></div></div>}<ToolResultWarnings result={forecastPlanResult} /><ToolJsonDetails value={forecastPlanResult} /></div>}
+    </article>;
+  }
+
+  function ForecastPage() {
+    const activeLines = forecast?.lines ?? [];
+    const warnings = unique([...((forecast?.warnings ?? []) as string[]), ...((rankingHistorySummary?.warnings ?? []) as string[]), ...((rankingHistory?.warnings ?? []) as string[])].map(forecastWarningMessage));
+    const eventEndAt = forecast?.eventEndAt ?? event?.endAt;
+    const eventArt = eventBannerCandidates(event);
     return (
       <section className="rank-page forecast-page">
-        <header className="rank-hero forecast-hero"><div className="forecast-hero-copy"><span className="home-kicker">实验性预测</span><h2>{event?.name ? `${event.name} 预测线` : "预测线"}</h2><p className="forecast-hero-lede">只根据已采集的档线样本估算趋势，帮助你判断目标和节奏。</p><div className="rank-meta"><span>基于真实采样</span><span>样本 {formatNumber(forecast?.sampleCount ?? rankingHistory?.sampleCount)}</span><span>与当前分数线分开显示</span></div></div><div className="forecast-hero-actions"><span className="forecast-live-mark" aria-hidden="true" /> <button type="button" className="secondary" onClick={() => goSection("currentEvent")}>返回分数线</button></div></header>
-        <div className="button-row forecast-window-switcher" role="tablist" aria-label="预测时间窗口">
-          {(["all", "1", "3", "6"] as const).map((window) => <button key={window} type="button" role="tab" aria-selected={forecastWindow === window} className={forecastWindow === window ? "forecast-window-active" : "secondary"} onClick={() => setForecastWindow(window)}>{window === "all" ? "全部样本" : `近 ${window}h`}</button>)}
-        </div>
-        {warnings.length > 0 && <p className="warning-text">{warnings.slice(0, 3).join(" / ")}</p>}
-        <section className="forecast-layout">
-          <article className="panel forecast-summary-panel">
-            <div className="panel-heading"><div><h2>窗口健康</h2><p>采样仅用于趋势估算；维护策略和原始依据可在技术信息中查看。</p></div></div>
-            <div className="summary-grid compact-summary">
-              <div><span>窗口</span><strong>{forecastWindow === "all" ? "全部" : `${forecastWindow}h`}</strong></div>
-              <div><span>档线</span><strong>{formatNumber(windowSummary?.lineCount ?? activeLines.length)}</strong></div>
-              <div><span>最大样本</span><strong>{formatNumber(windowSummary?.maxSampleCount)}</strong></div>
-              <div><span>可信度</span><strong>{forecastConfidenceLabel(windowSummary?.confidence)}</strong></div>
-            </div>
-          </article>
-          <article className="panel forecast-planner-panel">
-            <h2>目标规划</h2>
-            <div className="two-col">
-              <select value={forecastPlanForm.targetRank} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, targetRank: event.target.value })}>
-                {activeLines.map((line) => <option key={line.rank} value={line.rank}>T{line.rank}</option>)}
-                {!activeLines.length && borders.map((line) => <option key={line.rank} value={line.rank}>T{line.rank}</option>)}
-              </select>
-              <input value={forecastPlanForm.currentPt} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, currentPt: event.target.value })} placeholder="当前 pt" />
-              <input value={forecastPlanForm.ptPerRun} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, ptPerRun: event.target.value })} placeholder="每局收益" />
-              <input value={forecastPlanForm.remainingMinutes} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, remainingMinutes: event.target.value })} placeholder="剩余分钟" />
-              <input value={forecastPlanForm.availableRuns} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, availableRuns: event.target.value })} placeholder="可打局数" />
-            </div>
-            <div className="button-row">
-              <button type="button" onClick={calculateForecastPlan}>计算路径</button>
-              <button type="button" className="secondary" disabled={!forecastBinding || !forecastBindingRegionMatches || !normalPlanForm.musicId} onClick={estimateForecastPlanPtPerRun}>用绑定 UID 估算收益</button>
-            </div>
-            {forecastBinding && !forecastBindingRegionMatches && <p className="warning-text">当前页面区服 {region.toUpperCase()} 与绑定区服 {forecastBinding.region.toUpperCase()} 不一致，请先切换区服。</p>}
-            {forecastPlanResult && <div className="forecast-plan-result">{forecastPlanResult.note && <p className="status-message">{forecastPlanResult.note}</p>}{bindingPointEstimate !== null && <div className="tool-result-metrics"><div><span>绑定估算单局 PT</span><strong>{formatNumber(bindingPointEstimate)} pt</strong></div></div>}{hasForecastControlResult && <div className="tool-result-metrics">{controlPtPerRun !== null && <div><span>本次每局收益</span><strong>{formatNumber(controlPtPerRun)} pt</strong></div>}<div><span>还差 PT</span><strong>{formatNumber(forecastPlanResult.remainingPt)} pt</strong></div><div><span>所需局数</span><strong>{formatNumber(forecastPlanResult.requiredRuns)} 局</strong></div><div><span>每小时需打</span><strong>{formatNumber(forecastPlanResult.requiredPtPerHour)} pt/h</strong></div><div><span>计划状态</span><strong>{forecastPlanResult.feasible === true ? "可行" : forecastPlanResult.feasible === false ? "需调整" : "待确认"}</strong></div></div>}<ToolResultWarnings result={forecastPlanResult} /><ToolJsonDetails value={forecastPlanResult} /></div>}
-          </article>
+        <header className="rank-hero forecast-hero">
+          <div className="forecast-hero-cover"><ArtImage src={eventArt[0]} srcCandidates={eventArt.slice(1)} label={event?.name ?? "当前活动"} variant="event" fallback={<span>活动封面暂缺</span>} /></div>
+          <div className="forecast-hero-copy">
+            <span className="home-kicker">实验性预测</span>
+            <h2>{event?.name ?? "当前活动"}</h2>
+            <p className="forecast-hero-lede">根据近期档线走势估算，结果仅供目标规划参考。</p>
+            <div className="rank-meta"><span>当前区服 {region.toUpperCase()}</span><span>{formatDate(event?.startAt)} - {formatDate(event?.endAt)}</span></div>
+          </div>
+          <div className="forecast-hero-actions"><span className="forecast-live-mark" aria-hidden="true" /><button type="button" className="secondary" onClick={() => goSection("currentEvent")}>返回分数线</button></div>
+        </header>
+        {warnings.length > 0 && <div className="forecast-alert" role="status"><strong>数据提示</strong><span>{warnings.slice(0, 3).join(" / ")}</span></div>}
+        <article className="panel wide forecast-predictions-panel">
+          <div className="forecast-linebar-head">
+            <div><h2>活动结束预测</h2><p>基于真实档线走势估算活动结束时的分数，仅展示当前 PT、速度与结束预测。</p></div>
+          </div>
+          <div className="forecast-linebar-meta"><span>活动结束：{formatDate(eventEndAt)}</span><span>档线：{formatNumber(activeLines.length)} 条</span></div>
+          {activeLines.length > 0 ? <div className="forecast-prediction-list" aria-label="预测档线">{activeLines.map((line) => <div key={line.rank} className="forecast-prediction-row"><strong>T{line.rank}</strong><span><small>当前 PT</small><b>{formatNumber(line.currentScore)} pt</b></span><span><small>速度</small><b>{line.speedPerHour == null && line.hourlyGrowth == null ? "—" : `${formatNumber(line.speedPerHour ?? line.hourlyGrowth)} pt/h`}</b></span><span><small>活动结束</small><b>{line.forecastEnd == null ? "—" : `${formatNumber(line.forecastEnd)} pt`}</b></span></div>)}</div> : <p className="empty-state">暂无可用预测档线。</p>}
+        </article>
+        <section className="forecast-analysis-stack">
+          <article className="panel wide forecast-trend-panel"><div className="forecast-chart-shell"><div className="forecast-chart-heading"><span className="forecast-section-kicker">趋势</span><h2>档线趋势图</h2><p>{rankingHistory?.unavailableReason ? "当前趋势数据暂不可用，请稍后再试。" : "查看真实历史分数走势。"}</p></div><HistoryTrendChart samples={rankingHistory?.items ?? []} lines={activeLines} /></div></article>
         </section>
-        {forecastDiagnostics.length > 0 && <details className="calculation-details forecast-diagnostics"><summary>查看采样技术信息</summary>{forecastDiagnostics.map((item) => <p key={item}>{item}</p>)}</details>}
-        <article className="panel wide forecast-trend-panel">
-          <div className="panel-heading"><div><h2>档线趋势图</h2><p>{rankingHistory?.unavailableReason ? forecastSamplingReason(rankingHistory.unavailableReason) : "折线只使用真实持久化样本，不插值、不补假点。"}</p></div></div>
-          <HistoryTrendChart samples={rankingHistory?.items ?? []} lines={activeLines} />
-        </article>
-        <article className="panel wide forecast-history-panel">
-          <div className="panel-heading"><div><h2>历史样本摘要</h2><p>{rankingHistorySummary?.unavailableReason ? forecastSamplingReason(rankingHistorySummary.unavailableReason) : "持久化历史用于计算近期速度和预测可信度。"}</p></div></div>
-          <div className="forecast-grid">{(rankingHistorySummary?.lines ?? []).slice(0, 12).map((line) => <div key={`${line.sampleType}-${line.rank}`} className="forecast-card forecast-history-card"><span>T{line.rank}</span><strong>{formatNumber(line.latestScore)} pt</strong><small>样本 {formatNumber(line.sampleCount)} / {forecastConfidenceLabel(line.confidence ?? line.predictability)}</small><small>跨度: {formatNumber(line.sampleSpanHours)}h</small><small>速度: {formatNumber(line.speedPerHour)} pt/h</small><em>{line.confidenceReason ? forecastSamplingReason(line.confidenceReason) : formatDate(line.latestSampledAt ?? undefined)}</em></div>)}</div>
-          {(!rankingHistorySummary || rankingHistorySummary.lines.length === 0) && <p className="empty-state">暂无持久化历史样本。刷新分数线后会逐步积累。</p>}
-        </article>
-        <section className="forecast-grid forecast-prediction-grid" aria-label="预测档线">{activeLines.map((line) => <div key={line.rank} className="forecast-card forecast-prediction-card"><span>T{line.rank}</span><strong>{formatNumber(line.currentScore)} pt</strong><small>速度: {formatNumber(line.speedPerHour ?? line.hourlyGrowth)} pt/h</small><small>1h: {formatNumber(line.forecast1h)} pt / 3h: {formatNumber(line.forecast3h)} pt</small><small>样本 {formatNumber(line.sampleCount)} / 跨度 {formatNumber(line.sampleSpanHours ?? line.sampleHours)}h</small><em>{line.unavailableReason || line.confidenceReason ? forecastSamplingReason(line.unavailableReason ?? line.confidenceReason) : "实验性预测"}</em></div>)}</section>
         {forecastLoading && <p className="empty-state forecast-loading-state" role="status">正在读取当前区服的预测样本…</p>}
         {!forecastLoading && (!forecast || activeLines.length === 0) && <p className="empty-state">暂无可预测数据。</p>}
       </section>
@@ -2196,23 +2412,23 @@ export function App() {
       onClear: () => { setFilter(""); setPage(1); setCatalogFilters({}); setCatalogToggles({}); }
     };
     if (type === "events") {
-      return <section className="panel wide"><div className="panel-heading"><div><h1>活动图鉴</h1><p>浏览历次活动、加成角色与相关资料。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索活动名称或 ID" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid event-grid">{pageData?.items.map((eventItem: EventInfo) => { const candidates = imageCandidates(eventItem.assets); const eventUnit = eventUnitLabel(eventItem.eventUnit); return <article key={`${region}:event:${eventItem.id}`} className="catalog-card event-card"><button type="button" className="catalog-card-main" onClick={() => void openEvent(eventItem.id, eventItem.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={eventItem.name} variant="event" /><strong>{eventItem.name}</strong><span>{eventTypeLabel(eventItem.eventType)}{eventUnit ? ` · ${eventUnit}` : ""}</span><small>{formatDate(eventItem.startAt)} · ID {eventItem.id}</small></button><FavoriteButton compact type="event" region={region} targetId={eventItem.id} label={eventItem.name} /></article>; })}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
+      return <section className="panel wide history-events-page"><div className="panel-heading history-events-page-heading"><div><span className="history-events-section-kicker">活动资料</span><h1>活动图鉴</h1><p>浏览历次活动、加成角色与相关资料。{pageData ? ` 共 ${formatNumber(pageData.total)} 场` : ""}</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索活动名称或 ID" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid event-grid history-events-grid">{pageData?.items.map((eventItem: EventInfo) => { const candidates = imageCandidates(eventItem.assets); const eventUnit = eventUnitLabel(eventItem.eventUnit); return <article key={`${region}:event:${eventItem.id}`} className="catalog-card event-card history-event-card"><button type="button" className="catalog-card-main" onClick={() => void openEvent(eventItem.id, eventItem.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={eventItem.name} variant="event" /><span className="history-event-copy"><strong>{eventItem.name}</strong><span>{eventTypeLabel(eventItem.eventType)}{eventUnit ? ` · ${eventUnit}` : ""}</span><small>{formatDate(eventItem.startAt)} · ID {eventItem.id}</small></span></button><FavoriteButton compact type="event" region={region} targetId={eventItem.id} label={eventItem.name} /></article>; })}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     if (type === "songs") {
-      return <section className="panel wide"><div className="panel-heading"><div><h1>歌曲图鉴</h1><p>浏览歌曲封面、难度与谱面信息。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索歌曲、ID、分类" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid songs">{pageData?.items.map((song: Song, index: number) => <article key={`${region}:song:${song.id}`} className="catalog-card song-card"><button type="button" className="catalog-card-main" onClick={() => void openSong(song.id, song.title)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span className="song-card-copy"><strong>{song.title}</strong><span>{song.unit} · ID {song.id}</span><small>时长 {formatSeconds(song.durationSeconds)}</small></span></button><FavoriteButton compact type="song" region={region} targetId={song.id} label={song.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
+      return <section className="panel wide songs-page"><div className="panel-heading songs-page-heading"><div><span className="songs-section-kicker">曲目与谱面</span><h1>歌曲图鉴</h1><p>浏览歌曲封面、难度与谱面信息。{pageData ? ` 共 ${formatNumber(pageData.total)} 首` : ""}</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索歌曲、ID、分类" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid songs songs-grid">{pageData?.items.map((song: Song, index: number) => <article key={`${region}:song:${song.id}`} className="catalog-card song-card"><button type="button" className="catalog-card-main" onClick={() => void openSong(song.id, song.title)}><ArtImage src={song.assets?.jacketUrl} srcCandidates={song.assets?.imageCandidates} label={song.title} eager={index < 6} /><span className="song-card-copy"><strong>{song.title}</strong><span>{song.unit} · ID {song.id}</span><small>时长 {formatSeconds(song.durationSeconds)}</small></span></button><FavoriteButton compact type="song" region={region} targetId={song.id} label={song.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     if (type === "cards") {
-      return <section className="panel wide"><div className="panel-heading"><div><h1>卡牌图鉴</h1><p>浏览卡面、角色信息与各等级技能效果。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索角色、卡名、属性" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid cards">{pageData?.items.map((card: Card, index: number) => <article key={`${region}:card:${card.id}`} className="catalog-card card-card"><button type="button" className="catalog-card-main" onClick={() => void openCard(card.id, false, card.title)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.imageCandidates ?? card.assets?.normalThumbnailCandidates} label={card.title} variant="square" eager={index < 8} /><strong>{card.title}</strong><span>{card.character}</span><small>属性 {cardAttributeLabel(card.attribute)} · {card.rarity}★</small><small>ID {card.id}</small></button><FavoriteButton compact type="card" region={region} targetId={card.id} label={card.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
+      return <section className="panel wide cards-page"><div className="panel-heading cards-page-heading"><div><span className="cards-section-kicker">角色与技能</span><h1>卡牌图鉴</h1><p>浏览卡面、角色信息与各等级技能效果。{pageData ? ` 共 ${formatNumber(pageData.total)} 张` : ""}</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索角色、卡名、属性" /></div>{pageData && renderCatalogFilters(pageData)}<CatalogBody {...bodyProps}><div className="catalog-grid cards cards-grid">{pageData?.items.map((card: Card, index: number) => <article key={`${region}:card:${card.id}`} className="catalog-card card-card"><button type="button" className="catalog-card-main" onClick={() => void openCard(card.id, false, card.title)}><ArtImage src={card.assets?.normalThumbnailUrl ?? card.assets?.normalUrl} srcCandidates={card.assets?.imageCandidates ?? card.assets?.normalThumbnailCandidates} label={card.title} variant="square" eager={index < 8} /><span className="card-card-copy"><strong>{card.title}</strong><span>{card.character}</span><small>属性 {cardAttributeLabel(card.attribute)} · {card.rarity}★</small><small>ID {card.id}</small></span></button><FavoriteButton compact type="card" region={region} targetId={card.id} label={card.title} /></article>)}</div>{pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody></section>;
     }
     const collectionType = collectionMeta[type].type;
     return (
-      <section className="panel wide">
-        <div className="panel-heading"><div><h1>{collectionMeta[type].label}</h1><p>按名称、分类和 ID 浏览。</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索名称、分类、ID" /></div>
+      <section className={`panel wide collection-page ${collectionType === "gachas" ? "gachas-page" : ""} ${collectionType === "honors" ? "honors-page" : ""} ${collectionType === "materials" ? "materials-page" : ""} ${collectionType === "costumes" ? "costumes-page" : ""} ${collectionType === "stamps" ? "stamps-page" : ""} ${collectionType === "comics" ? "comics-page" : ""}`}>
+        <div className={`panel-heading collection-page-heading ${collectionType === "gachas" ? "gachas-page-heading" : ""} ${collectionType === "honors" ? "honors-page-heading" : ""} ${collectionType === "materials" ? "materials-page-heading" : ""} ${collectionType === "costumes" ? "costumes-page-heading" : ""} ${collectionType === "stamps" ? "stamps-page-heading" : ""} ${collectionType === "comics" ? "comics-page-heading" : ""}`}><div><span className="gachas-section-kicker">图鉴资料</span><h1>{collectionMeta[type].label}</h1><p>按名称、分类和 ID 浏览。{pageData ? ` 共 ${formatNumber(pageData.total)} 条` : ""}</p></div><SearchBox value={filter} onChange={(value) => { setFilter(value); setPage(1); }} placeholder="搜索名称、分类、ID" /></div>
         {pageData && renderCatalogFilters(pageData)}
-        <CatalogBody {...bodyProps}><div className={`catalog-grid collection-grid collection-grid-${collectionType}`}>{pageData?.items.map((item: CollectionItem) => {
+        <CatalogBody {...bodyProps}><div className={`catalog-grid collection-grid collection-grid-${collectionType} ${collectionType === "gachas" ? "gachas-grid" : ""} ${collectionType === "honors" ? "honors-grid" : ""} ${collectionType === "materials" ? "materials-grid" : ""} ${collectionType === "costumes" ? "costumes-grid" : ""} ${collectionType === "stamps" ? "stamps-grid" : ""} ${collectionType === "comics" ? "comics-grid" : ""}`}>{pageData?.items.map((item: CollectionItem) => {
           const candidates = collectionImageCandidates(collectionType, item.assets);
           const assetNotice = assetStatusLabel(item.assetStatus, item.assets?.unavailableReason);
-          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card collection-card collection-card-${collectionType}`}><button type="button" className="catalog-card-main" onClick={() => void openCollection(collectionType, item.id, item.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : collectionCategoryLabel(collectionType, item.category ?? item.rarity)}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}{assetNotice && <small className="warning-text">{assetNotice}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
+          return <article key={`${region}:${collectionType}:${item.id}`} className={`catalog-card collection-card collection-card-${collectionType}`}><button type="button" className="catalog-card-main" onClick={() => void openCollection(collectionType, item.id, item.name)}><ArtImage src={candidates[0]} srcCandidates={candidates} label={item.name} variant={collectionImageVariant(collectionType)} /><strong>{item.name}</strong><span>{collectionType === "costumes" ? `${item.partTypes?.join(" / ") || "部件信息缺失"} · ${item.source ?? "获取方式未知"}` : collectionCategoryLabel(collectionType, item.category ?? item.rarity)}</span>{collectionType === "costumes" && <small>{item.designer ? `设计：${item.designer} · ` : ""}{item.rarity ?? "稀有度未知"}</small>}{collectionType === "gachas" && (item.startAt || item.endAt) && <small>{formatDate(item.startAt)} - {formatDate(item.endAt)}</small>}{assetNotice && <small className="warning-text">{assetNotice}</small>}<small>ID {item.id}</small></button><FavoriteButton compact type={favoriteTypeForCatalog(collectionType)} region={region} targetId={item.id} label={item.name} /></article>;
         })}</div>
         {pageData && <Pagination page={pageData.page} totalPages={pageData.totalPages} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}</CatalogBody>
       </section>
@@ -2221,10 +2437,12 @@ export function App() {
 
   function ProfilePage() {
     return (
-      <section className="panel wide">
-        <div className="panel-heading"><div><h2>玩家档案查询</h2><p>公开 UID 仅展示公开资料；已有绑定数据可用于完整分析。</p></div><Link className="button-link" to="/me/profile">打开我的档案分析</Link></div>
-        <div className="inline-form"><input value={profileId} onChange={(event) => setProfileId(event.target.value)} placeholder="玩家 UID" /><button type="button" onClick={loadProfile}><Search size={16} />查询</button></div>
-        {profile && <div className="profile"><strong>{profile.nickname}</strong><span>Lv.{profile.rank} / {profile.region.toUpperCase()} / {profile.source}</span><p>{profile.comment || "暂无公开签名"}</p></div>}
+      <section className="panel wide profile-page">
+        <div className="panel-heading profile-page-heading"><div><span className="profile-section-kicker">玩家数据</span><h1>玩家档案查询</h1><p>公开 UID 仅展示公开资料；已有绑定数据可用于完整分析。</p></div><Link className="button-link" to="/me/profile">打开我的档案分析</Link></div>
+        <form className="profile-query-form" onSubmit={(event) => { event.preventDefault(); void loadProfile(); }}><label><span>玩家 UID</span><input value={profileId} onChange={(event) => { setProfileId(event.target.value); if (profileError) setProfileError(""); }} placeholder="输入公开 UID" inputMode="numeric" /></label><button type="submit" disabled={profileLoading}><Search size={16} />{profileLoading ? "查询中…" : "查询档案"}</button></form>
+        {profileLoading && <p className="profile-status" role="status">正在读取公开档案…</p>}
+        {profileError && <div className="profile-error" role="alert"><span>{profileError}</span><button type="button" className="secondary" onClick={() => void loadProfile()} disabled={profileLoading}>重试</button></div>}
+        {profile && <div className="profile profile-result"><div><strong>{profile.nickname}</strong><span>Lv.{profile.rank} / {profile.region.toUpperCase()} / {profile.source}</span></div><p>{profile.comment || "暂无公开签名"}</p></div>}
       </section>
     );
   }
@@ -2241,7 +2459,7 @@ export function App() {
   function DeckComparePage() {
     const binding = defaultBinding();
     const savedDeckConfigs = savedDeckConfigsForBinding(binding);
-    const selectedSongForCompare = songs.find((song) => song.id === deckCompareForm.musicId) ?? songs[0];
+    const selectedSongForCompare = songs.find((song) => song.id === deckCompareForm.musicId);
     const difficulties = selectedSongForCompare?.difficultyDetails?.length ? selectedSongForCompare.difficultyDetails.map((item) => item.difficulty) : ["easy", "normal", "hard", "expert", "master", "append"];
     const comparisons = asArray(deckCompareResult?.comparisons);
     const bestScore = Math.max(1, ...comparisons.map((item: any) => finiteNumber(item.score ?? item.totalScore ?? item.multiLiveTrace?.score)).filter((value): value is number => value !== null));
@@ -2250,7 +2468,7 @@ export function App() {
     const estimatedFields = [...asArray(deckCompareResult?.estimatedFieldsUsed), ...comparisons.flatMap((item: any) => asArray(item.estimatedFieldsUsed))].slice(0, 16);
     const exactTrace = deckCompareResult?.liveExactTrace ?? deckCompareResult?.noteScoreSummary;
     return (
-      <section className="deck-compare-workspace">
+      <section className="deck-compare-workspace deck-compare-page">
         <article className="panel wide deck-compare-hero">
           <div className="panel-heading">
             <div>
@@ -2270,8 +2488,13 @@ export function App() {
         <div className="deck-compare-layout">
           <article className="panel deck-compare-controls">
             <div className="panel-heading compact-heading"><div><h3>Live 参数</h3><p>{binding ? `当前绑定 ${binding.region.toUpperCase()} / ${binding.displayName || binding.playerUid}` : "公开模式使用当前页面区服。"}</p></div></div>
+            {toolDataLoading && <div className="deck-compare-data-state" role="status">正在加载歌曲与卡牌数据…</div>}
+            {toolSongsStatus === "error" && <div className="deck-compare-data-state error" role="alert"><span>歌曲列表加载失败：{playerErrorMessage(toolSongsError || toolDataError)}</span><button type="button" className="secondary" onClick={() => ensureFullToolData(true).catch((error) => setMessage(playerErrorMessage(error)))}>重试加载</button></div>}
+            {toolDataError && toolSongsStatus !== "error" && <div className="deck-compare-data-state error" role="alert"><span>比较所需数据加载失败：{playerErrorMessage(toolDataError)}</span><button type="button" className="secondary" onClick={() => ensureFullToolData().catch((error) => setMessage(playerErrorMessage(error)))}>重试加载</button></div>}
+            {toolSongsStatus === "ready" && songs.length === 0 && <div className="deck-compare-data-state">当前区服暂无歌曲，暂不能运行比较。</div>}
             <div className="two-col">
               <select value={deckCompareForm.musicId} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, musicId: event.target.value })}>
+                <option value="">请选择歌曲</option>
                 {songs.map((song) => <option key={song.id} value={song.id}>{song.id} · {song.title}</option>)}
               </select>
               <select value={deckCompareForm.difficulty} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, difficulty: event.target.value })}>
@@ -2338,7 +2561,7 @@ export function App() {
               </section>
             ))}
             <div className="button-row">
-              <button type="button" onClick={calculateDeckCompare}><BarChart3 size={16} />运行比较</button>
+              <button type="button" disabled={toolSongsStatus !== "ready" || toolDataLoading || Boolean(toolDataError) || !deckCompareForm.musicId} onClick={calculateDeckCompare}><BarChart3 size={16} />运行比较</button>
               <button type="button" className="secondary" onClick={() => setDeckCompareResult(null)}>清空结果</button>
             </div>
             {deckCompareError && <p className="warning-text">{deckCompareError}</p>}
@@ -2404,6 +2627,7 @@ export function App() {
     const filteredToolSongs = songQuery ? songs.filter((song) => `${song.title} ${song.id}`.toLowerCase().includes(songQuery)) : songs;
     const selectedToolSong = songs.find((song) => song.id === normalPlanForm.musicId);
     const songSelectionReady = toolSongsStatus === "ready" && !toolDataLoading && !toolDataError && songs.length > 0 && Boolean(selectedToolSong);
+    const forecastPlanningLines = forecastWindow === "all" ? forecast?.lines ?? [] : forecast?.windows?.[`${forecastWindow}h`] ?? [];
     function PlanResultView({ result }: { result: any }) {
       if (!result) return null;
       const sections = result.sections ?? {};
@@ -2517,7 +2741,9 @@ export function App() {
           </div>
           {toolSongsStatus === "ready" && songs.length > 0 && !normalPlanForm.musicId && <p className="warning-text">请先明确选择一首歌曲，规划和活动 PT 按钮才会启用。</p>}
         </article>
+        <ForecastPlannerPanel activeLines={forecastPlanningLines} />
         <PlanResultView result={plan} />
+        <section className="tools-secondary-grid" aria-label="周回与组卡工具">
         <article className="panel tool-card-panel tools-control-panel"><div className="panel-heading compact-heading"><div><h2>周回 / 控分</h2><p>已有可靠的单局 PT 时，计算还需局数和每小时进度要求。</p></div></div><div className="tool-form-grid compact">
           <ToolField label="当前活动 PT" unit="pt" help="活动页面当前累计 PT。"><input type="number" min="0" value={controlForm.currentPt} onChange={(event) => setControlForm({ ...controlForm, currentPt: event.target.value })} /></ToolField>
           <ToolField label="目标活动 PT" unit="pt" help="希望最终达到的累计 PT。"><input type="number" min="0" value={controlForm.targetPt} onChange={(event) => setControlForm({ ...controlForm, targetPt: event.target.value })} /></ToolField>
@@ -2531,15 +2757,18 @@ export function App() {
           <button type="button" onClick={calculateDeck} disabled={deckLoading}><Wand2 size={16} />{deckLoading ? "正在推荐…" : "推荐卡组"}</button>
           {deckError && <div className="catalog-feedback error" role="alert"><strong>组卡推荐失败</strong><span>{playerErrorMessage(deckError)}</span><button type="button" className="secondary" onClick={calculateDeck}>重试</button></div>}
           {deckResult && <><DeckRecommendationPreview result={deckResult} /><ToolResultWarnings result={deckResult} /><ToolJsonDetails value={deckResult} /></>}
-        </article>
-        <article className="panel wide tool-card-panel tools-music-panel"><div className="panel-heading compact-heading"><div><h2>周回歌曲推荐</h2><p>按共享活动 PT 公式计算候选歌曲，再按每分钟 PT 排序。</p></div></div><div className="tool-form-grid">
+         </article>
+         </section>
+         <section className="tools-output-grid" aria-label="歌曲效率与区域道具">
+         <article className="panel wide tool-card-panel tools-music-panel"><div className="panel-heading compact-heading"><div><h2>周回歌曲推荐</h2><p>按共享活动 PT 公式计算候选歌曲，再按每分钟 PT 排序。</p></div></div><div className="tool-form-grid">
           <ToolField label="目标 / 当前 PT" help="用于估算每首歌到目标还需多少局。"><div className="inline-pair"><input type="number" min="0" value={musicRecommendForm.targetPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, targetPt: event.target.value })} placeholder="目标 PT" /><input type="number" min="0" value={musicRecommendForm.currentPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, currentPt: event.target.value })} placeholder="当前 PT" /></div></ToolField>
           <ToolField label="活动加成" unit="%" help="编成页面显示 621% 就填 621。"><input type="number" min="0" value={musicRecommendForm.eventBonusPercent} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, eventBonusPercent: event.target.value })} /></ToolField>
           <ToolField label="预计结算分数" unit="分" help="填最近同队伍、同模式的结算分数；可留空。"><input type="number" min="0" value={musicRecommendForm.baseScore} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, baseScore: event.target.value })} /></ToolField>
           <ToolField label="Live 类型 / 火量" help="火量按页面上方倍率表计算。"><div className="inline-pair"><select value={musicRecommendForm.liveType} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, liveType: event.target.value })}>{liveTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select value={musicRecommendForm.boost} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, boost: event.target.value })}>{boostRates.map((rate, fires) => <option key={fires} value={fires}>{fires} 火（x{rate}）</option>)}</select></div></ToolField>
           <ToolField label="难度 / 最长时长" help="只比较指定难度且不超过该时长的谱面。"><div className="inline-pair"><select value={musicRecommendForm.preferredDifficulty} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, preferredDifficulty: event.target.value })}>{difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty.toUpperCase()}</option>)}</select><input type="number" min="1" value={musicRecommendForm.maxDurationSeconds} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, maxDurationSeconds: event.target.value })} placeholder="最长秒数" /></div></ToolField>
         </div><button type="button" onClick={calculateMusicRecommend}><Music size={16} />计算歌曲效率</button>{musicRecommendResult && <><RecommendationList items={musicRecommendResult.recommendations} type="music" /><ToolResultWarnings result={musicRecommendResult} /><ToolJsonDetails value={musicRecommendResult} /></>}</article>
-        <article className="panel wide tool-card-panel tools-area-panel"><div className="panel-heading compact-heading"><div><h2>区域道具升级建议</h2><p>对照 Moesekai 区域道具公式，比较目标卡组升级前后的综合力变化；成本数据缺失时明确标记。</p></div></div><div className="tool-form-grid"><ToolField label="目标卡组 ID" help="填写正在使用的 1–5 张卡牌 ID；绑定资产可结合当前区域道具等级与素材。"><textarea value={areaRecommendForm.cardIds} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, cardIds: event.target.value })} placeholder="例如 101, 205, 309, 410, 512" /></ToolField><ToolField label="排序方式" help="选择更看重金币效率、绝对综合力提升或当前材料是否足够。"><select value={areaRecommendForm.sortBy} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, sortBy: event.target.value })}><option value="coin-efficiency">金币效率优先</option><option value="power-gain">综合力提升优先</option><option value="affordable">当前可升级优先</option></select></ToolField><label className="tool-check-field"><input type="checkbox" checked={areaRecommendForm.includeUnaffordable} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, includeUnaffordable: event.target.checked })} /><span><strong>显示材料不足的项目</strong><small>材料数据缺失时仍会保留候选并标明成本未知。</small></span></label></div><div className="button-row"><button type="button" onClick={calculateAreaRecommend}><Package size={16} />用手动卡组生成建议</button><button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("area")}>使用绑定 UID 资产</button></div>{areaRecommendResult && <><RecommendationList items={areaRecommendResult.recommendations} type="area" /><ToolResultWarnings result={areaRecommendResult} /><ToolJsonDetails value={areaRecommendResult} /></>}</article>
+         <article className="panel wide tool-card-panel tools-area-panel"><div className="panel-heading compact-heading"><div><h2>区域道具升级建议</h2><p>对照 Moesekai 区域道具公式，比较目标卡组升级前后的综合力变化；成本数据缺失时明确标记。</p></div></div><div className="tool-form-grid"><ToolField label="目标卡组 ID" help="填写正在使用的 1–5 张卡牌 ID；绑定资产可结合当前区域道具等级与素材。"><textarea value={areaRecommendForm.cardIds} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, cardIds: event.target.value })} placeholder="例如 101, 205, 309, 410, 512" /></ToolField><ToolField label="排序方式" help="选择更看重金币效率、绝对综合力提升或当前材料是否足够。"><select value={areaRecommendForm.sortBy} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, sortBy: event.target.value })}><option value="coin-efficiency">金币效率优先</option><option value="power-gain">综合力提升优先</option><option value="affordable">当前可升级优先</option></select></ToolField><label className="tool-check-field"><input type="checkbox" checked={areaRecommendForm.includeUnaffordable} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, includeUnaffordable: event.target.checked })} /><span><strong>显示材料不足的项目</strong><small>材料数据缺失时仍会保留候选并标明成本未知。</small></span></label></div><div className="button-row"><button type="button" onClick={calculateAreaRecommend}><Package size={16} />用手动卡组生成建议</button><button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("area")}>使用绑定 UID 资产</button></div>{areaRecommendResult && <><RecommendationList items={areaRecommendResult.recommendations} type="area" /><ToolResultWarnings result={areaRecommendResult} /><ToolJsonDetails value={areaRecommendResult} /></>}</article>
+         </section>
       </section>
     );
   }
@@ -2776,21 +3005,21 @@ export function App() {
     const safeInformationPage = Math.min(informationPage, informationPages);
     const visibleItems = items.slice((safeInformationPage - 1) * informationPageSize, safeInformationPage * informationPageSize);
     return (
-      <section className="content-workspace">
-        <article className="panel wide">
-          <div className="panel-heading"><div><h2>公告资讯</h2><p>按时间线浏览游戏公告。</p></div><button type="button" onClick={() => loadContent("information")}><RefreshCw size={16} />刷新</button></div>
-          <div className="timeline-list">
+      <section className="content-workspace information-page">
+        <article className="panel wide information-panel">
+          <div className="panel-heading information-page-heading"><div><span className="information-kicker">公告 / 资讯</span><h2>公告资讯</h2><p>按时间线浏览游戏公告。</p></div><button type="button" className="information-refresh-button" onClick={() => loadContent("information")}><RefreshCw size={16} />刷新</button></div>
+          <div className="timeline-list information-timeline">
             {visibleItems.map((item: any, index: number) => {
               const raw = rawRecord(item.raw ?? item);
               const title = contentName(item, `公告 #${index + 1}`);
               const bannerUrl = String(item.bannerUrl ?? raw.bannerUrl ?? "");
               const bannerCandidates = asArray(item.bannerImageCandidates ?? raw.bannerImageCandidates);
               return (
-                <button type="button" className="timeline-card timeline-card-button" key={`${contentId(item, String(index))}:${index}`} onClick={() => openInformation(contentId(item, String(index)), title)}>
+                <button type="button" className={`timeline-card timeline-card-button information-card${bannerUrl ? " has-information-image" : ""}`} key={`${contentId(item, String(index))}:${index}`} onClick={() => openInformation(contentId(item, String(index)), title)}>
                   {bannerUrl && <ArtImage src={bannerUrl} srcCandidates={bannerCandidates.length ? bannerCandidates : [bannerUrl]} label={title} />}
-                  <div>
+                  <div className="information-card-copy">
                     <strong>{title}</strong>
-                    <span>{String(raw.informationType ?? raw.informationTag ?? raw.browseType ?? "information")}</span>
+                    <span className="information-card-tag">{String(raw.informationType ?? raw.informationTag ?? raw.browseType ?? "information")}</span>
                     <small>{contentDate(raw.startAt ?? item.startAt)} - {contentDate(raw.endAt ?? item.endAt)}</small>
                     <span className="text-link">查看详情</span>
                   </div>
@@ -2803,7 +3032,7 @@ export function App() {
         </article>
         {selectedInformation && (
           <ModalDialog label={selectedInformation.title} onClose={closeInformation} backdropClassName="modal-backdrop content-detail-backdrop" className="content-detail-modal announcement-detail-modal">
-              <div className="panel-heading">
+              <div className="panel-heading information-detail-heading">
                 <div><h2>{selectedInformation.title}</h2><p>{contentDate(selectedInformation.startAt)}</p></div>
                 <button type="button" className="icon-button" aria-label="关闭公告详情" onClick={closeInformation}>×</button>
               </div>
@@ -2844,15 +3073,15 @@ export function App() {
     const visibleItems = filteredItems.slice((safePage - 1) * exchangePageSize, safePage * exchangePageSize);
     const statusLabels: Record<string, string> = { active: "进行中", permanent: "常驻", upcoming: "即将开放", ended: "已结束" };
     return (
-      <section className="content-workspace">
-        <article className="panel wide">
-          <div className="panel-heading"><div><h2>兑换所</h2><p>按分类查看商品、素材和兑换要求。</p></div><button type="button" onClick={() => loadContent("exchanges")}><RefreshCw size={16} />刷新</button></div>
-          <div className="exchange-summary-row">
+      <section className="content-workspace exchanges-page">
+        <article className="panel wide exchanges-shell">
+          <div className="panel-heading exchanges-page-heading"><div><span className="exchanges-kicker">兑换资料</span><h2>兑换所</h2><p>按分类查看商品、素材和兑换要求。</p></div><button type="button" onClick={() => loadContent("exchanges")}><RefreshCw size={16} />刷新</button></div>
+          <div className="exchange-summary-row exchanges-summary" aria-label="兑换所概览">
             <div><span>兑换所</span><strong>{formatNumber(asArray(data?.summaries).length)}</strong></div>
             <div><span>兑换项</span><strong>{formatNumber(data?.total ?? 0)}</strong></div>
             <div><span>当前结果</span><strong>{formatNumber(filteredItems.length)}</strong></div>
           </div>
-          <div className="exchange-toolbar">
+          <div className="exchange-toolbar exchanges-toolbar" aria-label="兑换所筛选">
             <label><Search size={16} /><input value={exchangeSearch} onChange={(event) => { setExchangeSearch(event.target.value); setExchangePage(1); }} placeholder="搜索商品、素材或 ID" /></label>
             <select value={exchangeStatus} onChange={(event) => { setExchangeStatus(event.target.value); setExchangePage(1); }}>
               <option value="">全部状态</option>
@@ -2863,7 +3092,7 @@ export function App() {
               {asArray(data?.summaries).map((summary: any) => <option value={String(summary.id)} key={summary.id}>{summary.name}（{summary.count}）</option>)}
             </select>
           </div>
-          <div className="exchange-grid">
+          <div className="exchange-grid exchanges-grid">
             {visibleItems.map((item: any) => (
               <button type="button" className="exchange-card" key={`${region}:exchange:${item.id}`} onClick={() => openExchange(String(item.id), item.name)}>
                 <div className="exchange-card-head">
@@ -3265,7 +3494,33 @@ export function App() {
   }
 
   function SharePage() {
-    return <section className="panel wide share-page"><div className="panel-heading"><div><h2>分享卡</h2><p>生成适合社交平台展示的 1200 × 630 图片。</p></div></div><div className="inline-form"><select value={shareType} onChange={(event) => setShareType(event.target.value)}><option value="profile">玩家档案</option><option value="score">成绩</option><option value="event">活动</option><option value="card">卡牌</option><option value="song">歌曲</option></select><input value={shareId} onChange={(event) => setShareId(event.target.value)} placeholder="分享对象 ID" /><button type="button" onClick={loadShareCard} disabled={!shareId.trim()}><Share2 size={16} />生成</button></div>{shareCard && <div className="share-card-result"><img src={apiResourceUrl(shareCard.imageUrl)} alt={shareCard.title} /><div><strong>{shareCard.title}</strong><span>{shareCard.summary}</span><a className="button secondary" href={apiResourceUrl(shareCard.imageUrl)} download={`pjsktools-${shareCard.type}-${shareCard.id}.png`}>保存 PNG</a></div></div>}</section>;
+    const imageUrl = shareCard ? apiResourceUrl(shareCard.imageUrl) : "";
+    const metadataUrl = shareCard && typeof window !== "undefined" ? (() => { const url = new URL(window.location.href); url.searchParams.set("shareType", shareCard.type); url.searchParams.set("shareId", shareCard.id); return url.toString(); })() : "";
+    const canWebShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+    const copyShareValue = async (value: string, label: string) => {
+      if (!value || typeof navigator === "undefined" || !navigator.clipboard) { setMessage("当前浏览器不支持复制，请手动选择内容。"); return; }
+      try { await navigator.clipboard.writeText(value); setMessage(`${label}已复制`); } catch { setMessage("复制失败，请手动选择内容。"); }
+    };
+    const shareToWeb = async () => {
+      if (!shareCard || !canWebShare) return;
+      try { await navigator.share({ title: shareCard.title, text: shareCard.summary, url: metadataUrl }); } catch (error: any) { if (error?.name !== "AbortError") setMessage("分享失败，请复制页面地址后重试。"); }
+    };
+    return (
+      <section className="panel wide share-page">
+        <div className="panel-heading"><div><span className="share-section-kicker">分享卡生成器</span><h2>分享卡</h2><p>生成适合社交平台展示的 1200 × 630 图片；页面只返回真实生成结果，不创建上传或短链。</p></div></div>
+        <div className="share-form">
+          <label><span>内容类型</span><select value={shareType} onChange={(event) => { setShareType(event.target.value); setShareCard(null); setShareError(""); }}><option value="profile">玩家档案</option><option value="score">成绩</option><option value="event">活动</option><option value="card">卡牌</option><option value="song">歌曲</option></select></label>
+          <label><span>对象 ID</span><input value={shareId} onChange={(event) => setShareId(event.target.value)} placeholder="输入分享对象 ID" /></label>
+          <button type="button" onClick={loadShareCard} disabled={!shareId.trim() || shareLoading}><Share2 size={16} />{shareLoading ? "生成中…" : "生成分享卡"}</button>
+        </div>
+        {shareLoading && <p className="share-state" role="status">正在生成分享卡…</p>}
+        {shareError && <div className="share-state error" role="alert"><span>生成失败：{shareError}</span><button type="button" className="secondary" onClick={loadShareCard} disabled={!shareId.trim() || shareLoading}>重试</button></div>}
+        {shareCard && <div className="share-card-result">
+          <div className="share-card-preview"><img src={imageUrl} alt={shareCard.title} width={shareCard.width ?? 1200} height={shareCard.height ?? 630} decoding="async" /></div>
+          <div className="share-card-copy"><span className="share-section-kicker">生成结果</span><strong>{shareCard.title}</strong><p>{shareCard.summary || "暂无摘要"}</p><dl className="share-card-meta"><div><dt>尺寸</dt><dd>{shareCard.width ?? 1200} × {shareCard.height ?? 630}</dd></div><div><dt>格式</dt><dd>{shareCard.mimeType ?? "image/png"}</dd></div><div><dt>区服</dt><dd>{(shareCard.region ?? region).toUpperCase()}</dd></div></dl><div className="share-actions"><a className="button" href={imageUrl} download={`pjsktools-${shareCard.type}-${shareCard.id}.png`}>保存 PNG</a><button type="button" className="secondary" onClick={() => copyShareValue(imageUrl, "图片地址")}>复制图片地址</button><button type="button" className="secondary" onClick={() => copyShareValue(metadataUrl, "页面地址")}>复制页面地址</button>{canWebShare && <button type="button" className="secondary" onClick={shareToWeb}>系统分享</button>}</div></div>
+        </div>}
+      </section>
+    );
   }
 
   function AboutPage() {
@@ -3371,7 +3626,7 @@ export function App() {
         </div>}
         <header className={activeSection === "home" && location.pathname === "/" ? "topbar home-topbar" : "topbar"}>
           <div className="topbar-status" aria-live="polite">{uiStyle === "workbench" && <AppearanceSwitch />}{(location.pathname.startsWith("/me") ? auth.message : (message === "准备就绪" || message === "基础数据已就绪，图鉴将在打开时加载" ? "" : message)) && <p>{location.pathname.startsWith("/me") ? auth.message : message}</p>}</div>
-          <div className="top-actions"><RegionSelect className="navigation-region-select" value={region} options={regions} onChange={changeRegion} />{activeSection !== "forecast" && activeSection !== "home" && <button type="button" onClick={() => void refreshBaseAndCatalog()} disabled={baseRefreshing}><RefreshCw size={16} />{baseRefreshing ? "刷新中" : "刷新"}</button>}</div>
+          <div className="top-actions"><RegionSelect className="navigation-region-select" value={region} options={regions} onChange={changeRegion} />{activeSection !== "home" && <button type="button" onClick={() => void refreshBaseAndCatalog()} disabled={baseRefreshing}><RefreshCw size={16} />{baseRefreshing ? "刷新中" : "刷新"}</button>}</div>
         </header>
 
         <div className="route-content">
@@ -3406,7 +3661,7 @@ export function App() {
       </section>
 
       {rankingDetailOpen && (
-        <DetailDrawer title="排名详情" onClose={() => setRankingDetailOpen(false)}>
+        <DetailDrawer title="排名详情" className="ranking-detail-drawer" backdropClassName="ranking-detail-backdrop" onClose={() => setRankingDetailOpen(false)}>
           {rankingDetail ? <RankingDetailPanel detail={rankingDetail} mode={rankingDetailMode} leaderCardFallbackUrl={rankingDetail.leaderCardImageUrl} onModeChange={setRankingDetailMode} /> : <p className="empty-state">{rankingDetailLoading ? "正在加载真实排名详情..." : "暂无排名详情。"}</p>}
         </DetailDrawer>
       )}
