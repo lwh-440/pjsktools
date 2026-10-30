@@ -570,6 +570,36 @@
 .ranking-detail-backdrop .parking-period-list { padding-bottom: 4px; }
 .ranking-detail-backdrop .parking-period-list p { padding-block: 5px; }
 
+/* Recent score changes stay out of the initial detail view, but remain
+   available as a compact, timestamped audit list. */
+.ranking-detail-backdrop .recent-score-changes-details { margin: 0; }
+.ranking-detail-backdrop .recent-score-change-list {
+  display: grid;
+  gap: 0;
+  padding: 1px 2px 4px;
+}
+.ranking-detail-backdrop .recent-score-change-list > div {
+  display: grid;
+  grid-template-columns: minmax(98px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  border-top: 1px solid rgba(0, 127, 130, .11);
+  color: #607a7c;
+  font-size: 11px;
+}
+.ranking-detail-backdrop .recent-score-change-list time { color: #4c7073; white-space: nowrap; }
+.ranking-detail-backdrop .recent-score-change-list strong { color: #08787a; font-size: 12px; white-space: nowrap; }
+.ranking-detail-backdrop .recent-score-change-list strong.negative { color: #a65368; }
+
+@media (max-width: 420px) {
+  .ranking-detail-backdrop .recent-score-change-list > div {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 3px 8px;
+  }
+  .ranking-detail-backdrop .recent-score-change-list time { grid-column: 1 / -1; }
+}
+
 @media (max-width: 600px) {
   .ranking-detail-backdrop { padding: 8px; }
   .ranking-detail-backdrop .ranking-detail-drawer {

@@ -15,6 +15,69 @@ afterEach(() => {
 });
 
 describe.sequential("Haruki request controls", () => {
+  it.each(["overall", "worldlink"] as const)("joins validated %s overview growth by UID only and preserves missing values", async (board) => {
+    const growth = (userId: string, overrides: Record<string, unknown> = {}) => ({
+      userId, scoreLatest: 9000, scoreEarlier: 6000,
+      timestampLatest: 1_700_000_000, timestampEarlier: 1_699_998_200,
+      timeDiff: 1800, growth: 3000, ...overrides
+    });
+    const invalid = [
+      { growth: null }, { growth: "" }, { growth: false }, { scoreEarlier: null },
+      { timeDiff: 0 }, { timeDiff: -1 }, { timeDiff: 100 },
+      { timestampEarlier: 1_700_000_000 }, { growth: 2999 }
+    ];
+    const ids = ["a".repeat(64), "zero", "missing", ...invalid.map((_, index) => `invalid-${index}`), ""];
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      meta: { server: "en", eventId: 179, scope: board === "overall" ? "total" : "world-bloom/21", characterId: 21 },
+      topRankings: ids.map((userId, index) => ({
+        rankData: { rank: index + 1, userId, score: 9000, timestamp: 1_700_000_000 },
+        userData: { name: "same name" }
+      })),
+      borderLines: [{ rank: 200, score: 5000, timestamp: 1_700_000_000 }],
+      topPlayerGrowths: [
+        // Deliberately wrong rank: UID is the sole association key.
+        growth(ids[0], { rank: 99 }),
+        growth("zero", { growth: 0, scoreEarlier: 9000 }),
+        // Same rank and name must never substitute for the missing UID.
+        growth("rks-3", { rank: 3, name: "same name" }),
+        ...invalid.map((value, index) => growth(`invalid-${index}`, value)),
+        growth("", { rank: ids.length }),
+        growth("border-user", { rank: 200 })
+      ],
+      topRankGrowths: [growth("missing", { rank: 3 })]
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const snapshot = board === "overall"
+      ? await harukiClient.getEventTrackerOverallSnapshot("en", "179")
+      : await harukiClient.getWorldLinkRankingSnapshot("en", "179", 21);
+
+    expect(snapshot.entries[0]).toMatchObject({ userId: ids[0], hourlyGrowth: 6000 });
+    expect(snapshot.entries[1]).toMatchObject({ userId: "zero", hourlyGrowth: 0 });
+    for (const entry of snapshot.entries.slice(2)) expect(entry).not.toHaveProperty("hourlyGrowth");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["overall", "worldlink"] as const)("keeps %s growth unavailable when the overview has no player growth array", async (board) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      meta: { server: "en", eventId: 179, scope: board === "overall" ? "total" : "world-bloom/21", characterId: 21 },
+      topRankings: [{ rankData: { rank: 1, userId: "hash-uid", score: 700, timestamp: 1_700_000_000 }, userData: {} }]
+    }), { status: 200 })));
+    const snapshot = board === "overall"
+      ? await harukiClient.getEventTrackerOverallSnapshot("en", "179")
+      : await harukiClient.getWorldLinkRankingSnapshot("en", "179", 21);
+    expect(snapshot.entries[0]).not.toHaveProperty("hourlyGrowth");
+  });
+
+  it.each([
+    ["region", { server: "jp", eventId: 179, scope: "total" }],
+    ["event", { server: "en", eventId: 180, scope: "total" }],
+    ["scope", { server: "en", eventId: 179, scope: "world-bloom/21" }]
+  ])("rejects overall overview growth from a mismatched %s", async (field, meta) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ meta }), { status: 200 })));
+    await expect(harukiClient.getEventTrackerOverallSnapshot("en", "179")).rejects.toThrow(`${field} mismatch`);
+  });
+
   it("deduplicates identical in-flight profile requests", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ userId: "990000000000000001", nickname: "real-player" }), {
       status: 200,
