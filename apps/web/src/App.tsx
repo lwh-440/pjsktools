@@ -710,11 +710,21 @@ export function App() {
   const [rankingDetailMode, setRankingDetailMode] = useState<"player" | "line">("player");
   const [rankingDetailOpen, setRankingDetailOpen] = useState(false);
   const [rankingDetailLoading, setRankingDetailLoading] = useState(false);
-  const [shareType, setShareType] = useState("profile");
-  const [shareId, setShareId] = useState("");
+  const [shareType, setShareType] = useState(() => {
+    const value = new URLSearchParams(window.location.search).get("shareType");
+    return value && ["profile", "score", "event", "card", "song"].includes(value) ? value : "profile";
+  });
+  const [shareId, setShareId] = useState(() => new URLSearchParams(window.location.search).get("shareId") ?? "");
   const [shareCard, setShareCard] = useState<ShareCard | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareError, setShareError] = useState("");
+  const [shareActionError, setShareActionError] = useState("");
+  const [shareDownloading, setShareDownloading] = useState(false);
+  const [shareImageState, setShareImageState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const shareRequestId = useRef(0);
+  const shareLoadingRef = useRef(false);
+  const shareLinkSearchRef = useRef("");
+  const pendingShareLinkRef = useRef<{ type: string; id: string; region: string } | null>(null);
   const [controlForm, setControlForm] = useState({ currentPt: "0", targetPt: "1000000", remainingMinutes: "180", ptPerRun: "25000", availableRuns: "50" });
   const [controlResult, setControlResult] = useState<any>(null);
   const [toolOperationState, setToolOperationState] = useState<Record<ToolOperationKey, ToolOperationState>>({
@@ -1055,6 +1065,40 @@ export function App() {
     setDeckCompareLoading(false);
   }, [deckCompareForm, deckCompareCandidates, deckCompareTeammates]);
 
+  useEffect(() => {
+    if (activeSection !== "share") {
+      shareLinkSearchRef.current = "";
+      pendingShareLinkRef.current = null;
+      return;
+    }
+    if (shareLinkSearchRef.current === location.search) return;
+    shareLinkSearchRef.current = location.search;
+    const params = new URLSearchParams(location.search);
+    const type = params.get("shareType");
+    const id = params.get("shareId")?.trim();
+    if (!type || !["profile", "score", "event", "card", "song"].includes(type) || !id) return;
+    const queryRegion = params.get("region")?.toLowerCase();
+    const targetRegion = queryRegion && ["jp", "en", "tw", "kr", "cn"].includes(queryRegion) ? queryRegion : region;
+    shareRequestId.current += 1;
+    shareLoadingRef.current = false;
+    setShareLoading(false);
+    setShareCard(null);
+    setShareError("");
+    setShareActionError("");
+    setShareImageState("idle");
+    setShareType(type);
+    setShareId(id);
+    pendingShareLinkRef.current = { type, id, region: targetRegion };
+    if (targetRegion !== region) changeRegion(targetRegion);
+  }, [activeSection, location.search]);
+
+  useEffect(() => {
+    const pending = pendingShareLinkRef.current;
+    if (activeSection !== "share" || !pending || pending.region !== region) return;
+    pendingShareLinkRef.current = null;
+    void loadShareCard(pending.type, pending.id);
+  }, [activeSection, region, location.search]);
+
   useEffect(() => { setVirtualLiveDisplayCount(60); }, [region, virtualLiveSearch, virtualLiveSort]);
 
   async function loadBase(nextRegion: string) {
@@ -1075,7 +1119,12 @@ export function App() {
      setDeckCompareError("");
      setShareCard(null);
      setShareError("");
+     setShareActionError("");
+     setShareDownloading(false);
+     setShareImageState("idle");
      setShareLoading(false);
+     shareRequestId.current += 1;
+     shareLoadingRef.current = false;
     setCards([]);
     setEvents([]);
     setEvent(null);
@@ -1607,18 +1656,31 @@ export function App() {
     }
   }
 
-  async function loadShareCard() {
-    const requestedId = shareId.trim();
+  async function loadShareCard(requestedType = shareType, requestedValue = shareId) {
+    const requestedId = requestedValue.trim();
     if (!requestedId) return;
+    if (shareLoadingRef.current) return;
+    const requestId = ++shareRequestId.current;
+    const requestRegion = region;
+    shareLoadingRef.current = true;
     setShareLoading(true);
     setShareError("");
+    setShareActionError("");
     setShareCard(null);
+    setShareImageState("idle");
     try {
-      setShareCard(await apiGet<ShareCard>(`/api/share/cards/${shareType}/${encodeURIComponent(requestedId)}?region=${region}`));
+      const card = await apiGet<ShareCard>(`/api/share/cards/${requestedType}/${encodeURIComponent(requestedId)}?region=${requestRegion}`);
+      if (shareRequestId.current === requestId && regionRef.current === requestRegion) {
+        setShareImageState("loading");
+        setShareCard(card);
+      }
     } catch (error) {
-      setShareError(playerErrorMessage(error));
+      if (shareRequestId.current === requestId && regionRef.current === requestRegion) setShareError(playerErrorMessage(error));
     } finally {
-      setShareLoading(false);
+      if (shareRequestId.current === requestId && regionRef.current === requestRegion) {
+        shareLoadingRef.current = false;
+        setShareLoading(false);
+      }
     }
   }
 
@@ -3722,11 +3784,49 @@ export function App() {
 
   function SharePage() {
     const imageUrl = shareCard ? apiResourceUrl(shareCard.imageUrl) : "";
-    const metadataUrl = shareCard && typeof window !== "undefined" ? (() => { const url = new URL(window.location.href); url.searchParams.set("shareType", shareCard.type); url.searchParams.set("shareId", shareCard.id); return url.toString(); })() : "";
+    const shareIdField = {
+      profile: { label: "玩家 UID", placeholder: "输入公开玩家 UID" },
+      score: { label: "站内成绩记录 ID", placeholder: "输入要分享的成绩记录 ID" },
+      event: { label: "活动 ID", placeholder: "输入活动 ID" },
+      card: { label: "卡牌 ID", placeholder: "输入卡牌 ID" },
+      song: { label: "歌曲 ID", placeholder: "输入歌曲 ID" }
+    }[shareType] ?? { label: "对象 ID", placeholder: "输入对象 ID" };
+    const metadataUrl = shareCard && typeof window !== "undefined" ? (() => { const url = new URL("/section/share", window.location.origin); url.searchParams.set("shareType", shareCard.type); url.searchParams.set("shareId", shareCard.id); url.searchParams.set("region", shareCard.region ?? region); return url.toString(); })() : "";
     const canWebShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+    const invalidateSharePreview = () => {
+      shareRequestId.current += 1;
+      shareLoadingRef.current = false;
+      setShareLoading(false);
+      setShareCard(null);
+      setShareError("");
+      setShareActionError("");
+      setShareImageState("idle");
+    };
     const copyShareValue = async (value: string, label: string) => {
       if (!value || typeof navigator === "undefined" || !navigator.clipboard) { setMessage("当前浏览器不支持复制，请手动选择内容。"); return; }
       try { await navigator.clipboard.writeText(value); setMessage(`${label}已复制`); } catch { setMessage("复制失败，请手动选择内容。"); }
+    };
+    const downloadShareImage = async () => {
+      if (!shareCard || !imageUrl || shareDownloading || shareImageState !== "ready") return;
+      setShareActionError("");
+      setShareDownloading(true);
+      try {
+        const response = await fetch(imageUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = `pjsktools-${shareCard.type}-${shareCard.id}.png`;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      } catch {
+        setShareActionError("图片下载失败，请稍后重试。");
+      } finally {
+        setShareDownloading(false);
+      }
     };
     const shareToWeb = async () => {
       if (!shareCard || !canWebShare) return;
@@ -3734,17 +3834,20 @@ export function App() {
     };
     return (
       <section className="panel wide share-page">
-        <div className="panel-heading"><div><span className="share-section-kicker">分享卡生成器</span><h2>分享卡</h2><p>生成适合社交平台展示的 1200 × 630 图片；页面只返回真实生成结果，不创建上传或短链。</p></div></div>
-        <div className="share-form">
-          <label><span>内容类型</span><select value={shareType} onChange={(event) => { setShareType(event.target.value); setShareCard(null); setShareError(""); }}><option value="profile">玩家档案</option><option value="score">成绩</option><option value="event">活动</option><option value="card">卡牌</option><option value="song">歌曲</option></select></label>
-          <label><span>对象 ID</span><input value={shareId} onChange={(event) => setShareId(event.target.value)} placeholder="输入分享对象 ID" /></label>
-          <button type="button" onClick={loadShareCard} disabled={!shareId.trim() || shareLoading}><Share2 size={16} />{shareLoading ? "生成中…" : "生成分享卡"}</button>
-        </div>
+        <div className="share-hero"><div className="panel-heading"><div><span className="share-section-kicker">分享卡</span><h2>生成一张可分享的游戏卡片</h2><p>选择内容并输入对应 ID，生成图片后可保存、复制链接或调用系统分享。</p></div></div></div>
+        <section className="share-composer" aria-label="分享卡生成设置">
+          <div className="share-composer-heading"><span className="share-step">01</span><div><h3>选择内容</h3><p>使用当前区服 {region.toUpperCase()} 的公开资料生成图片。</p></div></div>
+          <div className="share-form">
+            <label><span>内容类型</span><select value={shareType} onChange={(event) => { invalidateSharePreview(); setShareType(event.target.value); }}><option value="profile">玩家档案</option><option value="score">成绩</option><option value="event">活动</option><option value="card">卡牌</option><option value="song">歌曲</option></select></label>
+            <label><span>{shareIdField.label}</span><input value={shareId} onChange={(event) => { invalidateSharePreview(); setShareId(event.target.value); }} placeholder={shareIdField.placeholder} inputMode="numeric" /></label>
+            <button type="button" onClick={() => void loadShareCard()} disabled={!shareId.trim() || shareLoading}><Share2 size={16} />{shareLoading ? "生成中…" : "生成分享卡"}</button>
+          </div>
+        </section>
         {shareLoading && <p className="share-state" role="status">正在生成分享卡…</p>}
-        {shareError && <div className="share-state error" role="alert"><span>生成失败：{shareError}</span><button type="button" className="secondary" onClick={loadShareCard} disabled={!shareId.trim() || shareLoading}>重试</button></div>}
+        {shareError && <div className="share-state error" role="alert"><span>生成失败：{shareError}</span><button type="button" className="secondary" onClick={() => void loadShareCard()} disabled={!shareId.trim() || shareLoading}>重试</button></div>}
         {shareCard && <div className="share-card-result">
-          <div className="share-card-preview"><img src={imageUrl} alt={shareCard.title} width={shareCard.width ?? 1200} height={shareCard.height ?? 630} decoding="async" /></div>
-          <div className="share-card-copy"><span className="share-section-kicker">生成结果</span><strong>{shareCard.title}</strong><p>{shareCard.summary || "暂无摘要"}</p><dl className="share-card-meta"><div><dt>尺寸</dt><dd>{shareCard.width ?? 1200} × {shareCard.height ?? 630}</dd></div><div><dt>格式</dt><dd>{shareCard.mimeType ?? "image/png"}</dd></div><div><dt>区服</dt><dd>{(shareCard.region ?? region).toUpperCase()}</dd></div></dl><div className="share-actions"><a className="button" href={imageUrl} download={`pjsktools-${shareCard.type}-${shareCard.id}.png`}>保存 PNG</a><button type="button" className="secondary" onClick={() => copyShareValue(imageUrl, "图片地址")}>复制图片地址</button><button type="button" className="secondary" onClick={() => copyShareValue(metadataUrl, "页面地址")}>复制页面地址</button>{canWebShare && <button type="button" className="secondary" onClick={shareToWeb}>系统分享</button>}</div></div>
+          <div className={`share-card-preview ${shareImageState === "error" ? "error" : ""}`}><span className="share-preview-label">预览</span><img src={imageUrl} alt={shareCard.title} width={shareCard.width ?? 1200} height={shareCard.height ?? 630} decoding="async" onLoad={() => setShareImageState("ready")} onError={() => setShareImageState("error")} />{shareImageState === "loading" && <p className="share-image-state" role="status">正在加载图片预览…</p>}{shareImageState === "error" && <p className="share-image-state error" role="alert">图片预览加载失败，请重新生成后重试。</p>}</div>
+          <div className="share-card-copy"><span className="share-section-kicker">生成结果</span><strong>{shareCard.title}</strong><p>{shareCard.summary || "暂无摘要"}</p><dl className="share-card-meta"><div><dt>尺寸</dt><dd>{shareCard.width ?? 1200} × {shareCard.height ?? 630}</dd></div><div><dt>格式</dt><dd>{shareCard.mimeType ?? "image/png"}</dd></div><div><dt>区服</dt><dd>{(shareCard.region ?? region).toUpperCase()}</dd></div></dl><div className="share-actions"><button type="button" onClick={() => void downloadShareImage()} disabled={shareDownloading || shareImageState !== "ready"}>{shareDownloading ? "下载中…" : "保存 PNG"}</button><button type="button" className="secondary" onClick={() => copyShareValue(imageUrl, "图片地址")}>复制图片地址</button><button type="button" className="secondary" onClick={() => copyShareValue(metadataUrl, "页面地址")}>复制页面地址</button>{canWebShare && <button type="button" className="secondary" onClick={shareToWeb}>系统分享</button>}</div><label className="share-link-field"><span>可复制的页面地址</span><input value={metadataUrl} readOnly aria-label="可复制的页面地址" onFocus={(event) => event.currentTarget.select()} /></label>{shareActionError && <p className="share-action-error" role="alert">{shareActionError}</p>}</div>
         </div>}
       </section>
     );

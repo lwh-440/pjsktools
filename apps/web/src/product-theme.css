@@ -2327,8 +2327,11 @@ button.appearance-switch:hover {
    Keep only the useful global refresh action above this dense workspace. */
 @media (max-width: 760px) {
   .shell.theme-workbench:has(.deck-compare-page) .topbar-status > .appearance-switch,
-  .shell.theme-workbench:has(.deck-compare-page) .top-actions > .navigation-region-select { display: none; }
-  .shell.theme-workbench:has(.deck-compare-page) .topbar {
+  .shell.theme-workbench:has(.share-page) .topbar-status > .appearance-switch,
+  .shell.theme-workbench:has(.deck-compare-page) .top-actions > .navigation-region-select,
+  .shell.theme-workbench:has(.share-page) .top-actions > .navigation-region-select { display: none; }
+  .shell.theme-workbench:has(.deck-compare-page) .topbar,
+  .shell.theme-workbench:has(.share-page) .topbar {
     min-height: 0;
     padding-block: 5px;
     border-left-width: 3px;
@@ -2435,6 +2438,136 @@ button.appearance-switch:hover {
   .share-page *,
   .share-page *::before,
   .share-page *::after { animation: none !important; transition: none !important; }
+}
+
+/* Share cards: configure on the left, inspect the finished image on the right. */
+.share-page {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border-color: rgba(0, 127, 130, .18);
+  border-radius: 14px;
+  background: rgba(250, 254, 253, .9);
+  box-shadow: 0 12px 28px rgba(0, 83, 86, .06), inset 0 1px rgba(255, 255, 255, .92);
+}
+.share-page .share-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 20px 23px 18px;
+  border-bottom: 1px solid rgba(0, 127, 130, .14);
+  background:
+    linear-gradient(90deg, rgba(0, 127, 130, .075) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(0deg, rgba(0, 127, 130, .055) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(125deg, rgba(255, 255, 255, .98), rgba(235, 249, 246, .91) 68%, rgba(255, 250, 239, .84));
+}
+.share-page .share-hero::after {
+  position: absolute;
+  right: 26px;
+  bottom: 18px;
+  width: 126px;
+  height: 22px;
+  border-top: 1px solid rgba(0, 127, 130, .34);
+  border-bottom: 1px solid rgba(0, 127, 130, .14);
+  content: "";
+  pointer-events: none;
+  transform: skewX(-29deg);
+}
+.share-page .share-hero .panel-heading { position: relative; z-index: 1; }
+.share-page .share-hero h2 { margin: 3px 0 5px; color: #1a4449; font-size: clamp(23px, 2.8vw, 31px); }
+.share-page .share-hero p { margin: 0; max-width: 640px; color: #537477; font-size: 13px; line-height: 1.55; }
+.share-section-kicker { color: #008482; font-size: 10px; font-weight: 800; letter-spacing: .09em; }
+.share-page .share-composer {
+  display: grid;
+  grid-template-columns: minmax(190px, .62fr) minmax(0, 1.38fr);
+  gap: 20px;
+  align-items: center;
+  padding: 17px 23px;
+  border-bottom: 1px solid rgba(0, 127, 130, .13);
+  background: rgba(247, 252, 251, .68);
+}
+.share-page .share-composer-heading { display: flex; align-items: flex-start; gap: 10px; }
+.share-page .share-step {
+  display: inline-grid;
+  flex: 0 0 29px;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  border: 1px solid rgba(0, 127, 130, .27);
+  border-radius: 50%;
+  background: rgba(218, 244, 239, .8);
+  color: #087d7c;
+  font-size: 10px;
+  font-weight: 800;
+}
+.share-page .share-composer-heading h3 { margin: 1px 0 3px; color: #245258; font-size: 15px; }
+.share-page .share-composer-heading p { margin: 0; color: #6b8588; font-size: 11px; line-height: 1.45; }
+.share-page .share-form {
+  grid-template-columns: minmax(135px, .65fr) minmax(0, 1.25fr) auto;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.share-page .share-form label { gap: 5px; color: #547478; font-size: 11px; font-weight: 700; }
+.share-page .share-form input,
+.share-page .share-form select {
+  min-height: 40px;
+  border-color: rgba(0, 127, 130, .18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .84);
+  color: #244e53;
+}
+.share-page .share-form > button { min-height: 40px; padding-inline: 15px; }
+.share-page .share-state { margin: 15px 23px 0; border-radius: 8px; background: rgba(232, 248, 245, .76); color: #37666b; font-size: 12px; }
+.share-page .share-card-result {
+  grid-template-columns: minmax(0, 1.2fr) minmax(285px, .8fr);
+  gap: 24px;
+  align-items: start;
+  padding: 22px 23px 23px;
+  border-top: 0;
+}
+.share-page .share-card-preview { position: relative; padding: 9px; border: 1px solid rgba(0, 127, 130, .16); border-radius: 11px; background: linear-gradient(145deg, rgba(236, 249, 246, .84), rgba(255, 255, 255, .82)); box-shadow: inset 0 1px rgba(255, 255, 255, .86), 0 7px 17px rgba(0, 99, 101, .05); }
+.share-page .share-preview-label { position: absolute; z-index: 1; top: 16px; left: 16px; padding: 4px 7px; border: 1px solid rgba(0, 127, 130, .2); border-radius: 999px; background: rgba(255, 255, 255, .83); color: #177173; font-size: 10px; font-weight: 800; letter-spacing: .05em; }
+.share-page .share-card-preview img { border: 0; border-radius: 6px; background: #f3fbfa; transition: transform 180ms ease; }
+.share-page .share-card-preview:hover img { transform: scale(1.008); }
+.share-page .share-card-preview.error img { opacity: .28; }
+.share-page .share-image-state { position: absolute; right: 18px; bottom: 17px; left: 18px; margin: 0; padding: 8px 10px; border: 1px solid rgba(0, 127, 130, .18); border-radius: 7px; background: rgba(255, 255, 255, .9); color: #477074; font-size: 12px; }
+.share-page .share-image-state.error { border-color: rgba(193, 82, 104, .28); background: rgba(255, 247, 248, .92); color: #8e4c60; }
+.share-page .share-card-copy { gap: 11px; padding-top: 2px; }
+.share-page .share-card-copy strong { color: #1c4c51; font-size: 21px; line-height: 1.3; }
+.share-page .share-card-copy p { color: #587477; font-size: 13px; }
+.share-page .share-card-meta { gap: 6px; }
+.share-page .share-card-meta div { padding: 9px; border-color: rgba(0, 127, 130, .13); border-radius: 7px; background: rgba(245, 252, 250, .84); }
+.share-page .share-card-meta dt { color: #759093; font-size: 10px; }
+.share-page .share-card-meta dd { color: #245459; font-size: 11px; }
+.share-page .share-actions { gap: 7px; padding-top: 2px; }
+.share-page .share-actions button { min-height: 42px; flex-basis: 135px; font-size: 12px; }
+.share-page .share-action-error { margin: 0; padding: 9px 10px; border-left: 2px solid #cd6171; background: rgba(255, 246, 247, .78); color: #885060; font-size: 12px; }
+.share-page .share-link-field { display: grid; gap: 5px; min-width: 0; color: #698487; font-size: 10px; }
+.share-page .share-link-field input { min-width: 0; padding: 8px 9px; border: 1px solid rgba(0, 127, 130, .14); border-radius: 7px; background: rgba(247, 252, 251, .78); color: #4b6e72; font-size: 10px; }
+
+@media (max-width: 860px) {
+  .share-page .share-composer { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .share-page .share-card-result { grid-template-columns: minmax(0, 1fr); }
+  .share-page .share-card-copy { max-width: none; }
+}
+@media (max-width: 640px) {
+  .share-page .share-hero { padding: 17px 15px 15px; }
+  .share-page .share-hero::after { right: 13px; bottom: 12px; width: 72px; }
+  .share-page .share-composer { padding: 14px 15px; }
+  .share-page .share-form { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+  .share-page .share-form > button { width: 100%; min-height: 44px; }
+  .share-page .share-state { margin: 13px 15px 0; align-items: stretch; flex-direction: column; }
+  .share-page .share-state button { width: 100%; }
+  .share-page .share-card-result { gap: 15px; padding: 16px 15px 18px; }
+  .share-page .share-card-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .share-page .share-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .share-page .share-actions button { width: 100%; min-width: 0; }
+}
+@media (max-width: 390px) {
+  .share-page .share-card-meta,
+  .share-page .share-actions { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Songs catalog: artwork and copy keep a compact rhythm while filters and
