@@ -81,6 +81,9 @@ type FullEvent = { event: EventInfo; assets: AssetInfo; relations: { relatedSong
 type CollectionResponse = { source?: string; unavailableReason?: string; sourceMetadata?: unknown; items: CollectionItem[] };
 type CatalogResponse<T> = { items: T[]; page: number; pageSize: number; total: number; totalPages: number; hasNextPage?: boolean; hasPreviousPage?: boolean; masterVersion?: string; contentHash?: string; sourceHealth?: Record<string, unknown>; source?: string; filterMeta?: CatalogFilterMeta; appliedFilters?: Record<string, string[] | boolean> };
 type CatalogLoadState = { status: "idle" | "loading" | "ready" | "error"; error?: string; hasVisibleData?: boolean };
+type ToolOperationKey = "plan" | "control" | "music" | "area" | "bound" | "forecast";
+type ToolOperationState = { loading: boolean; error: string };
+type ToolCategory = "plan" | "target" | "deck" | "music" | "area" | "mysekai";
 type PendingDetail = { kind: "song" | "card" | "event" | "collection"; id: string; title: string; collectionType?: string; preserveParent?: boolean; error?: string };
 type ContentPreviewItem = { id: string; name: string; category?: string; description?: string; storyType?: string; raw?: any };
 type ContentDisplayGroup = { key: string; label?: string; count?: number; previewItems?: ContentPreviewItem[] };
@@ -714,16 +717,25 @@ export function App() {
   const [shareError, setShareError] = useState("");
   const [controlForm, setControlForm] = useState({ currentPt: "0", targetPt: "1000000", remainingMinutes: "180", ptPerRun: "25000", availableRuns: "50" });
   const [controlResult, setControlResult] = useState<any>(null);
+  const [toolOperationState, setToolOperationState] = useState<Record<ToolOperationKey, ToolOperationState>>({
+    plan: { loading: false, error: "" }, control: { loading: false, error: "" }, music: { loading: false, error: "" }, area: { loading: false, error: "" }, bound: { loading: false, error: "" }, forecast: { loading: false, error: "" }
+  });
+  const toolOperationRequestId = useRef<Record<ToolOperationKey, number>>({ plan: 0, control: 0, music: 0, area: 0, bound: 0, forecast: 0 });
+  const toolOperationLoadingRef = useRef<Record<ToolOperationKey, boolean>>({ plan: false, control: false, music: false, area: false, bound: false, forecast: false });
+  const areaSourceRequestId = useRef(0);
+  const areaSourceLoadingRef = useRef(false);
   const [deckOwnedIds, setDeckOwnedIds] = useState("");
   const [deckResult, setDeckResult] = useState<any>(null);
   const [deckLoading, setDeckLoading] = useState(false);
   const [deckError, setDeckError] = useState("");
   const deckRequestId = useRef(0);
+  const deckLoadingRef = useRef(false);
   const [musicRecommendResult, setMusicRecommendResult] = useState<any>(null);
   const [musicRecommendForm, setMusicRecommendForm] = useState({ targetPt: "1000000", currentPt: "0", eventBonusPercent: "150", preferredDifficulty: "expert", maxDurationSeconds: "150", minNoteCount: "", limit: "5", liveType: "multi", boost: "3", baseScore: "2000000" });
   const [areaRecommendResult, setAreaRecommendResult] = useState<any>(null);
   const [areaRecommendForm, setAreaRecommendForm] = useState({ cardIds: "", sortBy: "coin-efficiency", includeUnaffordable: true, limit: "5" });
   const [boundToolResult, setBoundToolResult] = useState<any>(null);
+  const [boundToolKind, setBoundToolKind] = useState<"event-point" | "music" | "area" | "mysekai" | null>(null);
   const [boundPlanResult, setBoundPlanResult] = useState<any>(null);
   const [normalPlanForm, setNormalPlanForm] = useState({ targetPt: "1000000", currentPt: "0", remainingMinutes: "180", boost: "3", musicId: "", difficulty: "expert", liveType: "multi", baseScore: "", eventBonusPercent: "", ownedCardIds: "" });
   const [normalPlanResult, setNormalPlanResult] = useState<any>(null);
@@ -808,6 +820,47 @@ export function App() {
   rankingBoardRef.current = rankingBoard;
   worldLinkCharacterRef.current = worldLinkCharacterId;
 
+  function resetToolOperationState() {
+    (Object.keys(toolOperationRequestId.current) as ToolOperationKey[]).forEach((key) => { toolOperationRequestId.current[key] += 1; });
+    setToolOperationState({
+      plan: { loading: false, error: "" }, control: { loading: false, error: "" }, music: { loading: false, error: "" }, area: { loading: false, error: "" }, bound: { loading: false, error: "" }, forecast: { loading: false, error: "" }
+    });
+    (Object.keys(toolOperationLoadingRef.current) as ToolOperationKey[]).forEach((key) => { toolOperationLoadingRef.current[key] = false; });
+    setNormalPlanResult(null);
+    setBoundPlanResult(null);
+    setControlResult(null);
+    setMusicRecommendResult(null);
+    setAreaRecommendResult(null);
+    setBoundToolResult(null);
+    setBoundToolKind(null);
+    setForecastPlanResult(null);
+    areaSourceRequestId.current += 1;
+    areaSourceLoadingRef.current = false;
+  }
+
+  function beginToolOperation(key: ToolOperationKey) {
+    if (toolOperationLoadingRef.current[key]) return null;
+    const requestId = ++toolOperationRequestId.current[key];
+    const requestRegion = region;
+    toolOperationLoadingRef.current[key] = true;
+    setToolOperationState((current) => ({ ...current, [key]: { loading: true, error: "" } }));
+    return { requestId, requestRegion };
+  }
+
+  function isCurrentToolOperation(key: ToolOperationKey, requestId: number, requestRegion: string) {
+    return toolOperationRequestId.current[key] === requestId && regionRef.current === requestRegion;
+  }
+
+  function finishToolOperation(key: ToolOperationKey, requestId: number, requestRegion: string, error?: unknown) {
+    if (!isCurrentToolOperation(key, requestId, requestRegion)) return;
+    toolOperationLoadingRef.current[key] = false;
+    setToolOperationState((current) => ({ ...current, [key]: { loading: false, error: error ? playerErrorMessage(error) : "" } }));
+  }
+
+  function releaseAreaSource(requestId: number) {
+    if (areaSourceRequestId.current === requestId) areaSourceLoadingRef.current = false;
+  }
+
   function changeRegion(nextRegion: string) {
     if (nextRegion === region) return;
     // Update request guards synchronously so the next region can never be
@@ -820,6 +873,12 @@ export function App() {
     setWorldLinkCharacters([]);
     setWorldLinkAvailable(false);
     resetRankingBoardContent();
+    resetToolOperationState();
+    deckRequestId.current += 1;
+    deckLoadingRef.current = false;
+    setDeckLoading(false);
+    setDeckResult(null);
+    setDeckError("");
     setRegion(nextRegion);
     if (/^\/section\/stories\/.+/.test(location.pathname)) navigate("/section/stories", { replace: true });
   }
@@ -911,7 +970,9 @@ export function App() {
     setDeckResult(null);
     setDeckError("");
     setDeckLoading(false);
+    deckLoadingRef.current = false;
     deckRequestId.current += 1;
+    resetToolOperationState();
     return () => {
       if (baseRequest.current?.region === region) baseRequest.current.controller.abort();
     };
@@ -1542,24 +1603,33 @@ export function App() {
   }
 
   async function calculateControl() {
+    const operation = beginToolOperation("control");
+    if (!operation) return;
+    setControlResult(null);
     try {
-      setControlResult(await apiPost("/api/tools/score-control", {
+      const result = await apiPost("/api/tools/score-control", {
         currentPt: Number(controlForm.currentPt),
         targetPt: Number(controlForm.targetPt),
         remainingMinutes: Number(controlForm.remainingMinutes),
         ptPerRun: Number(controlForm.ptPerRun),
         availableRuns: Number(controlForm.availableRuns)
-      }));
+      });
+      if (isCurrentToolOperation("control", operation.requestId, operation.requestRegion)) setControlResult(result);
     } catch (error) {
-      setMessage(playerErrorMessage(error));
+      finishToolOperation("control", operation.requestId, operation.requestRegion, error);
+      return;
     }
+    finishToolOperation("control", operation.requestId, operation.requestRegion);
   }
 
   async function calculateDeck() {
+    if (deckLoadingRef.current) return;
     const requestId = ++deckRequestId.current;
     const requestRegion = region;
+    deckLoadingRef.current = true;
     setDeckLoading(true);
     setDeckError("");
+    setDeckResult(null);
     try {
       const result = await apiPost("/api/tools/deck-recommend", {
         region: requestRegion,
@@ -1570,14 +1640,20 @@ export function App() {
     } catch (error) {
       if (requestId === deckRequestId.current && regionRef.current === requestRegion) setDeckError(error instanceof Error ? error.message : String(error));
     } finally {
-      if (requestId === deckRequestId.current && regionRef.current === requestRegion) setDeckLoading(false);
+      if (requestId === deckRequestId.current && regionRef.current === requestRegion) {
+        deckLoadingRef.current = false;
+        setDeckLoading(false);
+      }
     }
   }
 
   async function calculateMusicRecommend() {
+    const operation = beginToolOperation("music");
+    if (!operation) return;
+    setMusicRecommendResult(null);
     try {
-      setMusicRecommendResult(await apiPost("/api/tools/music-recommend", {
-        region,
+      const result = await apiPost("/api/tools/music-recommend", {
+        region: operation.requestRegion,
         eventId: event?.id === "none" ? undefined : event?.id,
         targetPt: Number(musicRecommendForm.targetPt),
         currentPt: Number(musicRecommendForm.currentPt),
@@ -1589,25 +1665,52 @@ export function App() {
         liveType: musicRecommendForm.liveType,
         boost: Number(musicRecommendForm.boost),
         baseScore: musicRecommendForm.baseScore ? Number(musicRecommendForm.baseScore) : undefined
-      }));
+      });
+      if (isCurrentToolOperation("music", operation.requestId, operation.requestRegion)) setMusicRecommendResult(result);
     } catch (error) {
-      setMessage(playerErrorMessage(error));
+      finishToolOperation("music", operation.requestId, operation.requestRegion, error);
+      return;
     }
+    finishToolOperation("music", operation.requestId, operation.requestRegion);
   }
 
   async function calculateAreaRecommend() {
     const cardIds = areaRecommendForm.cardIds.split(/[,\s]+/).filter(Boolean).slice(0, 5);
+    if (!cardIds.length) {
+      setAreaRecommendResult(null);
+      if (boundToolKind === "area") {
+        setBoundToolResult(null);
+        setBoundToolKind(null);
+      }
+      setToolOperationState((current) => ({ ...current, area: { loading: false, error: "请先填写 1–5 张目标卡组 ID。" } }));
+      return;
+    }
+    if (areaSourceLoadingRef.current) return;
+    const operation = beginToolOperation("area");
+    if (!operation) return;
+    const areaSourceId = ++areaSourceRequestId.current;
+    areaSourceLoadingRef.current = true;
+    setAreaRecommendResult(null);
+    if (boundToolKind === "area") {
+      setBoundToolResult(null);
+      setBoundToolKind(null);
+    }
     try {
-      setAreaRecommendResult(await apiPost("/api/tools/area-item-recommend", {
-        region,
+      const result = await apiPost("/api/tools/area-item-recommend", {
+        region: operation.requestRegion,
         cardIds: cardIds.length ? cardIds : undefined,
         sortBy: areaRecommendForm.sortBy,
         includeUnaffordable: areaRecommendForm.includeUnaffordable,
         limit: Number(areaRecommendForm.limit)
-      }));
+      });
+      if (isCurrentToolOperation("area", operation.requestId, operation.requestRegion) && areaSourceRequestId.current === areaSourceId) setAreaRecommendResult(result);
     } catch (error) {
-      setMessage(playerErrorMessage(error));
+      finishToolOperation("area", operation.requestId, operation.requestRegion, error);
+      releaseAreaSource(areaSourceId);
+      return;
     }
+    finishToolOperation("area", operation.requestId, operation.requestRegion);
+    releaseAreaSource(areaSourceId);
   }
 
   function renderRelatedCardTile(card: Card, key: string) {
@@ -1734,6 +1837,14 @@ export function App() {
     if (!binding) return;
     if (tool === "event-point" && binding.region !== region) return;
     if (tool === "event-point" && !normalPlanForm.musicId) return;
+    if (tool === "area" && areaSourceLoadingRef.current) return;
+    const operation = beginToolOperation("bound");
+    if (!operation) return;
+    const areaSourceId = tool === "area" ? ++areaSourceRequestId.current : 0;
+    if (areaSourceId) areaSourceLoadingRef.current = true;
+    setBoundToolResult(null);
+    setBoundToolKind(tool);
+    if (tool === "area") setAreaRecommendResult(null);
     const eventId = event?.id === "none" ? undefined : event?.id;
     const eventPointPayload = {
       region: binding.region,
@@ -1782,15 +1893,24 @@ export function App() {
           ? "/api/me/tools/area-item-recommend"
           : "/api/me/tools/mysekai-calc";
     try {
-      setBoundToolResult({ tool, result: await apiPost(endpoint, payload, auth.token) });
+      const result = await apiPost(endpoint, payload, auth.token);
+      if (isCurrentToolOperation("bound", operation.requestId, operation.requestRegion) && (!areaSourceId || areaSourceRequestId.current === areaSourceId)) setBoundToolResult({ tool, result });
     } catch (error) {
-      setMessage(playerErrorMessage(error));
+      finishToolOperation("bound", operation.requestId, operation.requestRegion, error);
+      if (areaSourceId) releaseAreaSource(areaSourceId);
+      return;
     }
+    finishToolOperation("bound", operation.requestId, operation.requestRegion);
+    if (areaSourceId) releaseAreaSource(areaSourceId);
   }
 
   async function calculateBoundPlan() {
     const binding = defaultBinding();
     if (!binding || binding.region !== region || !normalPlanForm.musicId) return;
+    const operation = beginToolOperation("plan");
+    if (!operation) return;
+    setNormalPlanResult(null);
+    setBoundPlanResult(null);
     const eventId = event?.id === "none" ? undefined : event?.id;
     const payload = {
       region: binding.region,
@@ -1807,16 +1927,28 @@ export function App() {
       eventBonusPercent: normalPlanForm.eventBonusPercent ? Number(normalPlanForm.eventBonusPercent) : undefined,
       limit: 5
     };
-    const result = await apiPost("/api/me/tools/normal-event-plan", payload, auth.token);
-    setBoundPlanResult(result);
-    setNormalPlanResult(result);
+    try {
+      const result = await apiPost("/api/me/tools/normal-event-plan", payload, auth.token);
+      if (isCurrentToolOperation("plan", operation.requestId, operation.requestRegion)) {
+        setBoundPlanResult(result);
+        setNormalPlanResult(result);
+      }
+    } catch (error) {
+      finishToolOperation("plan", operation.requestId, operation.requestRegion, error);
+      return;
+    }
+    finishToolOperation("plan", operation.requestId, operation.requestRegion);
   }
 
   async function calculatePublicNormalPlan() {
     if (!normalPlanForm.musicId) return;
+    const operation = beginToolOperation("plan");
+    if (!operation) return;
+    setNormalPlanResult(null);
+    setBoundPlanResult(null);
     const eventId = event?.id === "none" ? undefined : event?.id;
     const payload = {
-      region,
+      region: operation.requestRegion,
       eventId,
       musicId: normalPlanForm.musicId,
       difficulty: normalPlanForm.difficulty,
@@ -1830,7 +1962,14 @@ export function App() {
       ownedCardIds: normalPlanForm.ownedCardIds.split(/[,\s]+/).filter(Boolean),
       limit: 5
     };
-    setNormalPlanResult(await apiPost("/api/tools/normal-event-plan", payload));
+    try {
+      const result = await apiPost("/api/tools/normal-event-plan", payload);
+      if (isCurrentToolOperation("plan", operation.requestId, operation.requestRegion)) setNormalPlanResult(result);
+    } catch (error) {
+      finishToolOperation("plan", operation.requestId, operation.requestRegion, error);
+      return;
+    }
+    finishToolOperation("plan", operation.requestId, operation.requestRegion);
   }
 
   async function calculateMysekai() {
@@ -2279,22 +2418,31 @@ export function App() {
       return;
     }
     if (!normalPlanForm.musicId) {
-      setForecastPlanResult({ note: "请先在计算工具中明确选择歌曲，再使用绑定 UID 估算单局收益。" });
+      setForecastPlanResult({ note: "请先在活动规划中选择歌曲，再使用我的数据估算单局收益。" });
       return;
     }
-    const result: any = await apiPost("/api/me/tools/event-point-calc", {
-      region: binding.region,
-      bindingId: binding.id,
-      eventId: event.id,
-      musicId: normalPlanForm.musicId,
-      difficulty: "expert",
-      targetPt: Number(forecastPlanForm.currentPt)
-    }, auth.token);
-    const estimated = result.estimatedPt ?? result.eventPointBreakdown?.estimatedPt ?? result.ptPerRun;
-    if (Number.isFinite(Number(estimated))) {
-      setForecastPlanForm((current) => ({ ...current, ptPerRun: String(Math.round(Number(estimated))) }));
+    const operation = beginToolOperation("forecast");
+    if (!operation) return;
+    setForecastPlanResult(null);
+    try {
+      const result: any = await apiPost("/api/me/tools/event-point-calc", {
+        region: binding.region,
+        bindingId: binding.id,
+        eventId: event.id,
+        musicId: normalPlanForm.musicId,
+        difficulty: "expert",
+        targetPt: Number(forecastPlanForm.currentPt)
+      }, auth.token);
+      if (isCurrentToolOperation("forecast", operation.requestId, operation.requestRegion)) {
+        const estimated = result.estimatedPt ?? result.eventPointBreakdown?.estimatedPt ?? result.ptPerRun;
+        if (Number.isFinite(Number(estimated))) setForecastPlanForm((current) => ({ ...current, ptPerRun: String(Math.round(Number(estimated))) }));
+        setForecastPlanResult({ eventPointEstimate: result, note: "已使用我的数据估算每局收益，请再运行目标规划。" });
+      }
+    } catch (error) {
+      finishToolOperation("forecast", operation.requestId, operation.requestRegion, error);
+      return;
     }
-    setForecastPlanResult({ eventPointEstimate: result, note: "已使用绑定 UID 数据估算每局收益，请再运行目标规划。" });
+    finishToolOperation("forecast", operation.requestId, operation.requestRegion);
   }
 
   async function calculateForecastPlan() {
@@ -2306,26 +2454,36 @@ export function App() {
       setForecastPlanResult({ note: "当前目标档线没有可用分数，无法用未知值生成规划。" });
       return;
     }
-    const result = await apiPost("/api/tools/score-control", {
-      region,
-      eventId: event.id,
-      targetRank,
-      currentPt: Number(forecastPlanForm.currentPt),
-      targetPt,
-      remainingMinutes: Number(forecastPlanForm.remainingMinutes),
-      ptPerRun: Number(forecastPlanForm.ptPerRun),
-      availableRuns: Number(forecastPlanForm.availableRuns)
-    });
-    setForecastPlanResult(result);
+    const operation = beginToolOperation("forecast");
+    if (!operation) return;
+    setForecastPlanResult(null);
+    try {
+      const result = await apiPost("/api/tools/score-control", {
+        region: operation.requestRegion,
+        eventId: event.id,
+        targetRank,
+        currentPt: Number(forecastPlanForm.currentPt),
+        targetPt,
+        remainingMinutes: Number(forecastPlanForm.remainingMinutes),
+        ptPerRun: Number(forecastPlanForm.ptPerRun),
+        availableRuns: Number(forecastPlanForm.availableRuns)
+      });
+      if (isCurrentToolOperation("forecast", operation.requestId, operation.requestRegion)) setForecastPlanResult(result);
+    } catch (error) {
+      finishToolOperation("forecast", operation.requestId, operation.requestRegion, error);
+      return;
+    }
+    finishToolOperation("forecast", operation.requestId, operation.requestRegion);
   }
 
   function ForecastPlannerPanel({ activeLines }: { activeLines: Array<{ rank: number }> }) {
     const forecastBinding = defaultBinding();
     const forecastBindingRegionMatches = !forecastBinding || forecastBinding.region === region;
+    const canUseForecastBinding = HARUKI_FEATURE_ENABLED && Boolean(forecastBinding && forecastBindingRegionMatches);
     const planningLines = activeLines.length ? activeLines : borders;
     const hasForecastControlResult = [forecastPlanResult?.remainingPt, forecastPlanResult?.requiredRuns, forecastPlanResult?.requiredPtPerHour].some((value) => typeof value === "number");
     const controlPtPerRun = finiteNumber(forecastPlanResult?.adjustedPtPerRun);
-    const hasBindingPointEstimate = !hasForecastControlResult && typeof forecastPlanResult?.note === "string" && forecastPlanResult.note.includes("绑定 UID 数据估算");
+    const hasBindingPointEstimate = !hasForecastControlResult && typeof forecastPlanResult?.note === "string" && forecastPlanResult.note.includes("使用我的数据估算");
     const bindingPointEstimate = hasBindingPointEstimate ? finiteNumber(forecastPlanResult?.eventPointEstimate?.estimatedPt ?? forecastPlanResult?.eventPointEstimate?.eventPointBreakdown?.estimatedPt ?? forecastPlanResult?.eventPointEstimate?.ptPerRun) : null;
     return <article className="panel forecast-planner-panel tool-forecast-planner-panel">
       <div className="panel-heading"><div><span className="forecast-section-kicker">目标规划</span><h2>估算达成路径</h2><p>输入当前进度与可用局数，查看是否接近目标档线。</p></div></div>
@@ -2336,8 +2494,10 @@ export function App() {
         <label><span>剩余分钟</span><input value={forecastPlanForm.remainingMinutes} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, remainingMinutes: event.target.value })} inputMode="numeric" /></label>
         <label><span>可打局数</span><input value={forecastPlanForm.availableRuns} onChange={(event) => setForecastPlanForm({ ...forecastPlanForm, availableRuns: event.target.value })} inputMode="numeric" /></label>
       </div>
-      <div className="button-row"><button type="button" onClick={calculateForecastPlan}>计算路径</button><button type="button" className="secondary" disabled={!forecastBinding || !forecastBindingRegionMatches || !normalPlanForm.musicId} onClick={estimateForecastPlanPtPerRun}>用绑定 UID 估算收益</button></div>
-      {forecastBinding && !forecastBindingRegionMatches && <p className="warning-text">当前页面区服 {region.toUpperCase()} 与绑定区服 {forecastBinding.region.toUpperCase()} 不一致，请先切换区服。</p>}
+      <div className="button-row"><button type="button" disabled={toolOperationState.forecast.loading} onClick={calculateForecastPlan}>{toolOperationState.forecast.loading ? "计算中…" : "计算路径"}</button>{canUseForecastBinding && <button type="button" className="secondary" disabled={toolOperationState.forecast.loading || !normalPlanForm.musicId} onClick={estimateForecastPlanPtPerRun}>{toolOperationState.forecast.loading ? "计算中…" : "使用我的数据"}</button>}</div>
+      {HARUKI_FEATURE_ENABLED && forecastBinding && !forecastBindingRegionMatches && <p className="warning-text">当前页面区服 {region.toUpperCase()} 与绑定区服 {forecastBinding.region.toUpperCase()} 不一致，请先切换区服。</p>}
+      {toolOperationState.forecast.loading && <p className="tool-operation-state" role="status"><RefreshCw size={14} className="spin" />正在计算目标规划…</p>}
+      {toolOperationState.forecast.error && <div className="tool-operation-state error" role="alert"><strong>计算失败</strong><span>{toolOperationState.forecast.error}</span></div>}
       {forecastPlanResult && <div className="forecast-plan-result">{forecastPlanResult.note && <p className="status-message">{forecastPlanResult.note}</p>}{bindingPointEstimate !== null && <div className="tool-result-metrics"><div><span>绑定估算单局 PT</span><strong>{formatNumber(bindingPointEstimate)} pt</strong></div></div>}{hasForecastControlResult && <div className="tool-result-metrics">{controlPtPerRun !== null && <div><span>本次每局收益</span><strong>{formatNumber(controlPtPerRun)} pt</strong></div>}<div><span>还差 PT</span><strong>{formatNumber(forecastPlanResult.remainingPt)} pt</strong></div><div><span>所需局数</span><strong>{formatNumber(forecastPlanResult.requiredRuns)} 局</strong></div><div><span>每小时需打</span><strong>{formatNumber(forecastPlanResult.requiredPtPerHour)} pt/h</strong></div><div><span>计划状态</span><strong>{forecastPlanResult.feasible === true ? "可行" : forecastPlanResult.feasible === false ? "需调整" : "待确认"}</strong></div></div>}<ToolResultWarnings result={forecastPlanResult} /><ToolJsonDetails value={forecastPlanResult} /></div>}
     </article>;
   }
@@ -2618,6 +2778,23 @@ export function App() {
   function ToolsPage() {
     const binding = defaultBinding();
     const bindingRegionMatches = !binding || binding.region === region;
+    const toolCategories: Array<{ id: ToolCategory; label: string; description: string }> = [
+      { id: "plan", label: "活动规划", description: "目标、歌曲与单局 PT" },
+      { id: "target", label: "目标控分", description: "档线目标与周回节奏" },
+      { id: "deck", label: "卡组推荐", description: "按持有卡筛选候选" },
+      { id: "music", label: "歌曲效率", description: "按 PT / 分钟排序" },
+      { id: "area", label: "区域道具", description: "升级优先级建议" },
+      { id: "mysekai", label: "MySekai", description: "玩家资产计算" }
+    ];
+    const requestedToolCategory = new URLSearchParams(location.search).get("tool");
+    const toolCategory = toolCategories.some((item) => item.id === requestedToolCategory) ? requestedToolCategory as ToolCategory : "plan";
+    const isLocalPreview = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    const canUseBinding = HARUKI_FEATURE_ENABLED && Boolean(binding && bindingRegionMatches);
+    const setToolCategory = (category: ToolCategory) => {
+      const params = new URLSearchParams(location.search);
+      params.set("tool", category);
+      navigate(`/section/tools?${params.toString()}`);
+    };
     const plan = normalPlanResult ?? boundPlanResult;
     const planDeckCards = plan?.deck?.recommendedDecks?.[0]?.cards ?? plan?.deck?.recommendedCards ?? [];
     const boostRates = [1, 5, 10, 15, 20, 25, 27, 29, 31, 33, 35];
@@ -2628,6 +2805,12 @@ export function App() {
     const selectedToolSong = songs.find((song) => song.id === normalPlanForm.musicId);
     const songSelectionReady = toolSongsStatus === "ready" && !toolDataLoading && !toolDataError && songs.length > 0 && Boolean(selectedToolSong);
     const forecastPlanningLines = forecastWindow === "all" ? forecast?.lines ?? [] : forecast?.windows?.[`${forecastWindow}h`] ?? [];
+    function ToolOperationFeedback({ operation, loadingLabel }: { operation: ToolOperationKey; loadingLabel: string }) {
+      const state = toolOperationState[operation];
+      if (state.loading) return <p className="tool-operation-state" role="status"><RefreshCw size={14} className="spin" />{loadingLabel}</p>;
+      if (state.error) return <div className="tool-operation-state error" role="alert"><strong>计算失败</strong><span>{state.error}</span></div>;
+      return null;
+    }
     function PlanResultView({ result }: { result: any }) {
       if (!result) return null;
       const sections = result.sections ?? {};
@@ -2679,8 +2862,8 @@ export function App() {
          </article>
        );
      }
-    function BoundToolResultView() {
-      if (!boundToolResult) return null;
+    function BoundToolResultView({ tool, excludeTools = [] }: { tool?: string; excludeTools?: string[] } = {}) {
+      if (!boundToolResult || (tool && boundToolResult.tool !== tool) || excludeTools.includes(boundToolResult.tool)) return null;
       const result = boundToolResult.result;
       const labels: Record<string, string> = { "event-point": "活动 PT", music: "歌曲推荐", area: "区域道具", mysekai: "MySekai" };
       return <section className="bound-tool-result"><div className="panel-heading compact-heading"><div><h3>{labels[boundToolResult.tool] ?? boundToolResult.tool}结果</h3><p>先展示主要结论，未确认或缺失字段不会隐藏。</p></div></div>
@@ -2699,24 +2882,22 @@ export function App() {
     return (
       <section className="tool-workspace tools-page">
         <article className="panel wide tools-intro"><div><span className="home-kicker">按游戏结算页填写</span><h2>活动计算工具</h2><p>字段下方会说明数值从哪里获取。可留空的项目会由绑定资产或公式默认值估算，并在结果中明确标记。</p></div><div className="boost-reference"><strong>火量倍率表</strong><div>{boostRates.map((rate, fires) => <span key={fires} className={Number(normalPlanForm.boost) === fires ? "active" : ""}><b>{fires} 火</b>x{rate}</span>)}</div><small>火量是开始 Live 前选择的消耗量；这里显示的是活动 PT 倍率。</small></div></article>
-        <article className="panel wide tools-account-panel">
-          <div className="panel-heading">
-            <div>
-              <h2>登录态资产联动</h2>
-              <p>{binding ? `当前使用 ${binding.region.toUpperCase()} / ${binding.displayName || binding.playerUid}` : (HARUKI_FEATURE_ENABLED ? "连接玩家数据后，可直接用跨端玩家快照驱动计算工具。" : "玩家数据连接功能暂未开放；仍可手动填写参数使用计算工具。")}</p>
-            </div>
-            <Link className="text-link" to={auth.isAuthenticated ? (HARUKI_FEATURE_ENABLED ? "/me/assets" : "/me") : "/login"}>{auth.isAuthenticated ? (HARUKI_FEATURE_ENABLED ? "连接玩家数据" : "账号中心") : "登录 / 注册"}</Link>
+        <section className="tools-connection-strip" aria-label="玩家数据连接状态">
+          <div>
+            <span className="tools-connection-kicker">玩家数据</span>
+            {!auth.isAuthenticated && <p>登录后可使用我的数据。</p>}
+            {auth.isAuthenticated && !HARUKI_FEATURE_ENABLED && isLocalPreview && <p>当前预览未启用玩家连接。请在正式站完成连接。</p>}
+            {auth.isAuthenticated && !HARUKI_FEATURE_ENABLED && !isLocalPreview && <p>当前环境未启用玩家连接。</p>}
+            {auth.isAuthenticated && HARUKI_FEATURE_ENABLED && !binding && <p>尚未连接玩家数据。</p>}
+            {auth.isAuthenticated && HARUKI_FEATURE_ENABLED && binding && !bindingRegionMatches && <p>已连接 {binding.region.toUpperCase()}，切换至该区服后可使用我的数据。</p>}
+            {auth.isAuthenticated && HARUKI_FEATURE_ENABLED && binding && bindingRegionMatches && <p>已连接 {binding.displayName || binding.playerUid} · {binding.region.toUpperCase()}</p>}
           </div>
-          <div className="button-row">
-            <button type="button" disabled={!binding || !bindingRegionMatches || !songSelectionReady} onClick={calculateBoundPlan}>绑定数据普通活动规划</button>
-            <button type="button" className="secondary" disabled={!binding || !bindingRegionMatches || !songSelectionReady} onClick={() => calculateBoundTool("event-point")}>绑定数据活动 PT</button>
-            <button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("music")}>绑定数据歌曲推荐</button>
-            <button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("area")}>绑定数据道具建议</button>
-            <button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("mysekai")}>绑定数据 MySekai</button>
-          </div>
-          {binding && !bindingRegionMatches && <p className="warning-text">当前页面区服 {region.toUpperCase()} 与绑定区服 {binding.region.toUpperCase()} 不一致，请先切换区服。</p>}
-          <BoundToolResultView />
-        </article>
+          {!auth.isAuthenticated ? <Link className="text-link" to="/login">登录</Link> : !HARUKI_FEATURE_ENABLED && isLocalPreview ? <a className="text-link" href="https://sekai-tools.cn/me/assets" target="_blank" rel="noreferrer">前往正式站连接</a> : !HARUKI_FEATURE_ENABLED ? <Link className="text-link" to="/me">账号中心</Link> : <Link className="text-link" to="/me/assets">{binding ? "管理连接" : "连接数据"}</Link>}
+        </section>
+        <nav className="tools-category-nav" aria-label="计算工具分类">
+          {toolCategories.map((item) => <button key={item.id} type="button" className={toolCategory === item.id ? "active" : ""} onClick={() => setToolCategory(item.id)} aria-current={toolCategory === item.id ? "page" : undefined}><strong>{item.label}</strong><small>{item.description}</small></button>)}
+        </nav>
+        {toolCategory === "plan" && <>
         <article className="panel wide normal-plan-panel tools-primary-panel">
           <div className="panel-heading compact-heading"><div><h2>普通活动规划</h2><p>一次计算推荐卡组、单局 PT、到目标所需局数、歌曲效率和区域道具建议。</p></div><span className="status-pill">当前区服 {region.toUpperCase()}</span></div>
           {toolDataLoading && <div className="tool-data-state"><RefreshCw size={16} className="spin" /><span>正在加载完整歌曲与卡牌数据…</span></div>}
@@ -2736,39 +2917,42 @@ export function App() {
             <ToolField label="持有卡牌 ID" help="公开模式用于推荐卡组，以逗号或空格分隔；登录后建议使用绑定 UID。"><textarea value={normalPlanForm.ownedCardIds} onChange={(event) => setNormalPlanForm({ ...normalPlanForm, ownedCardIds: event.target.value })} placeholder="例如 1, 2, 3, 4, 5" /></ToolField>
           </div>
           <div className="button-row">
-            <button type="button" disabled={!songSelectionReady} onClick={calculatePublicNormalPlan}><Wand2 size={16} />使用手动数据规划</button>
-            <button type="button" className="secondary" disabled={!binding || !bindingRegionMatches || !songSelectionReady} onClick={calculateBoundPlan}>使用绑定 UID 数据</button>
+            <button type="button" disabled={toolOperationState.plan.loading || !songSelectionReady} onClick={calculatePublicNormalPlan}><Wand2 size={16} />{toolOperationState.plan.loading ? "正在规划…" : "使用手动数据规划"}</button>
+            {canUseBinding && <button type="button" className="secondary" disabled={toolOperationState.plan.loading || !songSelectionReady} onClick={calculateBoundPlan}>{toolOperationState.plan.loading ? "正在规划…" : "使用我的数据"}</button>}
           </div>
+          <ToolOperationFeedback operation="plan" loadingLabel="正在生成普通活动规划…" />
           {toolSongsStatus === "ready" && songs.length > 0 && !normalPlanForm.musicId && <p className="warning-text">请先明确选择一首歌曲，规划和活动 PT 按钮才会启用。</p>}
         </article>
-        <ForecastPlannerPanel activeLines={forecastPlanningLines} />
         <PlanResultView result={plan} />
-        <section className="tools-secondary-grid" aria-label="周回与组卡工具">
-        <article className="panel tool-card-panel tools-control-panel"><div className="panel-heading compact-heading"><div><h2>周回 / 控分</h2><p>已有可靠的单局 PT 时，计算还需局数和每小时进度要求。</p></div></div><div className="tool-form-grid compact">
+        </>}
+        {toolCategory === "target" && <ForecastPlannerPanel activeLines={forecastPlanningLines} />}
+        {(toolCategory === "target" || toolCategory === "deck") && <section className="tools-secondary-grid" aria-label="目标控分与组卡工具">
+        {toolCategory === "target" && <article className="panel tool-card-panel tools-control-panel"><div className="panel-heading compact-heading"><div><h2>周回 / 控分</h2><p>已有可靠的单局 PT 时，计算还需局数和每小时进度要求。</p></div></div><div className="tool-form-grid compact">
           <ToolField label="当前活动 PT" unit="pt" help="活动页面当前累计 PT。"><input type="number" min="0" value={controlForm.currentPt} onChange={(event) => setControlForm({ ...controlForm, currentPt: event.target.value })} /></ToolField>
           <ToolField label="目标活动 PT" unit="pt" help="希望最终达到的累计 PT。"><input type="number" min="0" value={controlForm.targetPt} onChange={(event) => setControlForm({ ...controlForm, targetPt: event.target.value })} /></ToolField>
           <ToolField label="剩余时间" unit="分钟" help="例如 3 小时填 180。"><input type="number" min="0" value={controlForm.remainingMinutes} onChange={(event) => setControlForm({ ...controlForm, remainingMinutes: event.target.value })} /></ToolField>
           <ToolField label="单局活动 PT" unit="pt/局" help="填一局结算画面的活动 PT；不确定时先用上方规划估算。"><input type="number" min="0" value={controlForm.ptPerRun} onChange={(event) => setControlForm({ ...controlForm, ptPerRun: event.target.value })} placeholder="例如 55875" /></ToolField>
           <ToolField label="最多可打局数" unit="局" help="按体力、时间或预算估算的局数上限。"><input type="number" min="0" value={controlForm.availableRuns} onChange={(event) => setControlForm({ ...controlForm, availableRuns: event.target.value })} /></ToolField>
-        </div><button type="button" onClick={calculateControl}><Check size={16} />计算目标路径</button>{controlResult && <><div className="tool-result-metrics"><div><span>还差 PT</span><strong>{formatNumber(controlResult.remainingPt)}</strong></div><div><span>所需局数</span><strong>{formatNumber(controlResult.requiredRuns)} 局</strong></div><div><span>每小时需打</span><strong>{typeof controlResult.requiredRunsPerHour === "number" ? controlResult.requiredRunsPerHour.toFixed(1) : "-"} 局</strong></div><div><span>计划状态</span><strong>{controlResult.feasible ? "可行" : "需调整"}</strong></div></div><ToolResultWarnings result={controlResult} /><ToolJsonDetails value={controlResult} /></>}</article>
-        <article className="panel tool-card-panel tools-deck-panel">
+        </div><div className="button-row"><button type="button" disabled={toolOperationState.control.loading} onClick={calculateControl}><Check size={16} />{toolOperationState.control.loading ? "计算中…" : "计算目标路径"}</button>{canUseBinding && <button type="button" className="secondary" disabled={toolOperationState.bound.loading || !songSelectionReady} onClick={() => calculateBoundTool("event-point")}>{toolOperationState.bound.loading ? "计算中…" : "使用我的数据"}</button>}</div><ToolOperationFeedback operation="control" loadingLabel="正在计算目标路径…" />{boundToolKind === "event-point" && <ToolOperationFeedback operation="bound" loadingLabel="正在使用我的数据计算活动 PT…" />}<BoundToolResultView tool="event-point" />{controlResult && <><div className="tool-result-metrics"><div><span>还差 PT</span><strong>{formatNumber(controlResult.remainingPt)}</strong></div><div><span>所需局数</span><strong>{formatNumber(controlResult.requiredRuns)} 局</strong></div><div><span>每小时需打</span><strong>{typeof controlResult.requiredRunsPerHour === "number" ? controlResult.requiredRunsPerHour.toFixed(1) : "-"} 局</strong></div><div><span>计划状态</span><strong>{controlResult.feasible ? "可行" : "需调整"}</strong></div></div><ToolResultWarnings result={controlResult} /><ToolJsonDetails value={controlResult} /></>}</article>}
+        {toolCategory === "deck" && <article className="panel tool-card-panel tools-deck-panel">
           <div className="panel-heading compact-heading"><div><h2>组卡推荐</h2><p>卡牌 ID 可在卡牌图鉴详情中查看，公开模式只使用手动填写的持有卡。</p></div></div>
           <ToolField label="持有卡牌 ID" help="以逗号或空格分隔，只填写真正持有的卡。"><textarea value={deckOwnedIds} onChange={(event) => setDeckOwnedIds(event.target.value)} placeholder="例如 1, 2, 109, 325" /></ToolField>
           <button type="button" onClick={calculateDeck} disabled={deckLoading}><Wand2 size={16} />{deckLoading ? "正在推荐…" : "推荐卡组"}</button>
           {deckError && <div className="catalog-feedback error" role="alert"><strong>组卡推荐失败</strong><span>{playerErrorMessage(deckError)}</span><button type="button" className="secondary" onClick={calculateDeck}>重试</button></div>}
           {deckResult && <><DeckRecommendationPreview result={deckResult} /><ToolResultWarnings result={deckResult} /><ToolJsonDetails value={deckResult} /></>}
-         </article>
-         </section>
-         <section className="tools-output-grid" aria-label="歌曲效率与区域道具">
-         <article className="panel wide tool-card-panel tools-music-panel"><div className="panel-heading compact-heading"><div><h2>周回歌曲推荐</h2><p>按共享活动 PT 公式计算候选歌曲，再按每分钟 PT 排序。</p></div></div><div className="tool-form-grid">
+         </article>}
+         </section>}
+         {(toolCategory === "music" || toolCategory === "area" || toolCategory === "mysekai") && <section className="tools-output-grid" aria-label="歌曲效率、区域道具与 MySekai">
+         {toolCategory === "music" && <article className="panel wide tool-card-panel tools-music-panel"><div className="panel-heading compact-heading"><div><h2>周回歌曲推荐</h2><p>按共享活动 PT 公式计算候选歌曲，再按每分钟 PT 排序。</p></div></div><div className="tool-form-grid">
           <ToolField label="目标 / 当前 PT" help="用于估算每首歌到目标还需多少局。"><div className="inline-pair"><input type="number" min="0" value={musicRecommendForm.targetPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, targetPt: event.target.value })} placeholder="目标 PT" /><input type="number" min="0" value={musicRecommendForm.currentPt} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, currentPt: event.target.value })} placeholder="当前 PT" /></div></ToolField>
           <ToolField label="活动加成" unit="%" help="编成页面显示 621% 就填 621。"><input type="number" min="0" value={musicRecommendForm.eventBonusPercent} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, eventBonusPercent: event.target.value })} /></ToolField>
           <ToolField label="预计结算分数" unit="分" help="填最近同队伍、同模式的结算分数；可留空。"><input type="number" min="0" value={musicRecommendForm.baseScore} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, baseScore: event.target.value })} /></ToolField>
           <ToolField label="Live 类型 / 火量" help="火量按页面上方倍率表计算。"><div className="inline-pair"><select value={musicRecommendForm.liveType} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, liveType: event.target.value })}>{liveTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select value={musicRecommendForm.boost} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, boost: event.target.value })}>{boostRates.map((rate, fires) => <option key={fires} value={fires}>{fires} 火（x{rate}）</option>)}</select></div></ToolField>
           <ToolField label="难度 / 最长时长" help="只比较指定难度且不超过该时长的谱面。"><div className="inline-pair"><select value={musicRecommendForm.preferredDifficulty} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, preferredDifficulty: event.target.value })}>{difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty.toUpperCase()}</option>)}</select><input type="number" min="1" value={musicRecommendForm.maxDurationSeconds} onChange={(event) => setMusicRecommendForm({ ...musicRecommendForm, maxDurationSeconds: event.target.value })} placeholder="最长秒数" /></div></ToolField>
-        </div><button type="button" onClick={calculateMusicRecommend}><Music size={16} />计算歌曲效率</button>{musicRecommendResult && <><RecommendationList items={musicRecommendResult.recommendations} type="music" /><ToolResultWarnings result={musicRecommendResult} /><ToolJsonDetails value={musicRecommendResult} /></>}</article>
-         <article className="panel wide tool-card-panel tools-area-panel"><div className="panel-heading compact-heading"><div><h2>区域道具升级建议</h2><p>对照 Moesekai 区域道具公式，比较目标卡组升级前后的综合力变化；成本数据缺失时明确标记。</p></div></div><div className="tool-form-grid"><ToolField label="目标卡组 ID" help="填写正在使用的 1–5 张卡牌 ID；绑定资产可结合当前区域道具等级与素材。"><textarea value={areaRecommendForm.cardIds} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, cardIds: event.target.value })} placeholder="例如 101, 205, 309, 410, 512" /></ToolField><ToolField label="排序方式" help="选择更看重金币效率、绝对综合力提升或当前材料是否足够。"><select value={areaRecommendForm.sortBy} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, sortBy: event.target.value })}><option value="coin-efficiency">金币效率优先</option><option value="power-gain">综合力提升优先</option><option value="affordable">当前可升级优先</option></select></ToolField><label className="tool-check-field"><input type="checkbox" checked={areaRecommendForm.includeUnaffordable} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, includeUnaffordable: event.target.checked })} /><span><strong>显示材料不足的项目</strong><small>材料数据缺失时仍会保留候选并标明成本未知。</small></span></label></div><div className="button-row"><button type="button" onClick={calculateAreaRecommend}><Package size={16} />用手动卡组生成建议</button><button type="button" className="secondary" disabled={!binding} onClick={() => calculateBoundTool("area")}>使用绑定 UID 资产</button></div>{areaRecommendResult && <><RecommendationList items={areaRecommendResult.recommendations} type="area" /><ToolResultWarnings result={areaRecommendResult} /><ToolJsonDetails value={areaRecommendResult} /></>}</article>
-         </section>
+        </div><div className="button-row"><button type="button" disabled={toolOperationState.music.loading} onClick={calculateMusicRecommend}><Music size={16} />{toolOperationState.music.loading ? "计算中…" : "计算歌曲效率"}</button>{canUseBinding && <button type="button" className="secondary" disabled={toolOperationState.bound.loading} onClick={() => calculateBoundTool("music")}>{toolOperationState.bound.loading ? "计算中…" : "使用我的数据"}</button>}</div><ToolOperationFeedback operation="music" loadingLabel="正在计算歌曲效率…" />{boundToolKind === "music" && <ToolOperationFeedback operation="bound" loadingLabel="正在使用我的数据计算歌曲效率…" />}<BoundToolResultView tool="music" />{musicRecommendResult && <><RecommendationList items={musicRecommendResult.recommendations} type="music" /><ToolResultWarnings result={musicRecommendResult} /><ToolJsonDetails value={musicRecommendResult} /></>}</article>}
+         {toolCategory === "area" && <article className="panel wide tool-card-panel tools-area-panel"><div className="panel-heading compact-heading"><div><h2>区域道具升级建议</h2><p>对照 Moesekai 区域道具公式，比较目标卡组升级前后的综合力变化；成本数据缺失时明确标记。</p></div></div><div className="tool-form-grid"><ToolField label="目标卡组 ID" help="填写正在使用的 1–5 张卡牌 ID；绑定资产可结合当前区域道具等级与素材。"><textarea value={areaRecommendForm.cardIds} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, cardIds: event.target.value })} placeholder="例如 101, 205, 309, 410, 512" /></ToolField><ToolField label="排序方式" help="选择更看重金币效率、绝对综合力提升或当前材料是否足够。"><select value={areaRecommendForm.sortBy} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, sortBy: event.target.value })}><option value="coin-efficiency">金币效率优先</option><option value="power-gain">综合力提升优先</option><option value="affordable">当前可升级优先</option></select></ToolField><label className="tool-check-field"><input type="checkbox" checked={areaRecommendForm.includeUnaffordable} onChange={(event) => setAreaRecommendForm({ ...areaRecommendForm, includeUnaffordable: event.target.checked })} /><span><strong>显示材料不足的项目</strong><small>材料数据缺失时仍会保留候选并标明成本未知。</small></span></label></div><div className="button-row"><button type="button" disabled={toolOperationState.area.loading || toolOperationState.bound.loading} onClick={calculateAreaRecommend}><Package size={16} />{toolOperationState.area.loading ? "计算中…" : "用手动卡组生成建议"}</button>{canUseBinding && <button type="button" className="secondary" disabled={toolOperationState.bound.loading || toolOperationState.area.loading} onClick={() => calculateBoundTool("area")}>{toolOperationState.bound.loading ? "计算中…" : "使用我的数据"}</button>}</div><ToolOperationFeedback operation="area" loadingLabel="正在生成道具升级建议…" />{boundToolKind === "area" && <ToolOperationFeedback operation="bound" loadingLabel="正在使用我的数据生成道具建议…" />}<BoundToolResultView tool="area" />{areaRecommendResult && <><RecommendationList items={areaRecommendResult.recommendations} type="area" /><ToolResultWarnings result={areaRecommendResult} /><ToolJsonDetails value={areaRecommendResult} /></>}</article>}
+         {toolCategory === "mysekai" && <article className="panel wide tool-card-panel tools-mysekai-panel"><div className="panel-heading compact-heading"><div><h2>MySekai 玩家数据</h2><p>使用已连接的玩家资产进行 MySekai 计算；图鉴与手动参数在独立页面管理。</p></div></div><div className="button-row">{canUseBinding && <button type="button" disabled={toolOperationState.bound.loading} onClick={() => calculateBoundTool("mysekai")}>{toolOperationState.bound.loading ? "计算中…" : "使用我的数据"}</button>}<button type="button" className="secondary" onClick={() => goSection("mysekai")}>打开 MySekai 图鉴与计算器</button></div>{!canUseBinding && <p className="empty-state">连接与当前区服一致的玩家数据后，可在这里直接计算。</p>}{boundToolKind === "mysekai" && <ToolOperationFeedback operation="bound" loadingLabel="正在使用我的数据计算 MySekai…" />}<BoundToolResultView tool="mysekai" /></article>}
+         </section>}
       </section>
     );
   }

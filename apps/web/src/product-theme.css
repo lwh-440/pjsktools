@@ -1924,6 +1924,32 @@ button.appearance-switch:hover {
 .tools-page .bound-tool-result { min-width: 0; }
 .tools-page .tool-data-state,
 .tools-page .catalog-feedback { min-width: 0; overflow-wrap: anywhere; }
+.tools-page .tool-operation-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(0,127,130,.14);
+  border-radius: 10px;
+  background: linear-gradient(110deg, rgba(230,248,245,.68), rgba(255,255,255,.72));
+  color: #35666a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.tools-page .tool-operation-state.error {
+  align-items: flex-start;
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  border-color: rgba(172,73,97,.22);
+  background: rgba(255,246,248,.8);
+  color: #805160;
+}
+.tools-page .tool-operation-state.error strong { color: #9b3f57; font-size: 12px; }
+.tools-page .tool-operation-state.error span { overflow-wrap: anywhere; }
+.tools-page .tool-operation-state .spin { flex: 0 0 auto; color: #008f8e; animation: tool-operation-spin .8s linear infinite; }
+@keyframes tool-operation-spin { to { transform: rotate(360deg); } }
 .tools-page .tools-secondary-grid .button-row button,
 .tools-page .tools-output-grid .button-row button { flex-basis: 180px; }
 
@@ -1955,6 +1981,92 @@ button.appearance-switch:hover {
   .tools-page *,
   .tools-page *::before,
   .tools-page *::after { animation: none !important; transition: none !important; }
+}
+
+/* Tools are a small workspace: one task at a time, with stateful category URLs. */
+.tools-page .tools-intro {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(0, 127, 130, .2);
+  background:
+    linear-gradient(90deg, rgba(0, 127, 130, .08) 1px, transparent 1px) 0 0 / 34px 34px,
+    linear-gradient(0deg, rgba(0, 127, 130, .06) 1px, transparent 1px) 0 0 / 34px 34px,
+    linear-gradient(120deg, #fff, #effaf8 72%, #fff9ee);
+}
+.tools-page .tools-intro::after {
+  display: block;
+  position: absolute;
+  right: 24px;
+  bottom: 20px;
+  width: 116px;
+  height: 26px;
+  border-top: 1px solid rgba(0, 127, 130, .32);
+  border-bottom: 1px solid rgba(0, 127, 130, .16);
+  content: "";
+  transform: skewX(-28deg);
+}
+.tools-page .tools-connection-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+  padding: 11px 15px;
+  border-top: 1px solid rgba(0, 127, 130, .17);
+  border-bottom: 1px solid rgba(0, 127, 130, .17);
+  background: rgba(238, 249, 247, .66);
+}
+.tools-page .tools-connection-strip > div { min-width: 0; }
+.tools-page .tools-connection-kicker { color: #08787a; font-size: 11px; font-weight: 800; letter-spacing: .06em; }
+.tools-page .tools-connection-strip p { margin: 2px 0 0; color: #42676a; font-size: 12px; line-height: 1.45; }
+.tools-page .tools-connection-strip .text-link { flex: 0 0 auto; font-size: 12px; font-weight: 700; text-decoration: none; }
+.tools-page .tools-category-nav {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 3px 1px 8px;
+  scrollbar-width: thin;
+}
+.tools-page .tools-category-nav button {
+  display: grid;
+  flex: 0 0 138px;
+  min-height: 58px;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 127, 130, .16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .74);
+  color: #4a6d70;
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+.tools-page .tools-category-nav button:hover { border-color: rgba(0, 157, 154, .46); transform: translateY(-1px); }
+.tools-page .tools-category-nav button.active { border-color: rgba(0, 127, 130, .5); background: linear-gradient(135deg, rgba(223, 247, 242, .96), rgba(255, 255, 255, .92)); color: #08787a; box-shadow: inset 3px 0 #009d9a, 0 5px 12px rgba(0, 104, 104, .06); }
+.tools-page .tools-category-nav strong { font-size: 13px; }
+.tools-page .tools-category-nav small { color: inherit; font-size: 10px; font-weight: 500; line-height: 1.25; }
+.tools-page .tools-secondary-grid,
+.tools-page .tools-output-grid { grid-template-columns: minmax(0, 1fr); }
+.tools-page .tools-secondary-grid > .panel,
+.tools-page .tools-output-grid > .panel { grid-column: 1; }
+.tools-page .tools-primary-panel,
+.tools-page .tools-secondary-grid > .panel,
+.tools-page .tools-output-grid > .panel {
+  background: linear-gradient(145deg, rgba(255, 255, 255, .93), rgba(239, 250, 248, .77));
+  backdrop-filter: blur(12px) saturate(120%);
+}
+.tools-page .tools-mysekai-panel { border-left: 3px solid rgba(93, 125, 191, .55); }
+.tools-page .tools-mysekai-panel .button-row { display: flex; flex-wrap: wrap; gap: 9px; }
+.tools-page .tools-mysekai-panel .button-row button { flex: 1 1 210px; min-height: 42px; }
+
+@media (max-width: 640px) {
+  .tools-page .tools-intro::after { right: 12px; bottom: 15px; width: 76px; }
+  .tools-page .tools-connection-strip { align-items: flex-start; gap: 10px; padding: 10px 12px; }
+  .tools-page .tools-connection-strip .text-link { padding-top: 5px; white-space: nowrap; }
+  .tools-page .tools-category-nav { margin-inline: -1px; padding-bottom: 6px; }
+  .tools-page .tools-category-nav button { flex-basis: 126px; min-height: 54px; padding: 9px 10px; }
+  .tools-page .tools-mysekai-panel .button-row { flex-direction: column; }
+  .tools-page .tools-mysekai-panel .button-row button { width: 100%; flex: 0 0 auto; min-height: 44px; }
 }
 
 /* Deck comparison workspace. Keep wide result data in a local scroller so the
