@@ -765,6 +765,9 @@ export function App() {
   ]);
   const [deckCompareResult, setDeckCompareResult] = useState<any>(null);
   const [deckCompareError, setDeckCompareError] = useState("");
+  const [deckCompareLoading, setDeckCompareLoading] = useState(false);
+  const deckCompareRequestId = useRef(0);
+  const deckCompareLoadingRef = useRef(false);
   const [deckCompareHistory, setDeckCompareHistory] = useState<DeckCompareHistoryItem[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -879,6 +882,11 @@ export function App() {
     setDeckLoading(false);
     setDeckResult(null);
     setDeckError("");
+    deckCompareRequestId.current += 1;
+    deckCompareLoadingRef.current = false;
+    setDeckCompareLoading(false);
+    setDeckCompareResult(null);
+    setDeckCompareError("");
     setRegion(nextRegion);
     if (/^\/section\/stories\/.+/.test(location.pathname)) navigate("/section/stories", { replace: true });
   }
@@ -972,6 +980,11 @@ export function App() {
     setDeckLoading(false);
     deckLoadingRef.current = false;
     deckRequestId.current += 1;
+    deckCompareRequestId.current += 1;
+    deckCompareLoadingRef.current = false;
+    setDeckCompareLoading(false);
+    setDeckCompareResult(null);
+    setDeckCompareError("");
     resetToolOperationState();
     return () => {
       if (baseRequest.current?.region === region) baseRequest.current.controller.abort();
@@ -1034,6 +1047,13 @@ export function App() {
       window.localStorage.setItem(deckCompareHistoryKey, JSON.stringify(deckCompareHistory.slice(0, 20)));
     }
   }, [deckCompareHistory]);
+
+  useEffect(() => {
+    if (!deckCompareLoadingRef.current) return;
+    deckCompareRequestId.current += 1;
+    deckCompareLoadingRef.current = false;
+    setDeckCompareLoading(false);
+  }, [deckCompareForm, deckCompareCandidates, deckCompareTeammates]);
 
   useEffect(() => { setVirtualLiveDisplayCount(60); }, [region, virtualLiveSearch, virtualLiveSort]);
 
@@ -1773,6 +1793,7 @@ export function App() {
   }
 
   async function calculateDeckCompare() {
+    if (deckCompareLoadingRef.current) return;
     const binding = defaultBinding();
     if (!deckCompareForm.musicId) {
       setDeckCompareError("请先选择一首歌曲，再运行比较。");
@@ -1789,6 +1810,11 @@ export function App() {
     }
     const useAuthenticated = Boolean(auth.token && binding && deckCompareCandidates.some((candidate) => candidate.mode === "saved"));
     const endpoint = useAuthenticated ? "/api/me/tools/deck-compare" : "/api/tools/deck-compare";
+    const requestId = ++deckCompareRequestId.current;
+    const requestRegion = region;
+    deckCompareLoadingRef.current = true;
+    setDeckCompareLoading(true);
+    setDeckCompareResult(null);
     try {
       setDeckCompareError("");
       const candidates = deckCompareCandidates.map((candidate) => buildDeckCompareCandidatePayload(candidate, useAuthenticated ? binding : undefined));
@@ -1813,7 +1839,12 @@ export function App() {
         if (payload.skills.length !== 6) throw new Error("Exact 模式需要填写恰好 6 个技能值。");
       }
       const result = await apiPost<any>(endpoint, payload, useAuthenticated ? auth.token : undefined);
+      if (deckCompareRequestId.current !== requestId || regionRef.current !== requestRegion) return;
       setDeckCompareResult(result);
+      const winnerName = (winner: any) => {
+        const winnerId = winner?.id ?? winner;
+        return candidates.find((candidate: any) => String(candidate.id) === String(winnerId))?.name ?? winner?.name ?? winnerId ?? "-";
+      };
       setDeckCompareHistory((current) => [{
         id: `${Date.now()}`,
         createdAt: new Date().toISOString(),
@@ -1822,13 +1853,18 @@ export function App() {
         difficulty: payload.difficulty,
         scoreMode: payload.scoreMode,
         candidates: candidates.map((candidate: any) => candidate.name ?? candidate.id),
-        winnerByScore: result.winnerByScore?.name ?? result.winnerByScore?.id,
-        winnerByEventPoint: result.winnerByEventPoint?.name ?? result.winnerByEventPoint?.id,
+        winnerByScore: winnerName(result.winnerByScore),
+        winnerByEventPoint: winnerName(result.winnerByEventPoint),
         scoreDelta: result.scoreDelta,
         eventPointDelta: result.eventPointDelta
       }, ...current].slice(0, 20));
     } catch (error) {
-      setDeckCompareError(error instanceof Error ? error.message : String(error));
+      if (deckCompareRequestId.current === requestId && regionRef.current === requestRegion) setDeckCompareError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (deckCompareRequestId.current === requestId && regionRef.current === requestRegion) {
+        deckCompareLoadingRef.current = false;
+        setDeckCompareLoading(false);
+      }
     }
   }
 
@@ -2627,19 +2663,25 @@ export function App() {
     const missingFields = [...asArray(deckCompareResult?.missingFields), ...comparisons.flatMap((item: any) => asArray(item.missingFields))].slice(0, 16);
     const estimatedFields = [...asArray(deckCompareResult?.estimatedFieldsUsed), ...comparisons.flatMap((item: any) => asArray(item.estimatedFieldsUsed))].slice(0, 16);
     const exactTrace = deckCompareResult?.liveExactTrace ?? deckCompareResult?.noteScoreSummary;
+    const comparisonName = (winner: any) => {
+      const winnerId = winner?.id ?? winner;
+      return deckCompareCandidates.find((item) => String(item.id) === String(winnerId))?.name ?? comparisons.find((item: any) => String(item.id) === String(winnerId))?.name ?? winner?.name ?? winnerId ?? "-";
+    };
+    const sourceLabel = (source: unknown) => ({ manual: "手动填写", cards: "持有卡牌", saved: "保存卡组" }[String(source)] ?? String(source ?? "-"));
+    const statusLabel = (status: unknown) => ({ ok: "已完成", matched: "已核对", estimated: "估算", partial: "部分数据" }[String(status)] ?? String(status ?? "未提供"));
     return (
       <section className="deck-compare-workspace deck-compare-page">
         <article className="panel wide deck-compare-hero">
           <div className="panel-heading">
             <div>
               <h2>卡组比较</h2>
-              <p>比较 2-5 个卡组方案的多人 Live 分数与活动 PT；登录态可引用当前 binding 的保存卡组。</p>
+              <p>在同一首歌和同一套 Live 条件下，比较 2-5 个卡组的预计分数与活动 PT。</p>
             </div>
             <Link className="text-link" to={auth.isAuthenticated ? "/me/deck" : "/login"}>{auth.isAuthenticated ? "管理保存卡组" : "登录后使用保存卡组"}</Link>
           </div>
           <div className="summary-grid compact-summary">
-            <div><span>区服</span><strong>{(binding?.region ?? region).toUpperCase()}</strong></div>
-            <div><span>模式</span><strong>{deckCompareForm.scoreMode}</strong></div>
+            <div><span>本次区服</span><strong>{region.toUpperCase()}</strong></div>
+            <div><span>计算精度</span><strong>{deckCompareForm.scoreMode === "exact" ? "精细计算" : "快速估算"}</strong></div>
             <div><span>保存卡组</span><strong>{formatNumber(savedDeckConfigs.length)}</strong></div>
             <div><span>比较方案</span><strong>{formatNumber(deckCompareCandidates.length)}</strong></div>
           </div>
@@ -2647,47 +2689,47 @@ export function App() {
 
         <div className="deck-compare-layout">
           <article className="panel deck-compare-controls">
-            <div className="panel-heading compact-heading"><div><h3>Live 参数</h3><p>{binding ? `当前绑定 ${binding.region.toUpperCase()} / ${binding.displayName || binding.playerUid}` : "公开模式使用当前页面区服。"}</p></div></div>
+            <div className="panel-heading compact-heading"><div><span className="deck-compare-section-kicker">第一步</span><h3>Live 条件</h3><p>{binding ? `已连接 ${binding.region.toUpperCase()} / ${binding.displayName || binding.playerUid}` : "使用当前页面区服与手动填写的参数。"}</p></div></div>
             {toolDataLoading && <div className="deck-compare-data-state" role="status">正在加载歌曲与卡牌数据…</div>}
             {toolSongsStatus === "error" && <div className="deck-compare-data-state error" role="alert"><span>歌曲列表加载失败：{playerErrorMessage(toolSongsError || toolDataError)}</span><button type="button" className="secondary" onClick={() => ensureFullToolData(true).catch((error) => setMessage(playerErrorMessage(error)))}>重试加载</button></div>}
             {toolDataError && toolSongsStatus !== "error" && <div className="deck-compare-data-state error" role="alert"><span>比较所需数据加载失败：{playerErrorMessage(toolDataError)}</span><button type="button" className="secondary" onClick={() => ensureFullToolData().catch((error) => setMessage(playerErrorMessage(error)))}>重试加载</button></div>}
             {toolSongsStatus === "ready" && songs.length === 0 && <div className="deck-compare-data-state">当前区服暂无歌曲，暂不能运行比较。</div>}
-            <div className="two-col">
-              <select value={deckCompareForm.musicId} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, musicId: event.target.value })}>
+            <div className="two-col deck-compare-field-grid">
+              <label><span>歌曲</span><select value={deckCompareForm.musicId} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, musicId: event.target.value })}>
                 <option value="">请选择歌曲</option>
                 {songs.map((song) => <option key={song.id} value={song.id}>{song.id} · {song.title}</option>)}
-              </select>
-              <select value={deckCompareForm.difficulty} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, difficulty: event.target.value })}>
+              </select></label>
+              <label><span>难度</span><select value={deckCompareForm.difficulty} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, difficulty: event.target.value })}>
                 {difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty}</option>)}
-              </select>
-              <select value={deckCompareForm.liveType} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, liveType: event.target.value })}>
-                <option value="multi">Multi</option>
-                <option value="cheerful">Cheerful</option>
-                <option value="solo">Solo</option>
-                <option value="challenge">Challenge</option>
-              </select>
-              <select value={deckCompareForm.scoreMode} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, scoreMode: event.target.value })}>
-                <option value="aggregate">Aggregate</option>
-                <option value="exact">Exact</option>
-              </select>
-              <input value={deckCompareForm.boost} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, boost: event.target.value })} placeholder="火量" />
-              <input value={deckCompareForm.eventBonusPercent} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, eventBonusPercent: event.target.value })} placeholder="活动加成 %" />
-              <select value={deckCompareForm.skill15Strategy} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, skill15Strategy: event.target.value })}>
+              </select></label>
+              <label><span>Live 类型</span><select value={deckCompareForm.liveType} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, liveType: event.target.value })}>
+                <option value="multi">多人 Live</option>
+                <option value="cheerful">欢乐嘉年华</option>
+                <option value="solo">单人 Live</option>
+                <option value="challenge">挑战 Live</option>
+              </select></label>
+              <label><span>计算方式</span><select value={deckCompareForm.scoreMode} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, scoreMode: event.target.value })}>
+                <option value="aggregate">快速估算</option>
+                <option value="exact">精细计算</option>
+              </select></label>
+              <label><span>火量</span><input value={deckCompareForm.boost} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, boost: event.target.value })} inputMode="numeric" /></label>
+              <label><span>活动加成 %</span><input value={deckCompareForm.eventBonusPercent} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, eventBonusPercent: event.target.value })} inputMode="numeric" /></label>
+              <label><span>普通技能策略</span><select value={deckCompareForm.skill15Strategy} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, skill15Strategy: event.target.value })}>
                 <option value="expected">Skill 1-5 期望</option>
                 <option value="best">Skill 1-5 最佳</option>
                 <option value="worst">Skill 1-5 最差</option>
-              </select>
-              <select value={deckCompareForm.skill6Mode} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, skill6Mode: event.target.value })}>
+              </select></label>
+              <label><span>队长技能策略</span><select value={deckCompareForm.skill6Mode} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, skill6Mode: event.target.value })}>
                 <option value="team-average">Skill 6 队伍均值</option>
                 <option value="highest-power">Skill 6 最高综合力</option>
-              </select>
+              </select></label>
             </div>
-            {deckCompareForm.scoreMode === "exact" && <textarea value={deckCompareForm.exactSkills} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, exactSkills: event.target.value })} placeholder="Exact 模式技能值，例如 250,250,250,250,250,250" />}
+            {deckCompareForm.scoreMode === "exact" && <label className="deck-compare-full-field"><span>六个技能值</span><textarea value={deckCompareForm.exactSkills} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, exactSkills: event.target.value })} placeholder="例如 250,250,250,250,250,250" /></label>}
             <label className="check-line"><input type="checkbox" checked={deckCompareForm.unifiedTeammates} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, unifiedTeammates: event.target.checked })} /> 四名队友使用统一参数</label>
             {deckCompareForm.unifiedTeammates ? (
-              <div className="two-col">
-                <input value={deckCompareForm.teammatePower} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, teammatePower: event.target.value })} placeholder="队友综合力" />
-                <input value={deckCompareForm.teammateEffectiveness} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, teammateEffectiveness: event.target.value })} placeholder="队友技能值" />
+              <div className="two-col deck-compare-field-grid">
+                <label><span>每名队友综合力</span><input value={deckCompareForm.teammatePower} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, teammatePower: event.target.value })} inputMode="numeric" /></label>
+                <label><span>每名队友技能值</span><input value={deckCompareForm.teammateEffectiveness} onChange={(event) => setDeckCompareForm({ ...deckCompareForm, teammateEffectiveness: event.target.value })} inputMode="numeric" /></label>
               </div>
             ) : (
               <div className="deck-compare-teammates">
@@ -2698,7 +2740,7 @@ export function App() {
 
           <article className="panel deck-compare-candidates">
             <div className="panel-heading compact-heading">
-              <div><h3>比较方案</h3><p>手动综合力、cardIds 与登录态保存卡组可以混合比较。</p></div>
+              <div><span className="deck-compare-section-kicker">第二步</span><h3>比较方案</h3><p>可混合填写手动数值、持有卡牌，或引用保存的卡组。</p></div>
               <button type="button" className="secondary" disabled={deckCompareCandidates.length >= 5} onClick={addDeckCompareCandidate}><Plus size={16} />新增</button>
             </div>
             {deckCompareCandidates.map((candidate, index) => (
@@ -2707,22 +2749,22 @@ export function App() {
                   <strong>{candidate.name || `方案 ${index + 1}`}</strong>
                   <button type="button" className="icon-button" disabled={deckCompareCandidates.length <= 2} onClick={() => removeDeckCompareCandidate(candidate.id)} aria-label="删除方案"><Trash2 size={16} /></button>
                 </div>
-                <div className="two-col">
-                  <input value={candidate.name} onChange={(event) => updateDeckCompareCandidate(candidate.id, { name: event.target.value })} placeholder="方案名称" />
-                  <select value={candidate.mode} onChange={(event) => updateDeckCompareCandidate(candidate.id, { mode: event.target.value as DeckCompareCandidateMode })}>
-                    <option value="manual">手动 power/effectiveness</option>
-                    <option value="cards">输入 cardIds</option>
+                <div className="two-col deck-compare-field-grid">
+                  <label><span>方案名称</span><input value={candidate.name} onChange={(event) => updateDeckCompareCandidate(candidate.id, { name: event.target.value })} /></label>
+                  <label><span>方案来源</span><select value={candidate.mode} onChange={(event) => updateDeckCompareCandidate(candidate.id, { mode: event.target.value as DeckCompareCandidateMode })}>
+                    <option value="manual">手动填写数值</option>
+                    <option value="cards">填写持有卡牌</option>
                     <option value="saved" disabled={!binding}>保存卡组</option>
-                  </select>
+                  </select></label>
                 </div>
-                {candidate.mode === "manual" && <div className="two-col"><input value={candidate.power} onChange={(event) => updateDeckCompareCandidate(candidate.id, { power: event.target.value })} placeholder="综合力" /><input value={candidate.effectiveness} onChange={(event) => updateDeckCompareCandidate(candidate.id, { effectiveness: event.target.value })} placeholder="技能值" /></div>}
-                {candidate.mode === "cards" && <textarea value={candidate.cardIds} onChange={(event) => updateDeckCompareCandidate(candidate.id, { cardIds: event.target.value })} placeholder="cardIds，例如 1,2,3,4,5" />}
-                {candidate.mode === "saved" && <select value={candidate.deckConfigId} onChange={(event) => updateDeckCompareCandidate(candidate.id, { deckConfigId: event.target.value })}><option value="">选择保存卡组</option>{savedDeckConfigs.map((config) => <option key={config.id} value={config.id}>{config.name} · {config.cardIds.length} 张</option>)}</select>}
+                {candidate.mode === "manual" && <div className="two-col deck-compare-field-grid"><label><span>综合力</span><input value={candidate.power} onChange={(event) => updateDeckCompareCandidate(candidate.id, { power: event.target.value })} inputMode="numeric" /></label><label><span>技能值</span><input value={candidate.effectiveness} onChange={(event) => updateDeckCompareCandidate(candidate.id, { effectiveness: event.target.value })} inputMode="numeric" /></label></div>}
+                {candidate.mode === "cards" && <label className="deck-compare-full-field"><span>持有卡牌 ID</span><textarea value={candidate.cardIds} onChange={(event) => updateDeckCompareCandidate(candidate.id, { cardIds: event.target.value })} placeholder="例如 1, 2, 3, 4, 5" /></label>}
+                {candidate.mode === "saved" && <label className="deck-compare-full-field"><span>已保存的卡组</span><select value={candidate.deckConfigId} onChange={(event) => updateDeckCompareCandidate(candidate.id, { deckConfigId: event.target.value })}><option value="">选择保存卡组</option>{savedDeckConfigs.map((config) => <option key={config.id} value={config.id}>{config.name} · {config.cardIds.length} 张</option>)}</select></label>}
               </section>
             ))}
             <div className="button-row">
-              <button type="button" disabled={toolSongsStatus !== "ready" || toolDataLoading || Boolean(toolDataError) || !deckCompareForm.musicId} onClick={calculateDeckCompare}><BarChart3 size={16} />运行比较</button>
-              <button type="button" className="secondary" onClick={() => setDeckCompareResult(null)}>清空结果</button>
+              <button type="button" disabled={deckCompareLoading || toolSongsStatus !== "ready" || toolDataLoading || Boolean(toolDataError) || !deckCompareForm.musicId} onClick={calculateDeckCompare}><BarChart3 size={16} />{deckCompareLoading ? "比较中…" : "运行比较"}</button>
+              <button type="button" className="secondary" disabled={deckCompareLoading} onClick={() => { deckCompareRequestId.current += 1; deckCompareLoadingRef.current = false; setDeckCompareLoading(false); setDeckCompareResult(null); setDeckCompareError(""); }}>清空结果</button>
             </div>
             {deckCompareError && <p className="warning-text">{deckCompareError}</p>}
           </article>
@@ -2731,16 +2773,17 @@ export function App() {
         {deckCompareResult && (
           <article className="panel wide deck-compare-result">
             <div className="panel-heading">
-              <div><h2>比较结果</h2><p>{deckCompareResult.multiLiveVersion ?? "-"} · {deckCompareResult.liveExactVersion ?? deckCompareResult.scoreMode ?? deckCompareForm.scoreMode}</p></div>
-              <span className="status-pill">{deckCompareResult.referenceFormulaId ?? "Deck Comparator"}</span>
+              <div><h2>比较结果</h2><p>相同 Live 条件下的分数和活动 PT 对照。</p></div>
+              <span className="status-pill">已完成</span>
             </div>
             <div className="deck-compare-result-grid">
-              <div><span>分数胜出</span><strong>{deckCompareResult.winnerByScore?.name ?? deckCompareResult.winnerByScore?.id ?? "-"}</strong></div>
-              <div><span>PT 胜出</span><strong>{deckCompareResult.winnerByEventPoint?.name ?? deckCompareResult.winnerByEventPoint?.id ?? "-"}</strong></div>
+              <div><span>分数胜出</span><strong>{comparisonName(deckCompareResult.winnerByScore)}</strong></div>
+              <div><span>PT 胜出</span><strong>{comparisonName(deckCompareResult.winnerByEventPoint)}</strong></div>
               <div><span>分数差</span><strong>{formatNumber(deckCompareResult.scoreDelta)}</strong></div>
               <div><span>PT 差</span><strong>{formatNumber(deckCompareResult.eventPointDelta)}</strong></div>
             </div>
-            <div className="deck-compare-table-wrap">
+            <p className="deck-compare-scroll-hint">左右滑动查看全部指标</p>
+            <div className="deck-compare-table-wrap" tabIndex={0} aria-label="卡组比较结果表，可横向滚动">
               <div className="deck-compare-table">
                 <div className="deck-compare-table-head"><span>方案</span><span>来源</span><span>综合力</span><span>技能值</span><span>分数</span><span>活动 PT</span><span>状态</span></div>
                 {comparisons.map((item: any, index: number) => {
@@ -2749,25 +2792,25 @@ export function App() {
                   return (
                     <div className="deck-compare-table-row" key={item.id ?? index}>
                       <strong>{item.name ?? item.id ?? `方案 ${index + 1}`}</strong>
-                      <span>{item.source ?? item.inputMode ?? "-"}</span>
+                      <span>{sourceLabel(item.source ?? item.inputMode)}</span>
                       <span>{formatNumber(item.power ?? item.deckDetail?.power?.total ?? item.multiLiveTrace?.self?.power)}</span>
                       <span>{formatNumber(item.effectiveness ?? item.multiLiveTrace?.self?.effectiveness)}</span>
                       <span><b>{formatNumber(score)}</b><i style={{ width: `${score === null ? 0 : Math.min(100, (score / bestScore) * 100)}%` }} /></span>
                       <span><b>{formatNumber(point)}</b><i style={{ width: `${point === null ? 0 : Math.min(100, (point / bestPoint) * 100)}%` }} /></span>
-                      <span>{item.referenceParity?.status ?? item.status ?? "ok"}</span>
+                      <span>{statusLabel(item.referenceParity?.status ?? item.status)}</span>
                     </div>
                   );
                 })}
               </div>
             </div>
-            {(exactTrace || missingFields.length > 0 || estimatedFields.length > 0) && <details className="calculation-details"><summary>查看计算依据与技术字段</summary>{exactTrace && <div className="deck-compare-exact-trace"><strong>Exact Trace</strong><span>notes {formatNumber(exactTrace.noteCount ?? exactTrace.notes?.length)}</span><span>active {formatNumber(exactTrace.activeBonus)}</span><span>fever {exactTrace.feverWindow?.status ?? exactTrace.feverWindow ? "available" : "-"}</span><span>{deckCompareResult.musicScoreTrace?.status ?? deckCompareResult.musicScoreTrace?.source ?? ""}</span></div>}{missingFields.length > 0 && <div className="result-tags"><span>缺失字段</span>{missingFields.map((item: string) => <code key={item}>{item}</code>)}</div>}{estimatedFields.length > 0 && <div className="result-tags"><span>估算字段</span>{estimatedFields.map((item: string) => <code key={item}>{item}</code>)}</div>}</details>}
+            {(exactTrace || missingFields.length > 0 || estimatedFields.length > 0) && <details className="calculation-details"><summary>查看计算依据与数据完整性</summary>{exactTrace && <div className="deck-compare-exact-trace"><strong>精细计算记录</strong><span>音符 {formatNumber(exactTrace.noteCount ?? exactTrace.notes?.length)}</span><span>加成 {formatNumber(exactTrace.activeBonus)}</span><span>Fever {exactTrace.feverWindow?.status ?? (exactTrace.feverWindow ? "已提供" : "-")}</span></div>}{missingFields.length > 0 && <div className="result-tags"><span>缺失字段</span>{missingFields.map((item: string) => <code key={item}>{item}</code>)}</div>}{estimatedFields.length > 0 && <div className="result-tags"><span>估算字段</span>{estimatedFields.map((item: string) => <code key={item}>{item}</code>)}</div>}</details>}
           </article>
         )}
 
         <article className="panel wide deck-compare-history">
-          <div className="panel-heading compact-heading"><div><h3>本地比较历史</h3><p>仅保存在当前浏览器 localStorage，不写入服务器。</p></div><button type="button" className="secondary" onClick={() => setDeckCompareHistory([])}>清空</button></div>
+          <div className="panel-heading compact-heading"><div><h3>本次设备的比较记录</h3><p>记录只保存在此浏览器中，不会同步到服务器。</p></div><button type="button" className="secondary" onClick={() => setDeckCompareHistory([])}>清空</button></div>
           <div className="deck-compare-history-list">
-            {deckCompareHistory.map((item) => <div key={item.id}><span>{formatDate(item.createdAt)} · {item.region.toUpperCase()} · {item.musicId}/{item.difficulty}</span><strong>{item.candidates.join(" vs ")}</strong><small>Score: {item.winnerByScore ?? "-"} · PT: {item.winnerByEventPoint ?? "-"} · Δ {formatNumber(item.scoreDelta)} / {formatNumber(item.eventPointDelta)}</small><button type="button" className="secondary" onClick={() => setDeckCompareHistory((current) => current.filter((entry) => entry.id !== item.id))}>删除</button></div>)}
+            {deckCompareHistory.map((item) => <div key={item.id}><span>{formatDate(item.createdAt)} · {item.region.toUpperCase()} · {item.musicId}/{item.difficulty}</span><strong>{item.candidates.join(" vs ")}</strong><small>分数胜出：{item.winnerByScore ?? "-"} · PT 胜出：{item.winnerByEventPoint ?? "-"} · 差值 {formatNumber(item.scoreDelta)} / {formatNumber(item.eventPointDelta)}</small><button type="button" className="secondary" onClick={() => setDeckCompareHistory((current) => current.filter((entry) => entry.id !== item.id))}>删除</button></div>)}
             {!deckCompareHistory.length && <p className="empty-state">暂无本地比较历史。</p>}
           </div>
         </article>

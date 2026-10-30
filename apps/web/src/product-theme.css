@@ -2186,6 +2186,155 @@ button.appearance-switch:hover {
   .deck-compare-page *::after { animation: none !important; transition: none !important; }
 }
 
+/* Deck compare: a compact analysis workspace rather than a stack of utility cards. */
+.deck-compare-page {
+  gap: 14px;
+  padding-bottom: 4px;
+}
+.deck-compare-page > .panel,
+.deck-compare-page .deck-compare-layout > .panel {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(0, 127, 130, .17);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(238, 249, 247, .8));
+  box-shadow: 0 10px 26px rgba(0, 84, 86, .055), inset 0 1px rgba(255, 255, 255, .9);
+}
+.deck-compare-page .deck-compare-hero {
+  padding: 20px 22px 18px;
+  border-top: 3px solid #008f8e;
+  background:
+    linear-gradient(90deg, rgba(0, 127, 130, .09) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(0deg, rgba(0, 127, 130, .06) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(130deg, #fff, #edf9f6 66%, #fffaf0);
+}
+.deck-compare-page .deck-compare-hero::after {
+  position: absolute;
+  right: 24px;
+  bottom: 19px;
+  width: 118px;
+  height: 18px;
+  border-top: 1px solid rgba(0, 127, 130, .36);
+  border-bottom: 1px solid rgba(0, 127, 130, .15);
+  content: "";
+  opacity: .9;
+  pointer-events: none;
+  transform: skewX(-32deg);
+}
+.deck-compare-page .deck-compare-hero .panel-heading { position: relative; z-index: 1; align-items: flex-start; }
+.deck-compare-page .deck-compare-hero h2 { margin: 0 0 5px; color: #183f43; font-size: clamp(24px, 2.7vw, 31px); }
+.deck-compare-page .deck-compare-hero p { max-width: 620px; color: #527276; font-size: 13px; line-height: 1.55; }
+.deck-compare-page .deck-compare-hero .text-link { font-size: 12px; font-weight: 700; text-decoration: none; }
+.deck-compare-page .compact-summary { position: relative; z-index: 1; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-top: 16px; border: 1px solid rgba(0, 127, 130, .14); border-radius: 9px; overflow: hidden; background: rgba(0, 127, 130, .11); }
+.deck-compare-page .compact-summary > div { min-width: 0; padding: 10px 12px; border: 0; border-radius: 0; background: rgba(255, 255, 255, .72); box-shadow: none; }
+.deck-compare-page .compact-summary span { color: #638084; font-size: 10px; }
+.deck-compare-page .compact-summary strong { overflow-wrap: anywhere; color: #17545a; font-size: 15px; }
+.deck-compare-page .deck-compare-layout { grid-template-columns: minmax(300px, .8fr) minmax(0, 1.2fr); gap: 14px; }
+.deck-compare-page .deck-compare-controls,
+.deck-compare-page .deck-compare-candidates,
+.deck-compare-page .deck-compare-result,
+.deck-compare-page .deck-compare-history { padding: 19px 20px; }
+.deck-compare-page .deck-compare-controls { border-top: 2px solid rgba(0, 143, 142, .55); }
+.deck-compare-page .deck-compare-candidates { border-top: 2px solid rgba(237, 155, 59, .58); }
+.deck-compare-page .deck-compare-section-kicker { display: block; margin-bottom: 4px; color: #008584; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+.deck-compare-page .compact-heading h3 { margin: 0 0 3px; color: #1c4c51; font-size: 17px; }
+.deck-compare-page .compact-heading p { margin: 0; color: #648083; font-size: 12px; line-height: 1.45; }
+.deck-compare-page .deck-compare-field-grid { gap: 10px; }
+.deck-compare-page .deck-compare-field-grid label,
+.deck-compare-page .deck-compare-full-field { display: grid; min-width: 0; gap: 5px; color: #507277; font-size: 11px; font-weight: 700; }
+.deck-compare-page .deck-compare-field-grid label > span,
+.deck-compare-page .deck-compare-full-field > span { color: #56777a; }
+.deck-compare-page .deck-compare-field-grid input,
+.deck-compare-page .deck-compare-field-grid select,
+.deck-compare-page .deck-compare-full-field textarea,
+.deck-compare-page .deck-compare-full-field select {
+  min-height: 39px;
+  border-color: rgba(0, 127, 130, .18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .84);
+  color: #254f54;
+}
+.deck-compare-page .deck-compare-full-field textarea { min-height: 72px; resize: vertical; }
+.deck-compare-page .check-line { padding: 9px 10px; border-left: 2px solid rgba(0, 143, 142, .5); background: rgba(232, 248, 245, .68); color: #476d70; font-size: 12px; }
+.deck-compare-page .deck-compare-teammates { display: grid; gap: 7px; }
+.deck-compare-page .deck-compare-teammates > div { display: grid; grid-template-columns: 58px minmax(0, 1fr) minmax(0, 1fr); gap: 7px; align-items: center; }
+.deck-compare-page .deck-compare-teammates span { color: #5b797c; font-size: 11px; }
+.deck-compare-page .deck-compare-candidate-card { gap: 11px; padding: 13px 0; border: 0; border-bottom: 1px solid rgba(0, 127, 130, .13); border-radius: 0; background: transparent; }
+.deck-compare-page .deck-compare-candidate-card:first-of-type { padding-top: 4px; }
+.deck-compare-page .deck-compare-candidate-card:last-of-type { border-bottom: 0; }
+.deck-compare-page .deck-compare-candidate-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.deck-compare-page .deck-compare-candidate-head strong { color: #20575c; font-size: 13px; }
+.deck-compare-page .deck-compare-candidate-head .icon-button { flex: 0 0 34px; min-height: 34px; border-color: rgba(151, 72, 92, .2); color: #995066; }
+.deck-compare-page .deck-compare-candidates > .button-row { padding-top: 3px; border-top: 1px solid rgba(0, 127, 130, .11); }
+.deck-compare-page .deck-compare-candidates > .button-row button { min-height: 43px; }
+.deck-compare-page .deck-compare-data-state { border-radius: 8px; background: rgba(230, 248, 245, .75); font-size: 12px; }
+.deck-compare-page .warning-text { margin: 0; padding: 9px 11px; border-left: 2px solid #df7b53; background: rgba(255, 247, 238, .74); font-size: 12px; }
+.deck-compare-page .deck-compare-result { border-top: 2px solid rgba(80, 107, 181, .5); }
+.deck-compare-page .deck-compare-result .panel-heading { align-items: flex-start; }
+.deck-compare-page .deck-compare-result .panel-heading h2 { margin: 0 0 3px; color: #1b464b; font-size: 21px; }
+.deck-compare-page .deck-compare-result .panel-heading p { color: #688083; font-size: 11px; }
+.deck-compare-page .deck-compare-result .status-pill { max-width: 44%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-compare-page .deck-compare-result-grid { gap: 8px; }
+.deck-compare-page .deck-compare-result-grid div { padding: 11px 12px; border-radius: 8px; background: linear-gradient(145deg, rgba(247, 253, 252, .96), rgba(229, 246, 242, .72)); }
+.deck-compare-page .deck-compare-result-grid span { color: #698184; font-size: 10px; }
+.deck-compare-page .deck-compare-result-grid strong { color: #17565b; font-size: 15px; overflow-wrap: anywhere; }
+.deck-compare-page .deck-compare-table-wrap { border-top: 1px solid rgba(0, 127, 130, .16); border-bottom: 1px solid rgba(0, 127, 130, .13); border-radius: 0; }
+.deck-compare-page .deck-compare-scroll-hint { display: none; margin: 0; color: #668082; font-size: 11px; }
+.deck-compare-page .deck-compare-table { min-width: 720px; }
+.deck-compare-page .deck-compare-table-head { position: sticky; top: 0; z-index: 1; background: #e6f5f1; color: #437176; font-size: 10px; }
+.deck-compare-page .deck-compare-table-row { min-height: 50px; border-bottom-color: rgba(0, 127, 130, .1); background: rgba(255, 255, 255, .66); }
+.deck-compare-page .deck-compare-table-row:hover { background: rgba(224, 247, 242, .54); }
+.deck-compare-page .deck-compare-table-row strong { color: #1c5056; }
+.deck-compare-page .deck-compare-table-row i { height: 3px; background: #0aa09b; }
+.deck-compare-page .calculation-details { border-color: rgba(0, 127, 130, .14); background: rgba(245, 252, 250, .72); }
+.deck-compare-page .deck-compare-history { border-top: 1px solid rgba(0, 127, 130, .2); }
+.deck-compare-page .deck-compare-history-list { display: grid; gap: 0; }
+.deck-compare-page .deck-compare-history-list > div { display: grid; grid-template-columns: minmax(150px, .8fr) minmax(160px, 1.25fr) minmax(180px, 1fr) auto; gap: 12px; align-items: center; padding: 11px 0; border: 0; border-bottom: 1px solid rgba(0, 127, 130, .12); border-radius: 0; background: transparent; }
+.deck-compare-page .deck-compare-history-list > div:last-child { border-bottom: 0; }
+.deck-compare-page .deck-compare-history-list span { color: #6c8587; font-size: 10px; }
+.deck-compare-page .deck-compare-history-list strong { color: #27575b; font-size: 12px; }
+.deck-compare-page .deck-compare-history-list small { color: #5d787b; font-size: 10px; }
+.deck-compare-page .deck-compare-history-list button { min-height: 34px; }
+
+@media (max-width: 980px) {
+  .deck-compare-page .deck-compare-layout { grid-template-columns: minmax(0, 1fr); }
+  .deck-compare-page .deck-compare-history-list > div { grid-template-columns: 1fr; gap: 4px; }
+  .deck-compare-page .deck-compare-history-list button { width: 100%; margin-top: 4px; }
+}
+@media (max-width: 640px) {
+  .deck-compare-page .deck-compare-hero,
+  .deck-compare-page .deck-compare-controls,
+  .deck-compare-page .deck-compare-candidates,
+  .deck-compare-page .deck-compare-result,
+  .deck-compare-page .deck-compare-history { padding: 15px; }
+  .deck-compare-page .deck-compare-hero::after { right: 14px; bottom: 12px; width: 72px; }
+  .deck-compare-page .deck-compare-hero .panel-heading { gap: 10px; }
+  .deck-compare-page .deck-compare-hero .text-link { flex: 0 0 auto; }
+  .deck-compare-page .deck-compare-hero .compact-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 13px; }
+  .deck-compare-page .deck-compare-field-grid,
+  .deck-compare-page .deck-compare-result-grid { grid-template-columns: minmax(0, 1fr); }
+  .deck-compare-page .deck-compare-teammates > div { grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr); }
+  .deck-compare-page .deck-compare-candidates > .button-row { flex-direction: column; }
+  .deck-compare-page .deck-compare-candidates > .button-row button { width: 100%; flex: 0 0 auto; min-height: 44px; }
+  .deck-compare-page .deck-compare-result .status-pill { max-width: 100%; }
+  .deck-compare-page .deck-compare-table { min-width: 680px; }
+  .deck-compare-page .deck-compare-scroll-hint { display: block; }
+  .deck-compare-page .deck-compare-history-list > div { grid-template-columns: 1fr; gap: 4px; padding: 12px 0; }
+  .deck-compare-page .deck-compare-history-list button { width: 100%; margin-top: 4px; }
+}
+
+/* The mobile shell already exposes the page name, style switch, and region.
+   Keep only the useful global refresh action above this dense workspace. */
+@media (max-width: 760px) {
+  .shell.theme-workbench:has(.deck-compare-page) .topbar-status > .appearance-switch,
+  .shell.theme-workbench:has(.deck-compare-page) .top-actions > .navigation-region-select { display: none; }
+  .shell.theme-workbench:has(.deck-compare-page) .topbar {
+    min-height: 0;
+    padding-block: 5px;
+    border-left-width: 3px;
+  }
+}
+
 /* Share card generator: preview and actions stay together, with URLs kept
    inside the local card instead of widening the page. */
 .share-page {
