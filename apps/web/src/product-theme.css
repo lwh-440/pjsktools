@@ -2570,76 +2570,115 @@ button.appearance-switch:hover {
   .share-page .share-actions { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* Songs catalog: artwork and copy keep a compact rhythm while filters and
-   detail drawers remain owned by the existing catalog components. */
+/* Songs catalog: a focused teal workspace with readable titles, restrained
+   glass surfaces and a deliberate narrow-screen card treatment. */
 .songs-page {
   display: grid;
-  gap: 16px;
+  gap: 17px;
   min-width: 0;
-  overflow-x: clip;
-  border-color: rgba(0, 127, 130, .16);
-  background: #fff;
+  overflow: hidden;
+  border-color: rgba(0, 127, 130, .17);
+  background: linear-gradient(180deg, #fcffff 0%, #f7fcfb 100%);
 }
-.songs-page .songs-page-heading { align-items: flex-start; gap: 16px; }
-.songs-page .songs-page-heading h1 { margin: 4px 0 5px; font-size: clamp(24px, 3vw, 32px); font-weight: 650; }
-.songs-page .songs-page-heading p { margin: 0; color: #587477; }
-.songs-section-kicker { color: #008b89; font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
-.songs-page .catalog-filter-panel { min-width: 0; }
-.songs-page .songs-grid {
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 14px;
-  min-width: 0;
-}
-.songs-page .song-card {
+.songs-page .songs-hero {
   position: relative;
-  min-width: 0;
-  padding: 11px;
-  border: 1px solid rgba(0, 127, 130, .14);
-  border-radius: 12px;
-  background: #fbfefe;
-  box-shadow: 0 5px 14px rgba(24, 77, 80, .045);
+  overflow: hidden;
+  margin: -1px -1px 0;
+  padding: 22px 23px 20px;
+  border-bottom: 1px solid rgba(0, 127, 130, .13);
+  background: linear-gradient(135deg, rgba(232, 249, 246, .82), rgba(255, 255, 255, .72));
 }
-.songs-page .song-card:hover { border-color: rgba(0, 167, 165, .55); box-shadow: 0 9px 18px rgba(24, 77, 80, .08); }
-.songs-page .song-card-main { grid-template-columns: 78px minmax(0, 1fr); gap: 11px; align-items: center; padding-right: 36px !important; }
+.songs-page .songs-hero::after {
+  position: absolute;
+  right: 22px;
+  bottom: 14px;
+  width: 138px;
+  height: 42px;
+  border-top: 1px solid rgba(0, 139, 137, .2);
+  border-right: 1px solid rgba(0, 139, 137, .2);
+  content: "";
+  transform: skewX(-28deg);
+  pointer-events: none;
+}
+.songs-page .songs-page-heading { position: relative; z-index: 1; align-items: end; gap: 18px; }
+.songs-page .songs-page-heading h1 { margin: 4px 0 5px; color: #173f43; font-size: clamp(25px, 3vw, 34px); font-weight: 700; letter-spacing: .01em; }
+.songs-page .songs-page-heading p { max-width: 600px; margin: 0; color: #587477; font-size: 13px; }
+.songs-section-kicker { color: #008b89; font-size: 11px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.songs-page .songs-page-heading .ranking-tools { flex: 0 1 330px; min-width: 230px; border-color: rgba(0, 127, 130, .19); background: rgba(255, 255, 255, .8); box-shadow: 0 5px 15px rgba(14, 79, 82, .05); }
+.songs-page .catalog-filter-panel { min-width: 0; margin-inline: 23px; }
+.songs-result-strip { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px 15px; margin-inline: 23px; padding: 10px 13px; border: 1px solid rgba(0, 127, 130, .13); border-radius: 8px; background: rgba(238, 250, 247, .72); color: #5f7c7e; font-size: 11px; }
+.songs-result-strip strong { color: #1b6668; font-size: 14px; }
+.songs-result-strip small { margin-left: auto; color: #739093; }
+.songs-page .songs-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; min-width: 0; margin-inline: 23px; }
+.songs-page .song-card { position: relative; min-width: 0; padding: 10px; border: 1px solid rgba(0, 127, 130, .14); border-radius: 10px; background: rgba(255, 255, 255, .72); box-shadow: 0 6px 16px rgba(24, 77, 80, .04); transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
+.songs-page .song-card:hover { border-color: rgba(0, 167, 165, .48); box-shadow: 0 10px 20px rgba(24, 77, 80, .08); transform: translateY(-1px); }
+.songs-page .song-card-main { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; align-items: center; padding: 0 31px 0 0 !important; text-align: left; }
 .songs-page .song-card .art-frame,
 .songs-page .song-card .art-image,
-.songs-page .song-card .art-fallback { width: 78px; height: 78px; aspect-ratio: 1; border-radius: 10px; }
-.songs-page .song-card-copy { min-width: 0; gap: 4px; }
-.songs-page .song-card-copy strong { color: #183f43; font-size: 15px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.songs-page .song-card .art-fallback { width: 72px; height: 72px; aspect-ratio: 1; border-radius: 8px; }
+.songs-page .song-card-copy { display: grid; min-width: 0; gap: 4px; align-content: center; }
+.songs-page .song-card-copy strong { display: -webkit-box; overflow: hidden; color: #183f43; font-size: 14px; font-weight: 700; line-height: 1.34; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .songs-page .song-card-copy span,
-.songs-page .song-card-copy small { color: #6b8587; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.songs-page .song-card-copy small { overflow: hidden; color: #6b8587; font-size: 11px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.songs-page .song-card-levels { display: inline-flex; width: fit-content; max-width: 100%; padding: 3px 6px; border: 1px solid rgba(0, 139, 137, .16); border-radius: 999px; background: rgba(233, 249, 245, .76); color: #197072; font-size: 10px; font-style: normal; font-weight: 700; }
 .songs-page .catalog-card > .favorite-control { top: 8px; right: 8px; }
-.songs-page .pagination { min-width: 0; }
-.songs-page .pending-detail,
-.songs-page .detail-drawer,
-.songs-page .drawer-backdrop { min-width: 0; max-width: 100%; }
+.songs-page .pagination { min-width: 0; margin: 0 23px 23px; padding: 12px 13px; border-top: 1px solid rgba(0, 127, 130, .12); background: rgba(244, 251, 249, .65); }
+.song-detail-drawer,
+.song-chart-drawer { min-width: 0; max-width: min(560px, 100vw); }
+.song-detail-backdrop,
+.song-chart-backdrop { background: rgba(9, 45, 49, .42); backdrop-filter: blur(3px); }
+.song-detail-drawer .song-detail-hero { border-color: rgba(0, 127, 130, .16); background: linear-gradient(145deg, rgba(235, 250, 247, .86), rgba(255, 255, 255, .88)); }
+.song-detail-drawer .song-difficulty-section { display: grid; gap: 9px; margin-top: 18px; }
+.song-detail-drawer .song-difficulty-section h3 { margin: 0; color: #24575b; font-size: 14px; }
+.song-detail-drawer .song-difficulty-grid { grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 9px; }
+.song-detail-drawer .difficulty-card { border-color: rgba(0, 127, 130, .16); background: rgba(240, 251, 248, .75); }
+.song-chart-drawer .chart-preview { min-width: 0; }
 
+@media (max-width: 1060px) {
+  .songs-page .songs-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 760px) {
-  .songs-page { gap: 13px; padding: 16px; }
+  .songs-page { gap: 13px; padding: 0 0 1px; }
+  .songs-page .songs-hero { padding: 17px 15px 15px; }
+  .songs-page .songs-hero::after { right: 13px; bottom: 12px; width: 80px; }
   .songs-page .songs-page-heading { align-items: stretch; flex-direction: column; gap: 10px; }
   .songs-page .songs-page-heading > * { min-width: 0; }
+  .songs-page .songs-page-heading .ranking-tools { flex-basis: auto; width: 100%; min-width: 0; }
+  .songs-page .catalog-filter-panel,
+  .songs-page .songs-grid,
+  .songs-result-strip { margin-inline: 15px; }
   .songs-page .songs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .songs-page .song-card { padding: 9px; }
   .songs-page .song-card-main { grid-template-columns: 1fr; gap: 8px; padding-right: 0 !important; }
   .songs-page .song-card .art-frame,
   .songs-page .song-card .art-image,
   .songs-page .song-card .art-fallback { width: 100%; height: auto; aspect-ratio: 1; }
-  .songs-page .song-card-copy strong { font-size: 14px; }
-  .songs-page .song-card-copy span,
-  .songs-page .song-card-copy small { font-size: 11px; }
-}
-
-@media (max-width: 420px) {
-  .songs-page { padding: 13px; }
-  .songs-page .songs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .songs-page .song-card { padding: 8px; }
   .songs-page .song-card-copy strong { font-size: 13px; }
+  .songs-page .pagination { margin-inline: 15px; }
+  .songs-result-strip small { width: 100%; margin-left: 0; }
 }
-
+@media (max-width: 480px) {
+  .songs-page .songs-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .songs-page .song-card { padding: 8px; }
+  .songs-page .song-card-main { grid-template-columns: 76px minmax(0, 1fr); gap: 10px; align-items: center; padding-right: 28px !important; }
+  .songs-page .song-card .art-frame,
+  .songs-page .song-card .art-image,
+  .songs-page .song-card .art-fallback { width: 76px; height: 76px; }
+  .songs-page .song-card-copy strong { font-size: 14px; overflow-wrap: anywhere; white-space: normal; -webkit-line-clamp: 2; }
+  .songs-page .song-card-copy span,
+  .songs-page .song-card-copy small { overflow: visible; font-size: 11px; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
+}
+@media (min-width: 761px) {
+  .songs-page .pagination { display: grid; grid-template-columns: auto auto auto auto; justify-content: end; }
+  .songs-page .pagination select { inline-size: 120px; }
+}
+@media (max-width: 760px) {
+  .shell.theme-workbench:has(.songs-page) .topbar-status > .appearance-switch,
+  .shell.theme-workbench:has(.songs-page) .top-actions > .navigation-region-select { display: none; }
+  .shell.theme-workbench:has(.songs-page) .topbar { min-height: 0; padding-block: 5px; border-left-width: 3px; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .songs-page *,
-  .songs-page *::before,
-  .songs-page *::after { animation: none !important; transition: none !important; }
+  .songs-page *, .songs-page *::before, .songs-page *::after { animation: none !important; transition: none !important; }
 }
 
 /* Cards catalog: preserve the card artwork ratio while keeping copy and

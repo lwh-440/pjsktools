@@ -159,13 +159,15 @@ export function Pagination({
   totalPages,
   pageSize,
   onPageChange,
-  onPageSizeChange
+  onPageSizeChange,
+  pageSizeLabel = "每页数量"
 }: {
   page: number;
   totalPages: number;
   pageSize: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  pageSizeLabel?: string;
 }) {
   return (
     <div className="pagination">
@@ -180,7 +182,7 @@ export function Pagination({
         下一页
         <ChevronRight size={16} />
       </button>
-      <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
+      <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))} aria-label={pageSizeLabel}>
         {pageSizeOptions.map((size) => (
           <option key={size} value={size}>
             每页 {size}
@@ -296,11 +298,11 @@ export function ModalDialog({
   </div>;
 }
 
-export function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
+export function SearchBox({ value, onChange, placeholder, ariaLabel = "搜索" }: { value: string; onChange: (value: string) => void; placeholder: string; ariaLabel?: string }) {
   return (
     <div className="ranking-tools">
       <Search size={18} />
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-label={ariaLabel} />
     </div>
   );
 }
