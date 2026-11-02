@@ -3,10 +3,12 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import { App } from "./App";
 import { AuthProvider } from "./AuthContext";
+import "./tokens.css";
 import "./styles.css";
 import "./product-theme.css";
 import "./current-event-materials.css";
 import "./ranking-detail-parking.css";
+import "./modern-ui.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

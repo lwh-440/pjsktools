@@ -1,7 +1,13 @@
 import {
+  AlertCircle,
   Bookmark,
   CheckCircle2,
+  Eye,
+  EyeOff,
+  Loader2,
   LogIn,
+  Mail,
+  Shield,
   Upload,
   UserRound,
   Wand2
@@ -23,8 +29,14 @@ function LegalConfirmations({ accepted, ageConfirmed, onAccepted, onAgeConfirmed
   onAgeConfirmed: (value: boolean) => void;
 }) {
   return <div className="legal-confirmations">
-    <label><input type="checkbox" checked={accepted} onChange={(event) => onAccepted(event.target.checked)} />我已阅读并同意 <Link to="/privacy" target="_blank">隐私政策</Link> 和 <Link to="/terms" target="_blank">用户协议</Link></label>
-    <label><input type="checkbox" checked={ageConfirmed} onChange={(event) => onAgeConfirmed(event.target.checked)} />我确认已满 14 周岁</label>
+    <label className="legal-checkbox-label">
+      <input type="checkbox" checked={accepted} onChange={(event) => onAccepted(event.target.checked)} />
+      <span>我已阅读并同意 <Link to="/privacy" target="_blank">隐私政策</Link> 和 <Link to="/terms" target="_blank">用户协议</Link></span>
+    </label>
+    <label className="legal-checkbox-label">
+      <input type="checkbox" checked={ageConfirmed} onChange={(event) => onAgeConfirmed(event.target.checked)} />
+      <span>我确认已满 14 周岁</span>
+    </label>
   </div>;
 }
 
@@ -114,7 +126,7 @@ export function LegalAcceptancePage() {
     <p>继续使用账号服务前，请阅读当前隐私政策和用户协议。本确认不会要求生日、身份证等额外资料。</p>
     <LegalConfirmations accepted={accepted} ageConfirmed={ageConfirmed} onAccepted={setAccepted} onAgeConfirmed={setAgeConfirmed} />
     <button type="button" disabled={!accepted || !ageConfirmed} onClick={submit}>确认并继续</button>
-    <button type="button" className="secondary" onClick={logout}>不同意并退出</button>
+    <button type="button" className="btn-secondary" onClick={logout}>不同意并退出</button>
     {error && <p className="warning-text">{error}</p>}
   </article></section>;
 }
@@ -123,27 +135,71 @@ export function LoginPage() {
   const { login, isAuthenticated, legalAcceptanceRequired } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [emailError, setEmailError] = useState("");
   const location = useLocation();
   const navigate = useNavigate();
   const returnTo = new URLSearchParams(location.search).get("returnTo");
   const from = safeQqReturnTo(returnTo ?? (location.state as { from?: string } | null)?.from);
-  async function submitLogin() {
-    const acceptanceRequired = await login(email, password);
-    if (acceptanceRequired) navigate("/legal-acceptance", { replace: true, state: { from } });
-    else navigate(from, { replace: true });
+
+  function validateEmail(value: string) {
+    if (!value.trim()) {
+      setEmailError("请输入邮箱");
+      return false;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setEmailError("请输入有效的邮箱地址");
+      return false;
+    }
+    setEmailError("");
+    return true;
   }
+
+  async function submitLogin() {
+    setError("");
+    setNotice("");
+
+    if (!validateEmail(email)) return;
+    if (!password.trim()) {
+      setError("请输入密码");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const acceptanceRequired = await login(email, password);
+      if (acceptanceRequired) navigate("/legal-acceptance", { replace: true, state: { from } });
+      else navigate(from, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "登录失败，请检查邮箱和密码");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function startQqLogin() {
     try {
       setNotice("正在前往 QQ 安全登录...");
+      setError("");
       const result = await apiGet<{ authorizeUrl: string }>(`/api/auth/qq/start?redirectTo=${encodeURIComponent(from)}`);
       window.location.href = result.authorizeUrl;
     } catch (error) {
-      setNotice(error instanceof Error && error.message.includes("not configured")
+      setNotice("");
+      setError(error instanceof Error && error.message.includes("not configured")
         ? "QQ 登录暂未配置，请使用邮箱登录。"
         : "暂时无法连接 QQ 登录服务，请稍后重试。");
     }
   }
+
+  function handleKeyPress(event: React.KeyboardEvent) {
+    if (event.key === "Enter" && !loading) {
+      submitLogin();
+    }
+  }
+
   if (isAuthenticated) {
     return <Navigate
       to={legalAcceptanceRequired ? "/legal-acceptance" : from}
@@ -151,20 +207,98 @@ export function LoginPage() {
       state={legalAcceptanceRequired ? { from } : undefined}
     />;
   }
+
   return (
     <section className="auth-page">
-      <article className="auth-hero"><span>Project Sekai 工具箱账号</span><h2>登录后同步账号设置</h2><p>Web 与 Android 可共用收藏、成绩、卡组与账号设置。</p></article>
+      <article className="auth-hero">
+        <div>
+          <span className="auth-hero-badge"><Shield size={16} />安全可靠</span>
+          <h2>欢迎回来</h2>
+          <p>登录后可在 Web 与 Android 共用收藏、成绩、卡组与账号设置。</p>
+        </div>
+      </article>
       <article className="panel auth-panel">
-        <h2>邮箱登录</h2>
-        <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="邮箱" />
-        <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" />
-        <button type="button" onClick={submitLogin}><LogIn size={16} />登录</button>
-        <div className="auth-divider"><span>或</span></div>
-        <button type="button" className="qq-login-button" onClick={startQqLogin} aria-label="使用 QQ 登录">
+        <div className="auth-panel-header">
+          <h2>登录账号</h2>
+          <p>使用邮箱密码或 QQ 快速登录</p>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="email">
+            <Mail size={16} />
+            邮箱地址
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              if (emailError) validateEmail(event.target.value);
+            }}
+            onBlur={() => validateEmail(email)}
+            onKeyPress={handleKeyPress}
+            placeholder="your@email.com"
+            className={emailError ? "input-error" : ""}
+            disabled={loading}
+          />
+          {emailError && <span className="field-error"><AlertCircle size={14} />{emailError}</span>}
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="password">
+            <Shield size={16} />
+            密码
+          </label>
+          <div className="password-input-wrapper">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="输入密码"
+              disabled={loading}
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? "隐藏密码" : "显示密码"}
+              disabled={loading}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={submitLogin}
+          disabled={loading || !email.trim() || !password.trim()}
+          className="primary-button"
+        >
+          {loading ? <><Loader2 size={16} className="spinner" />登录中...</> : <><LogIn size={16} />登录</>}
+        </button>
+
+        <div className="auth-divider"><span>或使用其他方式</span></div>
+
+        <button
+          type="button"
+          className="qq-login-button"
+          onClick={startQqLogin}
+          aria-label="使用 QQ 登录"
+          disabled={loading}
+        >
           <img src={QQ_CONNECT_BUTTON_URL} alt="QQ 登录" />
         </button>
-        {notice && <p className="empty-state">{notice}</p>}
-        <Link to="/register">还没有账号？去注册</Link>
+
+        {notice && <div className="notice-box info"><CheckCircle2 size={16} />{notice}</div>}
+        {error && <div className="notice-box error"><AlertCircle size={16} />{error}</div>}
+
+        <div className="auth-footer">
+          <Link to="/register">还没有账号？立即注册</Link>
+        </div>
       </article>
     </section>
   );
@@ -226,60 +360,275 @@ export function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [code, setCode] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [sendingCode, setSendingCode] = useState(false);
+  const [registering, setRegistering] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(0);
   const [accepted, setAccepted] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const navigate = useNavigate();
+
   useEffect(() => {
     if (resendSeconds <= 0) return;
     const timer = window.setInterval(() => setResendSeconds((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearInterval(timer);
   }, [resendSeconds]);
+
+  function validateEmail(value: string) {
+    if (!value.trim()) {
+      setEmailError("请输入邮箱");
+      return false;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setEmailError("请输入有效的邮箱地址");
+      return false;
+    }
+    setEmailError("");
+    return true;
+  }
+
+  function validatePassword(value: string) {
+    if (value.length < 10) {
+      setPasswordError("密码至少需要 10 位");
+      return false;
+    }
+
+    const hasUpper = /[A-Z]/.test(value);
+    const hasLower = /[a-z]/.test(value);
+    const hasNumber = /\d/.test(value);
+    const hasSpecial = /[^A-Za-z0-9]/.test(value);
+
+    if (value.length < 14) {
+      const categories = [hasUpper, hasLower, hasNumber, hasSpecial].filter(Boolean).length;
+      if (categories < 4) {
+        setPasswordError("10-13 位密码需包含大写、小写、数字和符号");
+        return false;
+      }
+    } else {
+      const categories = [hasUpper, hasLower, hasNumber, hasSpecial].filter(Boolean).length;
+      if (categories < 3) {
+        setPasswordError("14 位以上密码需包含至少三类字符");
+        return false;
+      }
+    }
+
+    const emailPrefix = email.split("@")[0];
+    if (emailPrefix && value.toLowerCase().includes(emailPrefix.toLowerCase())) {
+      setPasswordError("密码不能包含邮箱名前缀");
+      return false;
+    }
+
+    setPasswordError("");
+    return true;
+  }
+
   async function requestCode() {
-    if (!email.trim()) return setError("请输入有效邮箱。");
+    if (!validateEmail(email)) return;
+
     setSendingCode(true);
     setError("");
+    setNotice("");
+
     try {
       const result = await apiPost<{ devCode?: string; sent: boolean; expiresIn: number; resendAfter: number }>("/api/auth/email-code/start", { email, purpose: "register" });
       setResendSeconds(result.resendAfter);
-      setNotice(result.devCode ? `开发验证码：${result.devCode}，${Math.floor(result.expiresIn / 60)} 分钟内有效。` : `验证码已发送，${Math.floor(result.expiresIn / 60)} 分钟内有效。`);
+      setNotice(result.devCode ? `开发验证码：${result.devCode}，${Math.floor(result.expiresIn / 60)} 分钟内有效。` : `验证码已发送至 ${email}，${Math.floor(result.expiresIn / 60)} 分钟内有效。`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "验证码发送失败，请稍后重试。");
     } finally {
       setSendingCode(false);
     }
   }
+
   async function submitRegister() {
     setError("");
-    if (password !== confirmPassword) return setError("两次输入的密码不一致。");
-    if (!accepted || !ageConfirmed) return setError("请先同意隐私政策和用户协议，并确认已满 14 周岁。");
+    setNotice("");
+
+    if (!validateEmail(email)) return;
+    if (!validatePassword(password)) return;
+
+    if (password !== confirmPassword) {
+      setError("两次输入的密码不一致");
+      return;
+    }
+
+    if (!accepted || !ageConfirmed) {
+      setError("请先同意隐私政策和用户协议，并确认已满 14 周岁");
+      return;
+    }
+
+    if (code.length !== 6) {
+      setError("请输入 6 位验证码");
+      return;
+    }
+
+    setRegistering(true);
     try {
       await register(email, password, code);
       navigate("/me");
     } catch (registerError) {
       setError(registerError instanceof Error ? registerError.message : "注册失败，请检查填写内容。");
+    } finally {
+      setRegistering(false);
     }
   }
+
+  function handleKeyPress(event: React.KeyboardEvent) {
+    if (event.key === "Enter" && !registering && !sendingCode) {
+      if (code.length === 6 && password === confirmPassword && accepted && ageConfirmed) {
+        submitRegister();
+      }
+    }
+  }
+
   if (isAuthenticated) return <Navigate to="/me" replace />;
+
+  const isFormValid = email.trim() && password && confirmPassword && password === confirmPassword && code.length === 6 && accepted && ageConfirmed && !emailError && !passwordError;
+
   return (
     <section className="auth-page">
-      <article className="auth-hero"><span>创建账号</span><h2>跨端共用工具设置</h2><p>注册后可在 Web 与 Android 共用收藏、成绩、卡组与账号设置。</p></article>
+      <article className="auth-hero">
+        <div>
+          <span className="auth-hero-badge"><UserRound size={16} />创建账号</span>
+          <h2>开始你的旅程</h2>
+          <p>注册后可在 Web 与 Android 共用收藏、成绩、卡组与账号设置。所有数据安全存储，随时可导出。</p>
+        </div>
+      </article>
       <article className="panel auth-panel">
-        <h2>邮箱注册</h2>
-        <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="邮箱" />
-        <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" />
-        <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再次输入密码" />
-        <small>密码至少 10 位，并包含大写字母、小写字母、数字和符号；14 位以上至少包含其中三类，且不能包含邮箱名前缀。</small>
+        <div className="auth-panel-header">
+          <h2>注册新账号</h2>
+          <p>创建你的 Project Sekai 工具箱账号</p>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="email">
+            <Mail size={16} />
+            邮箱地址
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              if (emailError) validateEmail(event.target.value);
+            }}
+            onBlur={() => validateEmail(email)}
+            placeholder="your@email.com"
+            className={emailError ? "input-error" : ""}
+            disabled={registering || sendingCode}
+          />
+          {emailError && <span className="field-error"><AlertCircle size={14} />{emailError}</span>}
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="password">
+            <Shield size={16} />
+            密码
+          </label>
+          <div className="password-input-wrapper">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                if (passwordError) validatePassword(event.target.value);
+              }}
+              onBlur={() => password && validatePassword(password)}
+              placeholder="创建安全密码"
+              disabled={registering || sendingCode}
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? "隐藏密码" : "显示密码"}
+              disabled={registering || sendingCode}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+          {passwordError && <span className="field-error"><AlertCircle size={14} />{passwordError}</span>}
+          <small className="field-hint">密码至少 10 位，并包含大写字母、小写字母、数字和符号；14 位以上至少包含其中三类。</small>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="confirmPassword">
+            <Shield size={16} />
+            确认密码
+          </label>
+          <div className="password-input-wrapper">
+            <input
+              id="confirmPassword"
+              type={showConfirmPassword ? "text" : "password"}
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="再次输入密码"
+              disabled={registering || sendingCode}
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              aria-label={showConfirmPassword ? "隐藏密码" : "显示密码"}
+              disabled={registering || sendingCode}
+            >
+              {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+          {confirmPassword && password !== confirmPassword && <span className="field-error"><AlertCircle size={14} />两次密码不一致</span>}
+        </div>
+
         <LegalConfirmations accepted={accepted} ageConfirmed={ageConfirmed} onAccepted={setAccepted} onAgeConfirmed={setAgeConfirmed} />
-        <div className="button-row"><input value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6 位验证码" /><button type="button" className="secondary" disabled={sendingCode || resendSeconds > 0 || !email.trim()} onClick={requestCode}>{sendingCode ? "发送中..." : resendSeconds > 0 ? `${resendSeconds}s 后重发` : "获取验证码"}</button></div>
-        <button type="button" disabled={password !== confirmPassword || code.length !== 6 || !accepted || !ageConfirmed} onClick={submitRegister}>注册</button>
-        {notice && <p className="empty-state">{notice}</p>}
-        {error && <p className="warning-text">{error}</p>}
-        <Link to="/login">已有账号？去登录</Link>
+
+        <div className="verification-code-group">
+          <div className="form-group code-input-group">
+            <label htmlFor="code">验证码</label>
+            <input
+              id="code"
+              type="text"
+              inputMode="numeric"
+              value={code}
+              onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              onKeyPress={handleKeyPress}
+              placeholder="6 位验证码"
+              maxLength={6}
+              disabled={registering || sendingCode}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={sendingCode || resendSeconds > 0 || !email.trim() || emailError !== ""}
+            onClick={requestCode}
+          >
+            {sendingCode ? <><Loader2 size={16} className="spinner" />发送中...</> : resendSeconds > 0 ? `${resendSeconds}s 后重发` : "获取验证码"}
+          </button>
+        </div>
+
+        <button
+          type="button"
+          disabled={!isFormValid || registering}
+          onClick={submitRegister}
+          className="primary-button"
+        >
+          {registering ? <><Loader2 size={16} className="spinner" />注册中...</> : "注册账号"}
+        </button>
+
+        {notice && <div className="notice-box info"><CheckCircle2 size={16} />{notice}</div>}
+        {error && <div className="notice-box error"><AlertCircle size={16} />{error}</div>}
+
+        <div className="auth-footer">
+          <Link to="/login">已有账号？立即登录</Link>
+        </div>
       </article>
     </section>
   );
@@ -339,14 +688,16 @@ export function MeHomePage() {
   const missing = toolContext?.toolContextWarnings ?? [];
   const [deletionCode, setDeletionCode] = useState("");
   const [accountNotice, setAccountNotice] = useState("");
+  const [accountError, setAccountError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showDangerZone, setShowDangerZone] = useState(false);
 
   useEffect(() => {
     const handoff = new URLSearchParams(location.search).get("qqDeleteHandoff");
     const deletionError = new URLSearchParams(location.search).get("qqDeleteError");
     if (deletionError) {
       window.history.replaceState({}, "", "/me");
-      setAccountNotice(deletionError === "qq_authorization_cancelled"
+      setAccountError(deletionError === "qq_authorization_cancelled"
         ? "已取消 QQ 注销身份验证，账号不会被删除。"
         : deletionError === "qq_account_mismatch"
           ? "授权的 QQ 与当前账号不一致，账号不会被删除。"
@@ -362,11 +713,12 @@ export function MeHomePage() {
         await logout();
         window.location.href = "/";
       })
-      .catch((error) => setAccountNotice(error instanceof Error ? error.message : "QQ 重新验证失败"));
-  }, [location.search, token]);
+      .catch((error) => setAccountError(error instanceof Error ? error.message : "QQ 重新验证失败"));
+  }, [location.search, token, logout]);
 
   async function exportMyData() {
     setBusy(true);
+    setAccountError("");
     try {
       const data = await apiGet<unknown>("/api/me/export", token);
       const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
@@ -376,14 +728,23 @@ export function MeHomePage() {
       anchor.click();
       URL.revokeObjectURL(url);
       setAccountNotice("个人数据导出已开始下载。");
-    } finally { setBusy(false); }
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "导出失败");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function unlinkQq() {
     if (!window.confirm("解除 QQ 关联后，将不能再使用 QQ 登录。确定继续？")) return;
-    await apiDelete("/api/auth/qq/link", token);
-    await reloadProfile();
-    setAccountNotice("QQ 关联已解除。");
+    try {
+      await apiDelete("/api/auth/qq/link", token);
+      await reloadProfile();
+      setAccountNotice("QQ 关联已解除。");
+      setAccountError("");
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "解除失败");
+    }
   }
 
   function clearLocalCache() {
@@ -393,49 +754,194 @@ export function MeHomePage() {
     }
     if ("caches" in window) caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))));
     setAccountNotice("本地缓存已清除，当前登录保持有效。");
+    setAccountError("");
   }
 
   async function beginDeletion() {
-    if (meProfile?.user.email) {
-      await apiPost("/api/me/account-deletion/email-code", {}, token);
-      setAccountNotice("注销验证码已发送，请在下方输入。验证码 5 分钟内有效，60 秒内不能重复发送。");
-      return;
+    setAccountError("");
+    try {
+      if (meProfile?.user.email) {
+        await apiPost("/api/me/account-deletion/email-code", {}, token);
+        setAccountNotice("注销验证码已发送，请在下方输入。验证码 5 分钟内有效，60 秒内不能重复发送。");
+        return;
+      }
+      const result = await apiGet<{ authorizeUrl: string }>("/api/me/account-deletion/qq/start", token);
+      window.location.href = result.authorizeUrl;
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "开始注销失败");
     }
-    const result = await apiGet<{ authorizeUrl: string }>("/api/me/account-deletion/qq/start", token);
-    window.location.href = result.authorizeUrl;
   }
 
   async function confirmDeletion() {
-    if (!/^\d{6}$/.test(deletionCode)) return setAccountNotice("请输入 6 位注销验证码。");
+    if (!/^\d{6}$/.test(deletionCode)) {
+      setAccountError("请输入 6 位注销验证码。");
+      return;
+    }
     if (!window.confirm("此操作不可撤销。账号、会话、绑定、收藏、成绩、卡组和玩家快照将被删除。确定注销？")) return;
-    const intent = await apiPost<{ token: string }>("/api/me/account-deletion/intent", { confirmation: "DELETE", code: deletionCode }, token);
-    await apiPost("/api/me/account-deletion/confirm", { token: intent.token }, token);
-    await logout();
-    window.location.href = "/";
+    try {
+      const intent = await apiPost<{ token: string }>("/api/me/account-deletion/intent", { confirmation: "DELETE", code: deletionCode }, token);
+      await apiPost("/api/me/account-deletion/confirm", { token: intent.token }, token);
+      await logout();
+      window.location.href = "/";
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "注销失败");
+    }
   }
+
+  const hasQqLinked = meProfile?.oauthAccounts.some((account) => account.provider === "qq");
+
   return (
     <section className="account-workspace">
-      <article className="panel account-summary">
-        <div><span>当前 UID</span><strong>{selectedBinding?.displayName || selectedBinding?.publicProfileSnapshot?.nickname || selectedBinding?.playerUid || "未绑定"}</strong><small>{selectedBinding?.region ?? "-"}</small></div>
-        <div><span>库存</span><strong>{toolContext?.inventoryCount ?? selectedSummary?.inventoryCount ?? 0}</strong></div>
-        <div><span>资产类型</span><strong>{toolContext?.playerDataKinds.length ?? selectedSummary?.completeness.uploadedPlayerDataKinds.length ?? 0}</strong></div>
-      </article>
-      {missing.length > 0 && <article className="panel wide"><div className="panel-heading"><div><h2>建议更新的玩家数据</h2><p>这些字段会影响工具结果精度。</p></div>{HARUKI_FEATURE_ENABLED && <Link className="button-link" to="/me/assets">同步玩家数据</Link>}</div><div className="tag-row">{missing.slice(0, 12).map((item) => <span key={item}>{item}</span>)}</div></article>}
+      <div className="account-overview">
+        <article className="panel account-header-card">
+          <div className="account-header-content">
+            <div className="account-avatar">
+              <UserRound size={32} />
+            </div>
+            <div className="account-header-info">
+              <h2>{meProfile?.user.nickname || meProfile?.user.email || "用户"}</h2>
+              <p className="account-email">{meProfile?.user.email || "QQ 登录用户"}</p>
+            </div>
+          </div>
+        </article>
+
+        <article className="panel account-summary-grid">
+          <div className="summary-item">
+            <span className="summary-label">当前 UID</span>
+            <strong className="summary-value">{selectedBinding?.displayName || selectedBinding?.publicProfileSnapshot?.nickname || selectedBinding?.playerUid || "未绑定"}</strong>
+            <small className="summary-meta">{selectedBinding?.region ?? "-"}</small>
+          </div>
+          <div className="summary-item">
+            <span className="summary-label">库存</span>
+            <strong className="summary-value">{toolContext?.inventoryCount ?? selectedSummary?.inventoryCount ?? 0}</strong>
+          </div>
+          <div className="summary-item">
+            <span className="summary-label">资产类型</span>
+            <strong className="summary-value">{toolContext?.playerDataKinds.length ?? selectedSummary?.completeness.uploadedPlayerDataKinds.length ?? 0}</strong>
+          </div>
+        </article>
+      </div>
+
+      {missing.length > 0 && (
+        <article className="panel wide notice-panel warning">
+          <div className="panel-heading">
+            <div>
+              <h2><AlertCircle size={20} />建议更新的玩家数据</h2>
+              <p>这些字段会影响工具结果精度</p>
+            </div>
+            {HARUKI_FEATURE_ENABLED && <Link className="button-link secondary" to="/me/assets">同步玩家数据</Link>}
+          </div>
+          <div className="tag-row">{missing.slice(0, 12).map((item) => <span key={item} className="tag-warning">{item}</span>)}</div>
+        </article>
+      )}
+
       <ToolContextPanel context={toolContext} />
-      <div className="tool-grid me-tool-grid">{meTools.map((tool) => { const Icon = tool.icon; return <Link className="tool-card" key={tool.to} to={tool.to}><span className="tool-icon"><Icon size={22} /></span><strong>{tool.title}</strong><small>{tool.desc}</small></Link>; })}</div>
-      <article className="panel wide account-rights-panel">
-        <div className="panel-heading"><div><h2>隐私与账号权利</h2><p>你可以导出数据、解除 QQ 关联、清除设备缓存或注销账号。</p></div></div>
-        <div className="button-row">
-          <button type="button" className="secondary" disabled={busy} onClick={exportMyData}>导出个人数据 JSON</button>
-          {meProfile?.oauthAccounts.some((account) => account.provider === "qq") && meProfile.user.email && <button type="button" className="secondary" onClick={unlinkQq}>解除 QQ 关联</button>}
-          <button type="button" className="secondary" onClick={clearLocalCache}>清除本地缓存</button>
-          <button type="button" className="danger" onClick={beginDeletion}>开始注销账号</button>
+
+      <article className="panel wide">
+        <div className="panel-heading">
+          <h2>工具与服务</h2>
+          <p>管理你的收藏、档案和玩家数据</p>
         </div>
-        {meProfile?.user.email && <div className="button-row deletion-confirm-row"><input value={deletionCode} onChange={(event) => setDeletionCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="注销验证码" /><button type="button" className="danger" disabled={deletionCode.length !== 6} onClick={confirmDeletion}>永久注销</button></div>}
-        <p className="empty-state">纯 QQ 账号注销会先跳转 QQ 重新授权；邮箱账号使用一次性验证码重新验证。</p>
-        {accountNotice && <p className="warning-text">{accountNotice}</p>}
+        <div className="tool-grid me-tool-grid">
+          {meTools.map((tool) => {
+            const Icon = tool.icon;
+            return (
+              <Link className="tool-card" key={tool.to} to={tool.to}>
+                <span className="tool-icon">
+                  <Icon size={22} />
+                </span>
+                <strong>{tool.title}</strong>
+                <small>{tool.desc}</small>
+              </Link>
+            );
+          })}
+        </div>
       </article>
-      <button type="button" className="secondary logout-button" onClick={logout}>退出登录</button>
+
+      <article className="panel wide account-rights-panel">
+        <div className="panel-heading">
+          <div>
+            <h2><Shield size={20} />隐私与账号权利</h2>
+            <p>你可以导出数据、解除 QQ 关联、清除设备缓存或注销账号</p>
+          </div>
+        </div>
+
+        <div className="account-actions-grid">
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={busy}
+            onClick={exportMyData}
+          >
+            {busy ? <><Loader2 size={16} className="spinner" />导出中...</> : "导出个人数据 JSON"}
+          </button>
+          {hasQqLinked && meProfile?.user.email && (
+            <button type="button" className="btn-secondary" onClick={unlinkQq}>
+              解除 QQ 关联
+            </button>
+          )}
+          <button type="button" className="btn-secondary" onClick={clearLocalCache}>
+            清除本地缓存
+          </button>
+        </div>
+
+        <div className="danger-zone">
+          <button
+            type="button"
+            className="danger-zone-toggle"
+            onClick={() => setShowDangerZone(!showDangerZone)}
+          >
+            <AlertCircle size={16} />
+            {showDangerZone ? "隐藏危险操作" : "显示危险操作"}
+          </button>
+
+          {showDangerZone && (
+            <div className="danger-zone-content">
+              <div className="danger-zone-warning">
+                <AlertCircle size={20} />
+                <div>
+                  <strong>注销账号</strong>
+                  <p>此操作不可撤销。账号、会话、绑定、收藏、成绩、卡组和玩家快照将被永久删除。</p>
+                </div>
+              </div>
+
+              <button type="button" className="danger" onClick={beginDeletion}>
+                开始注销账号
+              </button>
+
+              {meProfile?.user.email && (
+                <div className="deletion-confirm-row">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={deletionCode}
+                    onChange={(event) => setDeletionCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="输入注销验证码"
+                    maxLength={6}
+                  />
+                  <button
+                    type="button"
+                    className="danger"
+                    disabled={deletionCode.length !== 6}
+                    onClick={confirmDeletion}
+                  >
+                    永久注销
+                  </button>
+                </div>
+              )}
+
+              <p className="helper-text">纯 QQ 账号注销会先跳转 QQ 重新授权；邮箱账号使用一次性验证码重新验证。</p>
+            </div>
+          )}
+        </div>
+
+        {accountNotice && <div className="notice-box success"><CheckCircle2 size={16} />{accountNotice}</div>}
+        {accountError && <div className="notice-box error"><AlertCircle size={16} />{accountError}</div>}
+      </article>
+
+      <button type="button" className="secondary logout-button" onClick={logout}>
+        退出登录
+      </button>
     </section>
   );
 }

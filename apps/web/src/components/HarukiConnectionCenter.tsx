@@ -203,7 +203,7 @@ function PublicPreviewCard({
       </dl>
       {item.refreshError && <p className="haruki-inline-warning"><AlertTriangle size={16} />刷新失败：{item.refreshError}，当前仍在显示本机缓存。</p>}
       <div className="button-row">
-        <button type="button" className="secondary" disabled={busy} onClick={() => onRefresh(item)}><RefreshCw size={16} />刷新</button>
+        <button type="button" className="btn-secondary" disabled={busy} onClick={() => onRefresh(item)}><RefreshCw size={16} />刷新</button>
         <button type="button" className="secondary danger-button" disabled={busy} onClick={() => onClear(item)}><Trash2 size={16} />清除本机缓存</button>
       </div>
     </article>
@@ -271,7 +271,7 @@ function SyncReviewPanel({
       ))}
       <div className="button-row">
         <button type="button" disabled={busy || !review.reviewToken} onClick={onConfirm}><CheckCircle2 size={16} />确认同步</button>
-        <button type="button" className="secondary" disabled={busy} onClick={onCancel}>取消</button>
+        <button type="button" className="btn-secondary" disabled={busy} onClick={onCancel}>取消</button>
       </div>
     </article>
   );
@@ -564,7 +564,7 @@ export function HarukiConnectionCenter() {
         <div className={`haruki-global-message ${error ? "error" : "success"}`} role="status">
           {error ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
           <span>{error || notice}</span>
-          <button type="button" className="secondary" onClick={() => { setError(""); setNotice(""); }}>关闭</button>
+          <button type="button" className="btn-secondary" onClick={() => { setError(""); setNotice(""); }}>关闭</button>
         </div>
       )}
 
@@ -602,7 +602,7 @@ export function HarukiConnectionCenter() {
                 <div><strong>Haruki 账号</strong><span>{connection.availableBindings.length} 个已授权玩家账号 · {connection.scope?.join(" / ") || "只读数据权限"}</span></div>
               </div>
               <div className="button-row">
-                <button type="button" className="secondary" onClick={startOAuth} disabled={busyAction === "oauth-start"}><Link2 size={16} />重新授权</button>
+                <button type="button" className="btn-secondary" onClick={startOAuth} disabled={busyAction === "oauth-start"}><Link2 size={16} />重新授权</button>
                 <button type="button" className="secondary danger-button" onClick={disconnect} disabled={busyAction === "disconnect"}><Unplug size={16} />断开连接</button>
               </div>
             </>
@@ -663,7 +663,7 @@ export function HarukiConnectionCenter() {
       <article className="panel wide">
         <div className="panel-heading">
           <div><h2>已同步到 pjsktools 账号</h2><p>这些玩家快照保存在服务端，Web 与 Android 读取同一份版本。</p></div>
-          {connection.connected && <button type="button" className="secondary" onClick={() => refreshConnection(true)}><RefreshCw size={16} />刷新连接</button>}
+          {connection.connected && <button type="button" className="btn-secondary" onClick={() => refreshConnection(true)}><RefreshCw size={16} />刷新连接</button>}
         </div>
         <div className="haruki-binding-list">
           {persistedBindings.map((binding) => {
@@ -695,8 +695,8 @@ export function HarukiConnectionCenter() {
                 </label>
                 <div className="button-row">
                   <button type="button" disabled={actionBusy} onClick={() => openReview(binding)}><RefreshCw size={16} />审核并同步</button>
-                  <button type="button" className="secondary" disabled={actionBusy} onClick={() => safeSync(binding)}>安全同步</button>
-                  {!binding.isDefault && <button type="button" className="secondary" disabled={actionBusy} onClick={() => setDefaultBinding(binding)}>设为默认</button>}
+                  <button type="button" className="btn-secondary" disabled={actionBusy} onClick={() => safeSync(binding)}>安全同步</button>
+                  {!binding.isDefault && <button type="button" className="btn-secondary" disabled={actionBusy} onClick={() => setDefaultBinding(binding)}>设为默认</button>}
                   <Link className="button-link secondary" to="/me/profile">查看数据摘要</Link>
                   <button type="button" className="secondary danger-button" disabled={actionBusy} onClick={() => deleteBinding(binding)}><Trash2 size={16} />删除</button>
                 </div>

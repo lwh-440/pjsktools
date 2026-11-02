@@ -298,9 +298,9 @@ export function ModalDialog({
   </div>;
 }
 
-export function SearchBox({ value, onChange, placeholder, ariaLabel = "搜索" }: { value: string; onChange: (value: string) => void; placeholder: string; ariaLabel?: string }) {
+export function SearchBox({ value, onChange, placeholder, ariaLabel = "搜索", className = "" }: { value: string; onChange: (value: string) => void; placeholder: string; ariaLabel?: string; className?: string }) {
   return (
-    <div className="ranking-tools">
+    <div className={`ranking-tools catalog-search-box ${className}`.trim()}>
       <Search size={18} />
       <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-label={ariaLabel} />
     </div>
