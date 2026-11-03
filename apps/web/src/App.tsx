@@ -4071,7 +4071,7 @@ export function App() {
             </div>
           </div>
         </div>}
-        <header className={activeSection === "home" && location.pathname === "/" ? "topbar home-topbar" : "topbar"}>
+        <header className={activeSection === "home" && (location.pathname === "/" || /^\/section\/[^/]+\/?$/.test(location.pathname)) ? "topbar home-topbar" : "topbar"}>
           <div className="topbar-status" aria-live="polite">{uiStyle === "workbench" && <AppearanceSwitch />}{(location.pathname.startsWith("/me") ? auth.message : (message === "准备就绪" || message === "基础数据已就绪，图鉴将在打开时加载" ? "" : message)) && <p>{location.pathname.startsWith("/me") ? auth.message : message}</p>}</div>
           <div className="top-actions"><RegionSelect className="navigation-region-select" value={region} options={regions} onChange={changeRegion} />{activeSection !== "home" && <button type="button" onClick={() => void refreshBaseAndCatalog()} disabled={baseRefreshing}><RefreshCw size={16} />{baseRefreshing ? "刷新中" : "刷新"}</button>}</div>
         </header>
