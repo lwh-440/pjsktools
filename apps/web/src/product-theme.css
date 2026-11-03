@@ -52,6 +52,35 @@ input:hover, select:hover, textarea:hover { border-color: var(--n-400); }
 .topbar h1 { font-size: 25px; margin-bottom: 3px; }
 .topbar p { margin-bottom: 0; font-size: var(--fs-md); }
 .top-actions select { min-width: 118px; }
+.topbar .top-actions > .topbar-refresh {
+  border-color: var(--action-primary-hover);
+  background: var(--action-primary-default);
+  color: var(--text-on-brand);
+  box-shadow: 0 3px 0 rgba(23, 79, 54, .16);
+}
+.topbar .top-actions > .topbar-refresh:hover:not(:disabled) {
+  border-color: var(--action-primary-active);
+  background: var(--action-primary-hover);
+  color: var(--text-on-brand);
+}
+.topbar .top-actions > .topbar-refresh:active:not(:disabled) {
+  border-color: var(--action-primary-active);
+  background: var(--action-primary-active);
+  color: var(--text-on-brand);
+}
+.topbar .top-actions > .topbar-refresh:focus-visible {
+  outline: 3px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+.topbar .top-actions > .topbar-refresh:disabled {
+  border-color: var(--color-neutral-400);
+  background: var(--action-primary-disabled);
+  color: var(--color-neutral-700);
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1;
+  transform: none;
+}
 
 .panel, .summary-grid div { border: 1px solid var(--n-200); border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--sh-2); }
 .panel { position: relative; }
@@ -4774,13 +4803,31 @@ button.appearance-switch:hover {
 @media (prefers-reduced-motion: reduce) { .missions-page .missions-tabs button, .missions-page .mission-card { transition: none; } }
 
 /* All nine catalogue headers use the card catalogue's container, spacing and search treatment. */
+.catalog-page {
+  gap: 13px;
+  padding: 10px;
+}
+.catalog-page.panel::before { display: none; }
 .catalog-page > .catalog-page-heading {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   min-height: 80px;
   padding: 10px 12px;
+}
+.catalog-page > .catalog-page-heading::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 28px;
+  height: 22px;
+  border-top: 3px solid var(--color-brand-500);
+  border-left: 3px solid var(--color-brand-500);
+  border-radius: 12px 0 0;
+  pointer-events: none;
 }
 .catalog-page > .catalog-page-heading > div:first-child {
   flex: 0 1 auto;
@@ -4815,7 +4862,7 @@ button.appearance-switch:hover {
 }
 
 @media (max-width: 760px) {
-  .catalog-page { gap: 13px; padding: 0; }
+  .catalog-page { gap: 13px; padding: 8px; }
   .catalog-page > .catalog-page-heading {
     align-items: stretch;
     flex-direction: column;

@@ -2393,6 +2393,12 @@ export function App() {
               <div className="rank-meta-info">
                 <span className="rank-date">{eventLoadFailed ? "活动资料暂时无法获取，请重试" : (activeEvent ? formatDate(event?.startAt) + " - " + formatDate(event?.endAt) : "当前没有正在进行的活动")}</span>
               </div>
+              {event?.storyOutline && (
+                <div className="rank-story-outline">
+                  <h3>活动简介</h3>
+                  <p>{eventLoadFailed ? "活动详情暂时无法获取，榜单服务恢复后可重新加载。" : event.storyOutline}</p>
+                </div>
+              )}
             </div>
             <div className="rank-status-card">
               <div className="status-indicator" data-status={sourceStatus}>
@@ -2408,12 +2414,6 @@ export function App() {
               </button>
             </div>
           </div>
-          {event?.storyOutline && (
-            <div className="rank-story-outline">
-              <h3>活动简介</h3>
-              <p>{eventLoadFailed ? "活动详情暂时无法获取，榜单服务恢复后可重新加载。" : event.storyOutline}</p>
-            </div>
-          )}
         </div>
 
         {showWorldLinkControls && <article className="ranking-scope-card-modern" aria-label="榜单类型和角色选择">
@@ -4073,7 +4073,7 @@ export function App() {
         </div>}
         <header className={activeSection === "home" && (location.pathname === "/" || /^\/section\/[^/]+\/?$/.test(location.pathname)) ? "topbar home-topbar" : "topbar"}>
           <div className="topbar-status" aria-live="polite">{uiStyle === "workbench" && <AppearanceSwitch />}{(location.pathname.startsWith("/me") ? auth.message : (message === "准备就绪" || message === "基础数据已就绪，图鉴将在打开时加载" ? "" : message)) && <p>{location.pathname.startsWith("/me") ? auth.message : message}</p>}</div>
-          <div className="top-actions"><RegionSelect className="navigation-region-select" value={region} options={regions} onChange={changeRegion} />{activeSection !== "home" && <button type="button" onClick={() => void refreshBaseAndCatalog()} disabled={baseRefreshing}><RefreshCw size={16} />{baseRefreshing ? "刷新中" : "刷新"}</button>}</div>
+          <div className="top-actions"><RegionSelect className="navigation-region-select" value={region} options={regions} onChange={changeRegion} />{activeSection !== "home" && <button type="button" className="topbar-refresh" onClick={() => void refreshBaseAndCatalog()} disabled={baseRefreshing}><RefreshCw size={16} />{baseRefreshing ? "刷新中" : "刷新"}</button>}</div>
         </header>
 
         <div className="route-content">
