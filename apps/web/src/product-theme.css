@@ -713,7 +713,33 @@ button.appearance-switch:hover {
 }
 
 /* A — deep workbench navigation with the light content treatment. */
-.theme-workbench .sidebar { background-color: #17252b; }
+.theme-workbench .sidebar {
+  color: var(--text-on-dark);
+  background-color: #17252b;
+  border-right-color: var(--color-accent-teal);
+}
+.theme-workbench .sidebar .brand {
+  color: var(--text-on-dark);
+  border-top-color: var(--color-accent-teal);
+}
+.theme-workbench .sidebar .nav-group-title { color: var(--color-neutral-400); }
+.theme-workbench .sidebar .nav-item { color: var(--color-neutral-200); }
+.theme-workbench .sidebar .nav-item svg { color: var(--color-brand-300); }
+.theme-workbench .sidebar .nav-item:hover,
+.theme-workbench .sidebar .nav-item.active {
+  color: var(--text-on-dark);
+  background: rgba(255, 255, 255, 0.11);
+  border-left-color: var(--color-accent-pink);
+}
+.theme-workbench .sidebar .nav-item:hover svg,
+.theme-workbench .sidebar .nav-item.active svg { color: var(--color-brand-300); }
+.theme-workbench .sidebar .brand:focus-visible,
+.theme-workbench .sidebar .nav-item:focus-visible {
+  color: var(--text-on-dark);
+  outline: 3px solid var(--color-brand-300);
+  outline-offset: 2px;
+}
+.theme-workbench .sidebar .appearance-switch:hover { color: #006d70; }
 .theme-workbench .home-topbar {
   display: flex;
   flex-direction: row;
@@ -1273,8 +1299,33 @@ button.appearance-switch:hover {
     min-height: 48px;
   }
 
-  .theme-workbench .mobile-nav-toggle { width: 44px; min-height: 44px; padding: 0; font-size: 0; }
+  .theme-workbench .mobile-nav-toggle {
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-color: #78c8c4;
+    background: #21444b;
+    color: var(--text-on-dark);
+    box-shadow: none;
+    font-size: 0;
+  }
   .theme-workbench .mobile-nav-toggle::before { content: "☰"; font-size: 19px; }
+  .theme-workbench .mobile-nav-toggle:hover {
+    border-color: var(--color-brand-300);
+    background: #2b5961;
+    color: var(--text-on-dark);
+    transform: none;
+    box-shadow: none;
+  }
+  .theme-workbench .mobile-nav-toggle[aria-expanded="true"] {
+    border-color: var(--color-accent-teal);
+    background: #174f36;
+    color: var(--text-on-dark);
+  }
+  .theme-workbench .mobile-nav-toggle:focus-visible {
+    outline: 3px solid var(--color-brand-300);
+    outline-offset: 2px;
+  }
   .theme-workbench .mobile-current-page { color: #eefbfb; font-size: 13px; font-weight: 650; }
   .theme-workbench .mobile-nav-bar select { width: 74px; min-width: 74px; min-height: 40px; padding-inline: 5px; }
   .theme-workbench .home-topbar { justify-content: flex-end; min-height: 36px; }
