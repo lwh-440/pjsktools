@@ -53,8 +53,8 @@ export function Live2dCatalogPage({ region }: { region: string }) {
 
   const items = catalog?.items ?? catalog?.models ?? [];
   const noReferences = availability === "region-referenced" && !loading && !items.length && !error;
-  return <section className="live2d-catalog-page">
-    <div className="live2d-page-heading"><div><h2>Live2D 模型</h2><p>浏览模型并进入独立预览页播放动作和表情。</p></div><button type="button" onClick={() => setReload((value) => value + 1)}><RefreshCw size={16} />刷新</button></div>
+  return <section className="live2d-catalog-page content-browser-page">
+    <div className="live2d-page-heading content-browser-heading"><div><h2>Live2D 模型</h2><p>浏览模型并进入独立预览页播放动作和表情。</p></div><button type="button" onClick={() => setReload((value) => value + 1)}><RefreshCw size={16} />刷新</button></div>
     <div className="live2d-filterbar"><label><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、模型 ID 或路径" /></label><input inputMode="numeric" value={characterId} onChange={(event) => setCharacterId(event.target.value.replace(/\D/g, ""))} placeholder="角色 ID" /><input value={costumeType} onChange={(event) => setCostumeType(event.target.value)} placeholder="服装类型" /><select value={availability} onChange={(event) => setAvailability(event.target.value)}><option value="region-referenced">本区已引用</option><option value="global-only">仅共享模型</option><option value="all">全部共享模型</option><option value="unavailable">资源不可用</option></select></div>
     <div className="live2d-catalog-summary"><span>当前结果 {catalog?.total ?? items.length}</span><span>本区引用 {catalog?.availabilitySummary?.["region-referenced"] ?? 0}</span><span>共享模型 {catalog?.availabilitySummary?.["global-only"] ?? 0}</span></div>
     {loading && !catalog && <p className="empty-state">正在加载模型目录...</p>}{error && <p className="warning-text">{error}</p>}

@@ -9,6 +9,7 @@ import "./product-theme.css";
 import "./current-event-materials.css";
 import "./ranking-detail-parking.css";
 import "./modern-ui.css";
+import "./content-browser.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

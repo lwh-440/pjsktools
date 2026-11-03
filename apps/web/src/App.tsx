@@ -3198,9 +3198,9 @@ export function App() {
     const mysekaiPoint = mysekaiCalcResult?.mysekaiEventPoint;
     const recommendations = mysekaiCalcResult?.mysekaiRecommendations ?? {};
     return (
-      <section className="mysekai-workspace">
-        <article className="panel wide">
-          <div className="panel-heading">
+      <section className="mysekai-workspace content-browser-page">
+        <article className="panel wide mysekai-intro-panel">
+          <div className="panel-heading content-browser-heading">
             <div>
               <h2>MySekai 玩家助手</h2>
               <p>浏览 MySekai 家具、素材与蓝图，也可结合个人资产进行计算。</p>
@@ -3222,8 +3222,8 @@ export function App() {
             ))}
           </div>
           <form className="mysekai-catalog-toolbar" onSubmit={(event) => { event.preventDefault(); setMysekaiCatalogPage(1); void loadMysekaiCatalog(mysekaiCatalogKind, 1, mysekaiCatalogQuery); }}>
-            <label><Search size={16} /><input value={mysekaiCatalogQuery} onChange={(event) => setMysekaiCatalogQuery(event.target.value)} placeholder="搜索名称或 ID" /></label>
-            <select value={mysekaiCatalogCategory} onChange={(event) => { setMysekaiCatalogCategory(event.target.value); setMysekaiCatalogPage(1); }}>
+            <label><Search size={16} /><input value={mysekaiCatalogQuery} onChange={(event) => setMysekaiCatalogQuery(event.target.value)} placeholder="搜索名称或 ID" aria-label="搜索 MySekai 图鉴" /></label>
+            <select value={mysekaiCatalogCategory} onChange={(event) => { setMysekaiCatalogCategory(event.target.value); setMysekaiCatalogPage(1); }} aria-label="MySekai 分类">
               <option value="">全部分类</option>
               {asArray(mysekaiCatalog?.facets?.categories).map((category: string) => <option value={category} key={category}>{category}</option>)}
             </select>
@@ -3277,7 +3277,9 @@ export function App() {
             {mysekaiSearchForm.algorithm === "beam" && <input value={mysekaiSearchForm.beamWidth} onChange={(event) => setMysekaiSearchForm({ ...mysekaiSearchForm, beamWidth: event.target.value })} placeholder="Beam 宽度" />}
           </div>
           {mysekaiSearchForm.algorithm === "ga" && (
-            <div className="two-col">
+            <details className="mysekai-advanced-options">
+              <summary>高级搜索参数</summary>
+              <div className="two-col">
               <input value={mysekaiSearchForm.seed} onChange={(event) => setMysekaiSearchForm({ ...mysekaiSearchForm, seed: event.target.value })} placeholder="Seed" />
               <input value={mysekaiSearchForm.timeoutMs} onChange={(event) => setMysekaiSearchForm({ ...mysekaiSearchForm, timeoutMs: event.target.value })} placeholder="超时 ms" />
               <input value={mysekaiSearchForm.maxIter} onChange={(event) => setMysekaiSearchForm({ ...mysekaiSearchForm, maxIter: event.target.value })} placeholder="最大迭代" />
@@ -3288,10 +3290,14 @@ export function App() {
               <input value={mysekaiSearchForm.crossoverRate} onChange={(event) => setMysekaiSearchForm({ ...mysekaiSearchForm, crossoverRate: event.target.value })} placeholder="交叉率" />
               <input value={mysekaiSearchForm.baseMutationRate} onChange={(event) => setMysekaiSearchForm({ ...mysekaiSearchForm, baseMutationRate: event.target.value })} placeholder="基础变异率" />
               <input value={mysekaiSearchForm.noImproveIterToMutationRate} onChange={(event) => setMysekaiSearchForm({ ...mysekaiSearchForm, noImproveIterToMutationRate: event.target.value })} placeholder="无提升变异增量" />
-            </div>
+              </div>
+            </details>
           )}
           <label className="check-line"><input type="checkbox" checked={mysekaiSearchForm.uniqueCharacter} onChange={(event) => setMysekaiSearchForm({ ...mysekaiSearchForm, uniqueCharacter: event.target.checked })} /> 优先唯一角色</label>
-          <textarea className="json-editor" value={mysekaiCalcInput} onChange={(event) => setMysekaiCalcInput(event.target.value)} />
+          <details className="mysekai-advanced-options">
+            <summary>卡牌与资产 JSON</summary>
+            <textarea className="json-editor" aria-label="MySekai 卡牌与资产 JSON" value={mysekaiCalcInput} onChange={(event) => setMysekaiCalcInput(event.target.value)} />
+          </details>
           <div className="button-row">
             <button type="button" onClick={calculateMysekai}><Wand2 size={16} />手动输入计算</button>
             <button type="button" className="btn-secondary" disabled={!binding} onClick={calculateBoundMysekai}>使用绑定 UID 数据</button>
@@ -3411,9 +3417,10 @@ export function App() {
     const safeInformationPage = Math.min(informationPage, informationPages);
     const visibleItems = items.slice((safeInformationPage - 1) * informationPageSize, safeInformationPage * informationPageSize);
     return (
-      <section className="content-workspace information-page">
+      <section className="content-workspace information-page content-browser-page">
         <article className="panel wide information-panel">
-          <div className="panel-heading information-page-heading"><div><span className="information-kicker">公告 / 资讯</span><h2>公告资讯</h2><p>按时间线浏览游戏公告。</p></div><button type="button" className="information-refresh-button" onClick={() => loadContent("information")}><RefreshCw size={16} />刷新</button></div>
+          <div className="panel-heading information-page-heading content-browser-heading"><div><h2>公告资讯</h2><p>按时间线浏览游戏公告。</p></div><button type="button" className="information-refresh-button" onClick={() => loadContent("information")}><RefreshCw size={16} />刷新</button></div>
+          <p className="catalog-result-count">共 {formatNumber(items.length)} 条公告 · 第 {safeInformationPage} / {informationPages} 页</p>
           <div className="timeline-list information-timeline">
             {visibleItems.map((item: any, index: number) => {
               const raw = rawRecord(item.raw ?? item);
@@ -3479,9 +3486,9 @@ export function App() {
     const visibleItems = filteredItems.slice((safePage - 1) * exchangePageSize, safePage * exchangePageSize);
     const statusLabels: Record<string, string> = { active: "进行中", permanent: "常驻", upcoming: "即将开放", ended: "已结束" };
     return (
-      <section className="content-workspace exchanges-page">
+      <section className="content-workspace exchanges-page content-browser-page">
         <article className="panel wide exchanges-shell">
-          <div className="panel-heading exchanges-page-heading"><div><span className="exchanges-kicker">兑换资料</span><h2>兑换所</h2><p>按分类查看商品、素材和兑换要求。</p></div><button type="button" onClick={() => loadContent("exchanges")}><RefreshCw size={16} />刷新</button></div>
+          <div className="panel-heading exchanges-page-heading content-browser-heading"><div><h2>兑换所</h2><p>按分类查看商品、素材和兑换要求。</p></div><button type="button" onClick={() => loadContent("exchanges")}><RefreshCw size={16} />刷新</button></div>
           <div className="exchange-summary-row exchanges-summary" aria-label="兑换所概览">
             <div><span>兑换所</span><strong>{formatNumber(asArray(data?.summaries).length)}</strong></div>
             <div><span>兑换项</span><strong>{formatNumber(data?.total ?? 0)}</strong></div>
@@ -3571,9 +3578,9 @@ export function App() {
       if (missionPage > totalPages) setMissionPage(totalPages);
     }, [missionPage, totalPages]);
     return (
-      <section className="content-workspace missions-page">
+      <section className="content-workspace missions-page content-browser-page">
         <article className="panel wide missions-shell">
-          <div className="panel-heading missions-page-heading"><div><span className="missions-kicker">任务资料</span><h2>任务</h2><p>查看普通、新手、角色和称号任务的条件、阶段与奖励。</p></div><button type="button" onClick={() => loadContent("missions")}><RefreshCw size={16} />刷新</button></div>
+          <div className="panel-heading missions-page-heading content-browser-heading"><div><h2>任务</h2><p>查看普通、新手、角色和称号任务的条件、阶段与奖励。</p></div><button type="button" onClick={() => loadContent("missions")}><RefreshCw size={16} />刷新</button></div>
           {data?.capabilityStatus === "partial" && <p className="status-note">部分任务资料缺失，其他分组仍可正常浏览。</p>}
           <div className="mission-tabs missions-tabs" role="tablist" aria-label="任务分组">
             {groups.map((group) => <button type="button" className={group.key === selected?.key ? "active" : ""} key={group.key} onClick={() => setMissionTab(group.key)}>{group.label ?? group.key}<span>{formatNumber(group.count ?? 0)}</span></button>)}

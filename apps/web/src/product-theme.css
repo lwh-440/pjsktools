@@ -116,11 +116,11 @@ input:hover, select:hover, textarea:hover { border-color: var(--n-400); }
 
 .mysekai-catalog-toolbar label,
 .mysekai-catalog-toolbar select,
-.mysekai-catalog-toolbar button { min-height: 46px; }
+.mysekai-catalog-toolbar button { min-height: 38px; }
 
 .mysekai-catalog-grid {
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .mysekai-catalog-card {
@@ -130,7 +130,7 @@ input:hover, select:hover, textarea:hover { border-color: var(--n-400); }
   align-content: start;
   gap: 7px;
   min-height: 250px;
-  padding: 12px;
+  padding: 10px;
   text-align: left;
   overflow: hidden;
 }
@@ -1627,6 +1627,349 @@ button.appearance-switch:hover {
   .home-page .tool-card,
   .theme-magazine .magazine-scroll-button { transition: none; }
 }
+/* Missions page: dense information display with filter controls and expandable cards. */
+.missions-page {
+  display: grid;
+  gap: 14px;
+}
+
+.missions-page h1 {
+  margin: 2px 0;
+  color: #183f43;
+  font-size: clamp(18px, 2.5vw, 22px);
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.missions-page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 80px;
+  padding: 10px 12px;
+}
+
+.missions-page-heading > div {
+  min-width: 0;
+}
+
+.missions-page-heading h2 {
+  margin: 2px 0;
+  color: #183f43;
+  font-size: clamp(18px, 2.5vw, 22px);
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.missions-page-heading p {
+  margin: 0;
+  color: #526e76;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.missions-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.missions-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #cde2df;
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: #486a6d;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+  transition: all 0.15s ease;
+}
+
+.missions-tabs button:hover {
+  border-color: #7bcac5;
+  background: #eaf8f6;
+  color: #007f82;
+  transform: none;
+  box-shadow: none;
+}
+
+.missions-tabs button.active {
+  border-color: #008f8e;
+  background: #00a7a5;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0, 127, 130, .15);
+}
+
+.missions-tabs button span {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .2);
+  font-size: 11px;
+}
+
+.missions-tabs button.active span {
+  background: rgba(255, 255, 255, .3);
+}
+
+.missions-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.missions-toolbar input,
+.missions-toolbar select {
+  min-height: 42px;
+}
+
+.missions-result-count {
+  margin: 10px 0 8px;
+  color: #627b7e;
+  font-size: 12px;
+}
+
+.missions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.mission-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #d2e6e2;
+  border-radius: var(--r-sm);
+  background: #fff;
+  box-shadow: var(--sh-1);
+  transition: all 0.15s ease;
+}
+
+.mission-card:hover {
+  border-color: #7bcac5;
+  background: #fbffff;
+  box-shadow: 0 4px 12px rgba(0, 127, 130, .1);
+  transform: translateY(-1px);
+}
+
+.mission-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mission-kind-chip {
+  padding: 3px 7px;
+  border: 1px solid #cde2df;
+  border-radius: 4px;
+  background: #eaf8f6;
+  color: #007f82;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mission-card-heading small {
+  color: #718588;
+  font-size: 11px;
+}
+
+.mission-character-name {
+  color: #183f43;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.mission-card > p {
+  margin: 0;
+  color: #38565a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.mission-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mission-card-meta span {
+  padding: 3px 7px;
+  border: 1px solid #e0ebe9;
+  border-radius: 4px;
+  background: #f8fcfb;
+  color: #627b7e;
+  font-size: 11px;
+}
+
+.mission-rewards {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #e0ebe9;
+  border-radius: 6px;
+  background: #f8fcfb;
+}
+
+.mission-rewards > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mission-reward-art {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.mission-rewards span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: #38565a;
+  font-size: 12px;
+}
+
+.mission-rewards small {
+  color: #718588;
+  font-size: 11px;
+}
+
+.mission-stage-toggle {
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.mission-stage-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dceae7;
+  border-radius: 6px;
+  background: #f2faf9;
+}
+
+.mission-stage-list > div {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.mission-stage-list span {
+  color: #627b7e;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mission-stage-list strong {
+  color: #007f82;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mission-stage-list small {
+  color: #718588;
+  font-size: 11px;
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  .missions-page h1 {
+    font-size: 18px;
+  }
+
+  .missions-page-heading {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .missions-page-heading button {
+    width: 100%;
+  }
+
+  .missions-tabs {
+    gap: 6px;
+  }
+
+  .missions-tabs button {
+    min-height: 40px;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .missions-toolbar {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .missions-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .mission-card {
+    padding: 9px;
+    gap: 9px;
+  }
+
+  .mission-rewards {
+    padding: 7px;
+    gap: 7px;
+  }
+
+  .mission-stage-list {
+    padding: 8px;
+    gap: 7px;
+  }
+
+  .mission-stage-list > div {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .mission-stage-list small {
+    text-align: left;
+  }
+}
+
+@media (max-width: 420px) {
+  .missions-page h1 {
+    font-size: 17px;
+  }
+
+  .missions-tabs button {
+    flex: 1 1 calc(50% - 3px);
+    min-width: 0;
+  }
+
+  .mission-card {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .mission-card-meta {
+    gap: 6px;
+  }
+}
+
 /* Current event page: activity context and one readable ranking surface. */
 .current-event-page {
   display: grid;
@@ -2172,7 +2515,7 @@ button.appearance-switch:hover {
 }
 .tools-page .tools-mysekai-panel { border-left: 3px solid rgba(93, 125, 191, .55); }
 .tools-page .tools-mysekai-panel .button-row { display: flex; flex-wrap: wrap; gap: 9px; }
-.tools-page .tools-mysekai-panel .button-row button { flex: 1 1 210px; min-height: 42px; }
+.tools-page .tools-mysekai-panel .button-row button { flex: 1 1 210px; min-height: 38px; }
 
 @media (max-width: 640px) {
   .tools-page .tools-intro::after { right: 12px; bottom: 15px; width: 76px; }
@@ -2181,7 +2524,7 @@ button.appearance-switch:hover {
   .tools-page .tools-category-nav { margin-inline: -1px; padding-bottom: 6px; }
   .tools-page .tools-category-nav button { flex-basis: 126px; min-height: 54px; padding: 9px 10px; }
   .tools-page .tools-mysekai-panel .button-row { flex-direction: column; }
-  .tools-page .tools-mysekai-panel .button-row button { width: 100%; flex: 0 0 auto; min-height: 44px; }
+  .tools-page .tools-mysekai-panel .button-row button { width: 100%; flex: 0 0 auto; min-height: 38px; }
 }
 
 /* Deck comparison workspace. Keep wide result data in a local scroller so the
@@ -4217,6 +4560,129 @@ button.appearance-switch:hover {
   .history-events-page .history-event-card { animation: none; transition: none; }
 }
 
+/* Story catalog: information-dense story browsing with responsive card layouts. */
+.story-catalog-page {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  overflow-x: clip;
+  padding: 0;
+  border-color: rgba(0, 127, 130, .16);
+  background: #fff;
+}
+.story-catalog-page .story-page-heading {
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 80px;
+  padding: 10px 12px;
+}
+.story-catalog-page .story-page-heading h1 {
+  margin: 2px 0;
+  color: #183f43;
+  font-size: clamp(18px, 2.5vw, 22px);
+  font-weight: 650;
+  line-height: 1.2;
+}
+.story-catalog-page .story-page-heading p {
+  margin: 0;
+  color: #587477;
+  font-size: 13px;
+  line-height: 1.3;
+}
+.story-catalog-page .story-filterbar,
+.story-catalog-page .story-catalog-grid { min-width: 0; }
+.story-catalog-page .story-catalog-grid {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.story-catalog-page .story-catalog-card {
+  position: relative;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(0, 127, 130, .14);
+  border-radius: 12px;
+  background: #fbfefe;
+  box-shadow: 0 5px 14px rgba(24, 77, 80, .045);
+}
+.story-catalog-page .story-catalog-card:hover {
+  border-color: rgba(0, 167, 165, .52);
+  box-shadow: 0 9px 18px rgba(24, 77, 80, .08);
+}
+.story-catalog-page .story-catalog-card .art-frame.wide,
+.story-catalog-page .story-catalog-card .art-image.wide,
+.story-catalog-page .story-catalog-card .art-fallback.wide {
+  width: 100%;
+  aspect-ratio: 61 / 26;
+  height: auto;
+  border: 0;
+  border-bottom: 1px solid rgba(0,127,130,.1);
+  border-radius: 11px 11px 0 0;
+  object-fit: contain;
+  background: #f0f8f7;
+}
+.story-catalog-page .story-catalog-card > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+}
+.story-catalog-page .story-catalog-card h3 {
+  margin: 0;
+  color: #183f43;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.story-catalog-page .story-catalog-card p {
+  display: -webkit-box;
+  min-height: 38px;
+  margin: 0;
+  overflow: hidden;
+  color: #5e7177;
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.story-catalog-page .story-catalog-card span {
+  color: #2d6e83;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.story-catalog-page .story-catalog-card small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #687c82;
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .story-catalog-page { gap: 12px; padding: 0; }
+  .story-catalog-page .story-page-heading { align-items: stretch; flex-direction: column; gap: 8px; }
+  .story-catalog-page .story-catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .story-catalog-page .story-catalog-card { border-radius: 11px; }
+  .story-catalog-page .story-catalog-card > div { padding: 9px; }
+  .story-catalog-page .story-catalog-card h3 { font-size: 13px; }
+  .story-catalog-page .story-catalog-card p { min-height: 36px; font-size: 11px; }
+}
+
+@media (max-width: 420px) {
+  .story-catalog-page { padding: 0; }
+  .story-catalog-page .story-catalog-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .story-catalog-page .story-catalog-card > div { padding: 8px; }
+  .story-catalog-page .story-catalog-card p { min-height: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story-catalog-page .story-catalog-card { transition: none; }
+}
+
 /* Final forecast hierarchy: data range first, predictions immediately after summary. */
 .forecast-page .forecast-windowbar { align-items: center; gap: 12px; padding: 10px 12px; }
 .forecast-page .forecast-windowbar > div:first-child { display: grid; gap: 2px; min-width: 0; }
@@ -4279,34 +4745,27 @@ button.appearance-switch:hover {
   background: linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(241, 251, 250, .9));
 }
 .information-page .information-page-heading {
-  align-items: end;
-  margin-bottom: 18px;
-  padding-bottom: 14px;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 80px;
+  padding: 10px 12px;
   border-bottom: 1px solid rgba(0, 127, 130, .14);
 }
-.information-page .information-kicker {
-  display: block;
-  margin-bottom: 4px;
-  color: #168285;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-}
 .information-page .information-page-heading h2 {
-  margin: 0;
-  color: #21494d;
-  font-size: clamp(20px, 2.4vw, 28px);
-  font-weight: 600;
-  letter-spacing: -.02em;
+  margin: 2px 0;
+  color: #183f43;
+  font-size: clamp(18px, 2.5vw, 22px);
+  font-weight: 650;
+  line-height: 1.2;
 }
 .information-page .information-page-heading p {
-  margin: 5px 0 0;
+  margin: 0;
   color: #5d7779;
   font-size: 13px;
+  line-height: 1.3;
 }
 .information-page .information-refresh-button {
-  min-height: 40px;
+  min-height: 38px;
   border: 1px solid rgba(0, 127, 130, .3);
   border-radius: 10px;
   background: linear-gradient(135deg, #e3f7f4, #c9ece9);
@@ -4316,7 +4775,7 @@ button.appearance-switch:hover {
 .information-page .information-timeline {
   position: relative;
   display: grid;
-  gap: 12px;
+  gap: 10px;
   padding-left: 24px;
 }
 .information-page .information-timeline::before {
@@ -4331,10 +4790,11 @@ button.appearance-switch:hover {
 .information-page .information-card {
   position: relative;
   grid-template-columns: minmax(150px, 196px) minmax(0, 1fr);
-  gap: 16px;
+  gap: 12px;
   align-items: stretch;
-  min-height: 132px;
+  min-height: 120px;
   overflow: visible;
+  padding: 10px;
   border-color: rgba(76, 148, 151, .2);
   border-radius: 14px;
   background: rgba(255, 255, 255, .82);
@@ -4375,9 +4835,9 @@ button.appearance-switch:hover {
 .information-page .information-card-copy {
   display: grid;
   align-content: center;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
-  padding: 4px 2px 4px 0;
+  padding: 3px 2px 3px 0;
 }
 .information-page .information-card-copy strong {
   display: -webkit-box;
@@ -4428,22 +4888,23 @@ button.appearance-switch:hover {
 @media (max-width: 760px) {
   .information-page .information-page-heading {
     align-items: start;
-    gap: 12px;
+    gap: 8px;
+    padding: 9px 11px;
   }
   .information-page .information-refresh-button {
-    min-height: 44px;
+    min-height: 42px;
     width: 100%;
   }
   .information-page .information-timeline {
-    gap: 10px;
+    gap: 8px;
     padding-left: 18px;
   }
   .information-page .information-timeline::before { left: 5px; }
   .information-page .information-card {
-    grid-template-columns: 112px minmax(0, 1fr);
-    gap: 12px;
-    min-height: 112px;
-    padding: 10px;
+    grid-template-columns: 108px minmax(0, 1fr);
+    gap: 10px;
+    min-height: 108px;
+    padding: 9px;
   }
   .information-page .information-card:not(.has-information-image) { grid-template-columns: minmax(0, 1fr); }
   .information-page .information-card::before {
@@ -4451,6 +4912,7 @@ button.appearance-switch:hover {
     width: 7px;
     height: 7px;
   }
+  .information-page .information-card-copy { gap: 5px; }
   .information-page .information-card-copy strong { font-size: 14px; }
 }
 @media (max-width: 420px) {
@@ -4649,7 +5111,7 @@ button.appearance-switch:hover {
 }
 
 /* Exchange catalog: a calm glass surface with clear scanable resource rows. */
-.exchanges-page { gap: 14px; }
+.exchanges-page { gap: 13px; }
 .exchanges-page .exchanges-shell {
   padding: 0;
   overflow: hidden;
@@ -4658,13 +5120,12 @@ button.appearance-switch:hover {
   background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(234,249,246,.86));
   box-shadow: 0 12px 28px rgba(0,96,98,.07), inset 0 1px rgba(255,255,255,.92);
 }
-.exchanges-page .exchanges-page-heading { align-items: flex-start; margin: 0; padding: 19px 22px 15px; border-bottom: 1px solid rgba(0,127,130,.11); }
-.exchanges-page .exchanges-page-heading h2 { margin: 3px 0 4px; color: #183f43; font-size: clamp(22px, 2.5vw, 30px); }
-.exchanges-page .exchanges-page-heading p { margin: 0; color: #5c7779; font-size: 12px; }
-.exchanges-kicker { color: #007f82; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.exchanges-page .exchanges-page-heading { align-items: flex-start; gap: 12px; min-height: 80px; padding: 10px 12px; border-bottom: 1px solid rgba(0,127,130,.11); }
+.exchanges-page .exchanges-page-heading h2 { margin: 2px 0; color: #183f43; font-size: clamp(18px, 2.5vw, 22px); font-weight: 650; line-height: 1.2; }
+.exchanges-page .exchanges-page-heading p { margin: 0; color: #5c7779; font-size: 13px; line-height: 1.3; }
 .exchanges-page .exchanges-page-heading > button { min-height: 40px; border-radius: 11px; }
-.exchanges-page .exchanges-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 15px 22px 12px; }
-.exchanges-page .exchanges-summary > div { min-width: 0; padding: 12px 14px; border: 1px solid rgba(0,127,130,.14); border-left: 3px solid rgba(0,167,165,.7); border-radius: 12px; background: linear-gradient(125deg, rgba(234,249,246,.84), rgba(255,255,255,.72)); box-shadow: inset 0 1px rgba(255,255,255,.82); }
+.exchanges-page .exchanges-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 15px 22px 12px; }
+.exchanges-page .exchanges-summary > div { min-width: 0; padding: 8px 10px; border: 1px solid rgba(0,127,130,.14); border-left: 3px solid rgba(0,167,165,.7); border-radius: 12px; background: linear-gradient(125deg, rgba(234,249,246,.84), rgba(255,255,255,.72)); box-shadow: inset 0 1px rgba(255,255,255,.82); }
 .exchanges-page .exchanges-summary span { color: #5c7779; font-size: 11px; }
 .exchanges-page .exchanges-summary strong { display: block; margin-top: 3px; color: #1e5054; font-size: 22px; line-height: 1.1; }
 .exchanges-page .exchanges-toolbar { grid-template-columns: minmax(220px,1fr) minmax(140px,180px) minmax(180px,260px); gap: 9px; margin: 0 22px 14px; }
@@ -4693,10 +5154,11 @@ button.appearance-switch:hover {
 .exchanges-page .pagination { margin: 0 22px 20px; }
 .exchanges-page .exchange-detail-modal { border: 1px solid rgba(0,127,130,.2); border-radius: 16px; background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(235,249,246,.94)); }
 @media (max-width: 760px) {
-  .exchanges-page .exchanges-page-heading { gap: 11px; padding: 16px 15px 13px; }
+  .exchanges-page .exchanges-page-heading { gap: 8px; padding: 9px 11px; }
+  .exchanges-page .exchanges-page-heading h2 { font-size: clamp(17px, 2vw, 18px); }
   .exchanges-page .exchanges-page-heading > button { width: 100%; }
-  .exchanges-page .exchanges-summary { grid-template-columns: 1fr; margin: 12px 15px 10px; }
-  .exchanges-page .exchanges-summary > div { padding: 10px 12px; }
+  .exchanges-page .exchanges-summary { grid-template-columns: 1fr; gap: 6px; margin: 12px 15px 10px; }
+  .exchanges-page .exchanges-summary > div { padding: 7px 9px; }
   .exchanges-page .exchanges-summary strong { font-size: 20px; }
   .exchanges-page .exchanges-toolbar { grid-template-columns: 1fr; margin-inline: 15px; }
   .exchanges-page .exchanges-toolbar label,
@@ -4704,6 +5166,19 @@ button.appearance-switch:hover {
   .exchanges-page .exchanges-grid { grid-template-columns: 1fr; margin-inline: 15px; }
   .exchanges-page .pagination { margin-inline: 15px; }
 }
+
+@media (max-width: 420px) {
+  .exchanges-page .exchanges-page-heading { padding: 14px 12px 11px; }
+  .exchanges-page .exchanges-page-heading h2 { font-size: 17px; }
+  .exchanges-page .exchanges-summary { gap: 5px; margin: 10px 12px 8px; }
+  .exchanges-page .exchanges-summary > div { padding: 6px 8px; }
+  .exchanges-page .exchanges-summary span { font-size: 10px; }
+  .exchanges-page .exchanges-summary strong { font-size: 18px; }
+  .exchanges-page .exchanges-toolbar { gap: 7px; margin-inline: 12px; }
+  .exchanges-page .exchanges-grid { gap: 9px; margin-inline: 12px; }
+  .exchanges-page .pagination { margin-inline: 12px; }
+}
+
 @media (prefers-reduced-motion: reduce) { .exchanges-page .exchange-card { transition: none; } }
 
 /* Mission catalog: grouped navigation, focused filters, and glass task cards. */
@@ -4789,7 +5264,8 @@ button.appearance-switch:hover {
 .missions-page .mission-stage-list > div { border-bottom-color: rgba(0,127,130,.12); }
 .missions-page > .missions-shell > .pagination { margin: 0 22px 20px; }
 @media (max-width: 760px) {
-  .missions-page .missions-page-heading { gap: 11px; padding: 16px 15px 13px; }
+  .missions-page .missions-page-heading { gap: 8px; padding: 9px 11px; }
+  .missions-page .missions-page-heading h2 { font-size: clamp(17px, 2vw, 18px); }
   .missions-page .missions-page-heading > button { width: 100%; }
   .missions-page .status-note { margin-inline: 15px; }
   .missions-page .missions-tabs { margin-inline: 15px; }
@@ -4932,5 +5408,214 @@ button.appearance-switch:hover {
     flex: 0 0 auto;
     width: 100%;
     min-width: 0;
+  }
+}
+
+/* Virtual Live catalog page optimizations */
+.virtual-live-catalog-page {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.virtual-live-catalog-page h1 {
+  font-size: clamp(18px, 2.5vw, 22px);
+  font-weight: 650;
+  line-height: 1.2;
+  color: #183f43;
+  margin: 2px 0;
+}
+
+.virtual-live-catalog-page .virtual-live-page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(114, 177, 180, 0.28);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(238, 249, 247, 0.88));
+  box-shadow: 0 4px 12px rgba(24, 63, 67, 0.06);
+}
+
+.virtual-live-catalog-page .virtual-live-filterbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.virtual-live-catalog-page .virtual-live-filterbar label {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(114, 177, 180, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0 9px;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.virtual-live-catalog-page .virtual-live-filterbar label:hover {
+  border-color: rgba(0, 167, 165, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 127, 130, 0.08);
+}
+
+.virtual-live-catalog-page .virtual-live-filterbar input,
+.virtual-live-catalog-page .virtual-live-filterbar select {
+  min-height: 38px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.virtual-live-catalog-page .virtual-live-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.virtual-live-catalog-page .virtual-live-catalog-card {
+  padding: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  border: 1px solid rgba(136, 188, 191, 0.32);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 4px 12px rgba(24, 63, 67, 0.05);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.virtual-live-catalog-page .virtual-live-catalog-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 167, 165, 0.6);
+  box-shadow: 0 8px 20px rgba(0, 127, 130, 0.14);
+}
+
+.virtual-live-catalog-page .virtual-live-catalog-card .art-frame,
+.virtual-live-catalog-page .virtual-live-catalog-card .art-image {
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  object-fit: cover;
+  border-radius: 10px 10px 0 0;
+}
+
+.virtual-live-catalog-page .virtual-live-catalog-card > div {
+  padding: 10px;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.virtual-live-catalog-page .virtual-live-catalog-card h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: #183f43;
+  overflow-wrap: anywhere;
+}
+
+.virtual-live-catalog-page .virtual-live-catalog-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #566e72;
+  overflow-wrap: anywhere;
+}
+
+.virtual-live-catalog-page .virtual-live-catalog-card small {
+  font-size: 12px;
+  color: #6a7e82;
+}
+
+.virtual-live-catalog-page .virtual-live-status {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(237, 243, 246, 0.9);
+  color: #536875;
+  transition: background 160ms ease;
+}
+
+.virtual-live-catalog-page .virtual-live-status.active {
+  background: rgba(230, 248, 242, 0.95);
+  color: #087f5d;
+}
+
+.virtual-live-catalog-page .virtual-live-status.upcoming {
+  background: rgba(255, 244, 216, 0.95);
+  color: #8a5a00;
+}
+
+@media (max-width: 760px) {
+  .virtual-live-catalog-page {
+    gap: 12px;
+  }
+
+  .virtual-live-catalog-page h1 {
+    font-size: clamp(16px, 2.2vw, 19px);
+    margin: 1px 0;
+  }
+
+  .virtual-live-catalog-page .virtual-live-page-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .virtual-live-catalog-page .virtual-live-filterbar {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .virtual-live-catalog-page .virtual-live-filterbar label {
+    min-height: 44px;
+    padding: 0 10px;
+  }
+
+  .virtual-live-catalog-page .virtual-live-catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .virtual-live-catalog-page .virtual-live-catalog-card > div {
+    padding: 9px;
+    gap: 5px;
+  }
+
+  .virtual-live-catalog-page .virtual-live-catalog-card h3 {
+    font-size: 14px;
+  }
+
+  .virtual-live-catalog-page .virtual-live-catalog-card p {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .virtual-live-catalog-page .virtual-live-catalog-grid {
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
+
+  .virtual-live-catalog-page .virtual-live-catalog-card {
+    grid-template-columns: 110px minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .virtual-live-catalog-page .virtual-live-catalog-card .art-frame,
+  .virtual-live-catalog-page .virtual-live-catalog-card .art-image {
+    aspect-ratio: 1;
+    border-radius: 10px 0 0 10px;
+  }
+
+  .virtual-live-catalog-page .virtual-live-catalog-card > div {
+    padding: 8px;
   }
 }

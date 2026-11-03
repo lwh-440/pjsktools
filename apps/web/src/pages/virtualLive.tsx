@@ -101,8 +101,8 @@ export function VirtualLiveCatalogPage({ region }: { region: string }) {
   useEffect(() => { setPage(1); }, [query, type, status, sort, region]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
-  return <section className="virtual-live-catalog-page">
-    <div className="virtual-live-page-heading"><div><h2>虚拟 Live</h2><p>选择一场 Live 查看资料、节目单和按需回放。</p></div><button type="button" onClick={load}><RefreshCw size={16} />刷新</button></div>
+  return <section className="virtual-live-catalog-page content-browser-page">
+    <div className="virtual-live-page-heading content-browser-heading"><div><h2>虚拟 Live</h2><p>选择一场 Live 查看资料、节目单和按需回放。</p></div><button type="button" onClick={load}><RefreshCw size={16} />刷新</button></div>
     <div className="virtual-live-filterbar">
       <label><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 Live 名称或 ID" /></label>
       <select value={type} onChange={(event) => setType(event.target.value)}><option value="all">全部类型</option>{types.map((value) => <option key={value} value={value}>{typeLabels[value] ?? value}</option>)}</select>

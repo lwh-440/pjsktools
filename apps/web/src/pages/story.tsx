@@ -56,8 +56,8 @@ export function StoryCatalogPage({ region }: { region: string }) {
   useEffect(() => { setPage(1); }, [region, storyType, query, unit, relatedId, sort]);
   useEffect(() => { const value = Number(sessionStorage.getItem(scrollKey(region)) ?? 0); if (value) requestAnimationFrame(() => window.scrollTo({ top: value })); }, [region]);
 
-  return <section className="story-catalog-page">
-    <div className="story-page-heading"><div><h2>故事</h2><p>选择作品和章节后进入独立播放器。</p></div><button type="button" onClick={() => setReload((value) => value + 1)}><RefreshCw size={16} />刷新</button></div>
+  return <section className="story-catalog-page content-browser-page">
+    <div className="story-page-heading content-browser-heading"><div><h2>故事</h2><p>选择作品和章节后进入独立播放器。</p></div><button type="button" onClick={() => setReload((value) => value + 1)}><RefreshCw size={16} />刷新</button></div>
     <div className="story-filterbar"><label><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索故事名称或 ID" /></label><select value={storyType} onChange={(event) => setStoryType(event.target.value)}><option value="all">全部故事</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><input value={unit} onChange={(event) => setUnit(event.target.value)} placeholder="组合" /><input inputMode="numeric" value={relatedId} onChange={(event) => setRelatedId(event.target.value.replace(/\D/g, ""))} placeholder="活动/卡牌 ID" /><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="time-desc">从新到旧</option><option value="time-asc">从旧到新</option><option value="id-asc">ID 从小到大</option></select></div>
     {error && <p className="warning-text">{error}</p>}{!catalog && !error && <p className="empty-state">正在加载故事目录...</p>}
     <p className="catalog-result-count">共 {catalog?.total ?? 0} 个作品</p>

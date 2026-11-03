@@ -380,7 +380,7 @@ textarea:focus-visible {
 .virtual-live-catalog-page,
 .virtual-live-detail-page {
   display: grid;
-  gap: 16px;
+  gap: 13px;
   min-width: 0;
 }
 
@@ -394,13 +394,15 @@ textarea:focus-visible {
 }
 
 .virtual-live-page-heading {
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
+  min-height: 80px;
+  padding: 10px 12px;
 }
 
-.virtual-live-page-heading h2,
-.virtual-live-page-heading p {
-  margin: 0;
-}
+.virtual-live-page-heading h2 { margin: 2px 0; color: #183f43; font-size: clamp(18px, 2.5vw, 22px); font-weight: 650; line-height: 1.2; }
+.virtual-live-page-heading p { margin: 0; color: #5b6c7a; font-size: 13px; line-height: 1.3; }
 
 .virtual-live-filterbar {
   display: grid;
@@ -660,9 +662,11 @@ textarea:focus-visible {
 .virtual-live-player-bar audio { display: none; }
 
 @media (max-width: 760px) {
-  .virtual-live-filterbar { grid-template-columns: 1fr 1fr; }
+  .virtual-live-page-heading { gap: 8px; padding: 9px 11px; }
+  .virtual-live-page-heading h2 { font-size: clamp(17px, 2vw, 18px); }
+  .virtual-live-filterbar { grid-template-columns: 1fr 1fr; gap: 7px; }
   .virtual-live-filterbar label { grid-column: 1 / -1; }
-  .virtual-live-catalog-grid { grid-template-columns: minmax(0, 1fr); }
+  .virtual-live-catalog-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .virtual-live-detail-grid { grid-template-columns: minmax(0, 1fr); }
   .virtual-live-detail-hero { min-height: 220px; }
   .virtual-live-setlist summary { grid-template-columns: 30px 38px minmax(0, 1fr) 18px; }
@@ -4104,6 +4108,29 @@ button.danger:disabled {
   .song-card { padding: 6px; min-height: 82px; }
   .card-card, .event-card, .collection-card { padding: 6px; }
   .catalog-filter-row { padding: 6px; gap: 8px; }
+
+  /* Live2D catalog 420px optimizations */
+  .live2d-catalog-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .live2d-model-card {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 8px;
+    min-height: 64px;
+    padding: 8px;
+  }
+  .live2d-model-art {
+    width: 42px;
+  }
+  .live2d-filterbar {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .live2d-page-heading h1,
+  .live2d-page-heading h2 {
+    font-size: 18px;
+  }
 }
 
 /* === End of Batch A Section === */
@@ -5634,7 +5661,7 @@ button.danger:disabled {
 .live2d-catalog-page,
 .live2d-detail-page {
   display: grid;
-  gap: 16px;
+  gap: 11px;
   min-width: 0;
 }
 
@@ -5643,18 +5670,27 @@ button.danger:disabled {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
+  min-height: 80px;
+  padding: 10px 12px;
 }
 
+.live2d-page-heading h1,
 .live2d-page-heading h2,
 .live2d-detail-heading h2 {
-  margin: 0 0 4px;
+  margin: 2px 0;
+  font-size: clamp(18px, 2.5vw, 22px);
+  font-weight: 650;
+  line-height: 1.2;
+  color: #183f43;
 }
 
 .live2d-page-heading p,
 .live2d-detail-heading p {
   margin: 0;
   color: var(--text-muted, #526577);
+  font-size: 13px;
+  line-height: 1.3;
 }
 
 .live2d-detail-heading > div > span {
@@ -5669,13 +5705,13 @@ button.danger:disabled {
 .live2d-filterbar {
   display: grid;
   grid-template-columns: minmax(220px, 1.6fr) minmax(110px, 0.55fr) minmax(150px, 0.8fr) minmax(160px, 0.8fr);
-  gap: 10px;
+  gap: 8px;
 }
 
 .live2d-filterbar label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -5684,7 +5720,7 @@ button.danger:disabled {
 .live2d-catalog-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .live2d-catalog-summary span,
@@ -5693,8 +5729,8 @@ button.danger:disabled {
   border-radius: 6px;
   background: #f7fafb;
   color: #405667;
-  padding: 5px 8px;
-  font-size: 12px;
+  padding: 4px 7px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -5703,23 +5739,30 @@ button.danger:disabled {
 .live2d-catalog-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .live2d-model-card {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  min-height: 98px;
-  padding: 12px;
+  gap: 10px;
+  min-height: 88px;
+  padding: 10px;
   text-align: left;
   color: #213746;
   background: #fff;
   border: 1px solid #d7e2e9;
+  border-radius: 8px;
+  transition: all 0.2s ease;
 }
 
-.live2d-model-card:hover { background: #f4fafc; border-color: #88b8c9; }
+.live2d-model-card:hover {
+  background: #f4fafc;
+  border-color: #88b8c9;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
 
 .live2d-model-art {
   display: grid;
@@ -5729,23 +5772,34 @@ button.danger:disabled {
   border-radius: 6px;
   background: #eaf2f5;
   color: #568093;
+  flex-shrink: 0;
 }
 
 .live2d-model-copy,
-.live2d-model-counts { display: grid; gap: 5px; min-width: 0; }
-.live2d-model-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live2d-model-counts { display: grid; gap: 4px; min-width: 0; }
+.live2d-model-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 650;
+}
 .live2d-model-copy small,
-.live2d-model-counts small { color: #627483; }
+.live2d-model-counts small {
+  color: #627483;
+  font-size: 12px;
+}
 .live2d-model-counts { text-align: right; }
 
 .live2d-empty-action {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   border: 1px solid #d7e2e9;
-  padding: 14px;
+  padding: 12px;
   background: #f7fafb;
+  border-radius: 8px;
 }
 
 .live2d-empty-action p { margin: 0; }
@@ -5812,7 +5866,7 @@ button.danger:disabled {
 .story-detail-page,
 .story-play-page {
   display: grid;
-  gap: 16px;
+  gap: 13px;
   min-width: 0;
 }
 
@@ -5821,17 +5875,18 @@ button.danger:disabled {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
+  min-height: 80px;
+  padding: 10px 12px;
 }
 
-.story-page-heading h2,
-.story-page-heading p { margin: 0; }
-.story-page-heading p { color: #5b6c7a; margin-top: 4px; }
+.story-page-heading h2 { margin: 2px 0; color: #183f43; font-size: clamp(18px, 2.5vw, 22px); font-weight: 650; line-height: 1.2; }
+.story-page-heading p { margin: 0; color: #5b6c7a; font-size: 13px; line-height: 1.3; }
 
 .story-filterbar {
   display: grid;
   grid-template-columns: minmax(220px, 1.5fr) repeat(4, minmax(130px, 0.7fr));
-  gap: 10px;
+  gap: 9px;
 }
 
 .story-filterbar label { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -5840,7 +5895,7 @@ button.danger:disabled {
 .story-catalog-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
-  gap: 12px;
+  gap: 11px;
 }
 
 .story-catalog-card {
@@ -5954,11 +6009,12 @@ button.danger:disabled {
 
 @media (max-width: 520px) {
   .story-page-heading,
-  .story-play-toolbar { flex-direction: column; align-items: stretch; }
-  .story-filterbar { grid-template-columns: minmax(0, 1fr); }
+  .story-play-toolbar { flex-direction: column; align-items: stretch; gap: 8px; padding: 9px 11px; }
+  .story-page-heading h2 { font-size: clamp(17px, 2vw, 18px); }
+  .story-filterbar { grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .story-filterbar label { grid-column: auto; }
   .story-detail-hero { grid-template-columns: minmax(0, 1fr); }
-  .story-catalog-grid { grid-template-columns: minmax(0, 1fr); }
+  .story-catalog-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .story-episode-list > div { grid-template-columns: 34px minmax(0, 1fr); }
   .story-play-link { grid-column: 2; justify-self: start; }
   .story-player-v3 .story-stage { aspect-ratio: 4 / 5; }
@@ -5967,16 +6023,45 @@ button.danger:disabled {
 }
 
 @media (max-width: 760px) {
-  .live2d-filterbar { grid-template-columns: 1fr 1fr; }
+  .live2d-filterbar {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
   .live2d-filterbar label { grid-column: 1 / -1; }
+  .live2d-catalog-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
+  }
+  .live2d-model-card {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 8px;
+    min-height: 72px;
+    padding: 8px;
+  }
+  .live2d-model-art {
+    width: 48px;
+  }
+  .live2d-model-counts {
+    grid-column: 2;
+    grid-auto-flow: column;
+    justify-content: start;
+    text-align: left;
+    gap: 8px;
+  }
   .live2d-preview-layout { grid-template-columns: minmax(0, 1fr); }
   .live2d-stage-panel { position: static; }
   .live2d-stage { aspect-ratio: 4 / 5; }
-  .live2d-model-card { grid-template-columns: 52px minmax(0, 1fr); }
-  .live2d-model-counts { grid-column: 2; grid-auto-flow: column; justify-content: start; text-align: left; }
   .live2d-page-heading,
   .live2d-detail-heading,
-  .live2d-empty-action { align-items: stretch; flex-direction: column; }
+  .live2d-empty-action {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    padding: 9px 11px;
+  }
+  .live2d-page-heading h2 { font-size: clamp(17px, 2vw, 18px); }
+  .live2d-filterbar { gap: 7px; }
+  .live2d-catalog-grid { gap: 10px; }
 }
 
 .mysekai-summary-grid {
