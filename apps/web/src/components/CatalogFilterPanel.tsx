@@ -27,9 +27,43 @@ export type CatalogFilterMeta = {
 
 type ActiveFilter = { key: string; value: string; label: string; toggle?: boolean };
 
+const unitIconAliases: Record<string, string> = {
+  light_sound: "light_sound",
+  ln: "light_sound",
+  light_music_club: "light_sound",
+  idol: "idol",
+  mmj: "idol",
+  street: "street",
+  vbs: "street",
+  theme_park: "theme_park",
+  ws: "theme_park",
+  school_refusal: "school_refusal",
+  "25ji": "school_refusal",
+  piapro: "piapro",
+  vs: "piapro",
+  virtual_singer: "piapro",
+  vocaloid: "piapro"
+};
+
+const attributeIconKeys = new Set(["cool", "cute", "happy", "mysterious", "pure"]);
+
+function localFilterIcon(option: CatalogFilterOption) {
+  const [kind, rawKey] = option.iconKey?.split(":", 2) ?? [];
+  const key = rawKey?.toLowerCase();
+  if (kind === "unit" && key && unitIconAliases[key]) {
+    return { src: `/assets/catalog-filters/units/${unitIconAliases[key]}.png`, className: "catalog-filter-icon catalog-filter-unit-icon" };
+  }
+  if (kind === "attribute" && key && attributeIconKeys.has(key)) {
+    return { src: `/assets/catalog-filters/attributes/${key}.png`, className: "catalog-filter-icon catalog-filter-attribute-icon" };
+  }
+  return null;
+}
+
 function OptionIcon({ option }: { option: CatalogFilterOption }) {
+  const localIcon = localFilterIcon(option);
+  if (localIcon) return <img className={localIcon.className} src={localIcon.src} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} />;
   const image = option.iconCandidates?.[0];
-  if (image) return <img className="catalog-filter-icon" src={apiResourceUrl(image)} alt="" loading="lazy" />;
+  if (image) return <img className="catalog-filter-icon" src={apiResourceUrl(image)} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} />;
   if (option.color) return <span className="catalog-filter-swatch" style={{ backgroundColor: option.color }} aria-hidden="true" />;
   if (option.iconKey?.startsWith("rarity:")) {
     const number = option.value.match(/\d+/)?.[0];
@@ -119,7 +153,7 @@ export function CatalogFilterPanel({
         )}
         <div className="catalog-filter-actions">
           {activeCount > 0 && <button type="button" className="secondary catalog-filter-clear" onClick={onClear}><RotateCcw size={15} />清空筛选</button>}
-          <button type="button" onClick={() => setOpen(false)}>查看 {total} 条结果</button>
+          <button type="button" className="catalog-filter-results" onClick={() => setOpen(false)}>查看 {total} 条结果</button>
         </div>
       </div>
     </details>

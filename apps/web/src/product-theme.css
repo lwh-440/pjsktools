@@ -4860,6 +4860,61 @@ button.appearance-switch:hover {
   min-width: 0;
   width: 100%;
 }
+.catalog-filter-actions > .catalog-filter-results {
+  border-color: var(--action-primary-hover);
+  background: var(--action-primary-default);
+  color: var(--text-on-brand);
+}
+.catalog-filter-actions > .catalog-filter-results:hover:not(:disabled) {
+  border-color: var(--action-primary-active);
+  background: var(--action-primary-hover);
+  color: var(--text-on-brand);
+}
+.catalog-filter-actions > .catalog-filter-results:active:not(:disabled) {
+  border-color: var(--action-primary-active);
+  background: var(--action-primary-active);
+  color: var(--text-on-brand);
+}
+.catalog-filter-actions > .catalog-filter-results:focus-visible,
+.catalog-filter-actions > .catalog-filter-clear:focus-visible {
+  outline: 3px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+.catalog-filter-actions > .catalog-filter-results:disabled {
+  border-color: var(--color-neutral-400);
+  background: var(--action-primary-disabled);
+  color: var(--color-neutral-700);
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1;
+  transform: none;
+}
+.catalog-filter-actions > .catalog-filter-clear {
+  border-color: var(--border-strong);
+  background: var(--surface-primary);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+.catalog-filter-actions > .catalog-filter-clear:hover:not(:disabled) {
+  border-color: var(--color-brand-500);
+  background: var(--surface-secondary);
+  color: var(--text-brand-strong);
+  transform: none;
+}
+.catalog-filter-actions > .catalog-filter-clear:active:not(:disabled) {
+  border-color: var(--color-brand-600);
+  background: var(--color-brand-100);
+  color: var(--text-brand-strong);
+}
+.catalog-filter-actions > .catalog-filter-clear:disabled {
+  border-color: var(--color-neutral-300);
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-700);
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1;
+  transform: none;
+}
 
 @media (max-width: 760px) {
   .catalog-page { gap: 13px; padding: 8px; }
