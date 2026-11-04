@@ -65,6 +65,7 @@ import { RegionSelect } from "./components/RegionSelect";
 import { CatalogFilterPanel, type CatalogFilterMeta } from "./components/CatalogFilterPanel";
 import { FavoriteButton } from "./components/FavoriteButton";
 import { SiteFooter } from "./components/SiteFooter";
+import { SectionNavLink } from "./components/SectionNavLink";
 import type { StoryPlaybackContext } from "./components/StoryPlaybackPlayer";
 import { BoundDeckPage, LegalAcceptancePage, LoginPage, MeHomePage, MeProfileAnalysisPage, QqCallbackPage, RegisterPage, RequireAuth, ScoresPage } from "./pages/account";
 import { HarukiConnectionCenter } from "./components/HarukiConnectionCenter";
@@ -4038,7 +4039,7 @@ export function App() {
               <span className="nav-group-title">{group.title}</span>
               {group.items.map((item) => {
                 const Icon = item.icon;
-                return <NavLink key={item.id} to={item.id === "home" ? "/" : `/section/${item.id}`} onClick={() => setMobileNavOpen(false)} className={({ isActive }) => `nav-item ${isActive || activeSection === item.id ? "active" : ""}`}><Icon size={18} />{item.label}</NavLink>;
+                return <SectionNavLink key={item.id} sectionId={item.id} onClick={() => setMobileNavOpen(false)} className="nav-item"><Icon size={18} />{item.label}</SectionNavLink>;
               })}
             </div>
           ))}
@@ -4080,7 +4081,7 @@ export function App() {
             <div className="magazine-nav-scroll-shell magazine-quick-scroll-shell">
               <button type="button" className="magazine-scroll-button magazine-scroll-button-left" hidden={!magazineNavOverflow.quick.left} aria-label="向左滚动功能" onClick={() => scrollMagazineNavigation("quick", -1)}>‹</button>
               <nav ref={magazineQuickNavRef} className="magazine-quick-nav nav-scroll-drag" aria-label={`${selectedMagazineGroup?.title ?? "功能"}入口`} onScroll={updateMagazineNavOverflow} {...quickNavDragProps()}>
-                {selectedMagazineGroup?.items.map((item) => <NavLink key={item.id} end={item.id === "home"} to={item.id === "home" ? "/" : `/section/${item.id}`} onClick={handleMagazineLinkClick} className={({ isActive }) => `magazine-quick-nav-item ${isActive || activeSection === item.id ? "active" : ""}`}>{item.label}</NavLink>)}
+                {selectedMagazineGroup?.items.map((item) => <SectionNavLink key={item.id} sectionId={item.id} onClick={handleMagazineLinkClick} className="magazine-quick-nav-item">{item.label}</SectionNavLink>)}
               </nav>
               <button type="button" className="magazine-scroll-button magazine-scroll-button-right" hidden={!magazineNavOverflow.quick.right} aria-label="向右滚动功能" onClick={() => scrollMagazineNavigation("quick", 1)}>›</button>
             </div>
