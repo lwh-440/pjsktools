@@ -6,6 +6,7 @@ import Fastify from "fastify";
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
 import { z } from "zod";
+import { selectCurrentAreaItems } from "./selectedAreaItems.js";
 import { decryptHarukiSecret, encryptHarukiSecret } from "./authCrypto.js";
 import { getCardImportManifest } from "./cardImportManifest.js";
 import { getAssetConfig, getCardAssetDetail, getChartAssetDetail, getEventAssetDetail, getMusicAssetDetail } from "./assets.js";
@@ -3431,7 +3432,8 @@ export async function buildApp(options: {
   });
 
   app.post("/api/me/tools/deck-recommend", { preHandler: (app as any).authenticate }, async (request: any, reply) => {
-    const body = deckRecommendSchema.extend({ bindingId: z.string().optional() }).parse(request.body);
+    const body = deckRecommendSchema.extend({ bindingId: z.string().optional(), selectedAreaItemIds: z.array(z.string().min(1).max(100)).max(200).optional() }).parse(request.body);
+    if (body.selectedAreaItemIds !== undefined && !body.bindingId) return reply.badRequest("选择区域道具时必须指定绑定玩家。");
     if (body.bindingId) {
       const binding = await requireBinding(request.user.sub, body.bindingId);
       if (!binding) return reply.notFound("Player binding not found");
@@ -3439,8 +3441,13 @@ export async function buildApp(options: {
     }
     const inventory = body.bindingId ? await store.listInventory(request.user.sub, body.bindingId) : undefined;
     if (body.bindingId && !inventory?.length) return reply.badRequest("No uploaded card inventory for this player binding");
-    const playerAssets = body.bindingId ? await getPlayerAssetMap(request.user.sub, body.bindingId) : undefined;
-    return recommendDeck({ ...body, region: body.region as RegionId, inventory: inventory ?? body.inventory, playerAssets });
+    let playerAssets = body.bindingId ? await getPlayerAssetMap(request.user.sub, body.bindingId) : undefined;
+    if (body.selectedAreaItemIds !== undefined && playerAssets) {
+      try { playerAssets = selectCurrentAreaItems(playerAssets, body.selectedAreaItemIds); }
+      catch (error) { return reply.badRequest(error instanceof Error ? error.message : "区域道具选择无效。"); }
+    }
+    const result = await recommendDeck({ ...body, region: body.region as RegionId, inventory: inventory ?? body.inventory, playerAssets });
+    return body.selectedAreaItemIds === undefined ? result : { ...result, appliedAreaItemSelection: { bindingId: body.bindingId, ids: [...new Set(body.selectedAreaItemIds)], levelMode: "current" } };
   });
 
   app.post("/api/me/tools/score-control", { preHandler: (app as any).authenticate }, async (request: any, reply) => {

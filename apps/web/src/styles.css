@@ -8451,19 +8451,20 @@ code {
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-columns: minmax(170px, .8fr) minmax(240px, 1fr) minmax(300px, 1.35fr);
+  grid-template-columns: minmax(180px, 1fr) auto;
   align-items: center;
-  gap: 18px;
+  gap: 6px 16px;
   overflow: hidden;
   margin-top: 12px;
-  padding: 20px 22px;
+  padding: 10px 14px;
   border: 1px solid #bfd8df;
-  border-radius: 12px;
+  border-radius: 9px;
   background:
     linear-gradient(120deg, rgba(41, 136, 155, .12), transparent 44%),
     linear-gradient(135deg, #fdfefe 0%, #edf8f9 54%, #fff6e6 100%);
-  box-shadow: 0 10px 26px rgba(25, 57, 76, .09);
+  box-shadow: 0 3px 10px rgba(25, 57, 76, .05);
   color: #294353;
+  line-height: 1.4;
 }
 
 .site-footer::before {
@@ -8472,25 +8473,27 @@ code {
   top: 0;
   left: 0;
   width: 100%;
-  height: 4px;
+  height: 2px;
   background: linear-gradient(90deg, #168da1, #55beb8 55%, #efb94d);
   content: "";
 }
 
 .site-footer__brand {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 9px;
 }
 
 .site-footer__brand strong {
   color: #174c60;
-  font-size: 15px;
+  font-size: 12px;
   letter-spacing: .08em;
 }
 
 .site-footer__brand span {
   color: #657b88;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .site-footer__links,
@@ -8498,21 +8501,22 @@ code {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: 4px 12px;
 }
 
 .site-footer__links {
-  justify-content: center;
+  justify-content: flex-end;
 }
 
 .site-footer__records {
+  grid-column: 1 / -1;
   justify-content: flex-end;
 }
 
 .site-footer a {
   color: #28596b;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 500;
   text-decoration: none;
 }
 
@@ -8736,15 +8740,15 @@ code {
 
 @media (max-width: 1100px) {
   .site-footer {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .site-footer__brand {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 
   .site-footer__links {
-    justify-content: flex-start;
+    justify-content: flex-end;
   }
 }
 
@@ -8807,13 +8811,14 @@ code {
 
 @media (max-width: 520px) {
   .site-footer {
-    padding: 18px 16px;
+    padding: 10px 12px;
   }
 
   .site-footer__links,
   .site-footer__records {
-    display: grid;
-    justify-items: start;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 12px;
   }
 }
 

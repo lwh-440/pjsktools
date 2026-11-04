@@ -139,6 +139,37 @@ export function playerStatusLabel(status: unknown) {
   return statusLabels[value] ?? "资料状态待确认";
 }
 
+// Tool warnings may include a tool prefix and a sentence from the calculator.
+// Match only known domain inputs so unknown technical fields never reach the UI.
+export function playerMissingDataLabels(fields: readonly string[]) {
+  const labels: string[] = [];
+  const mappings: Array<[RegExp, string]> = [
+    [/character-ranks|character ?rank|角色\s*(?:Rank|等级)/i, "角色等级"],
+    [/area-items|area ?item(?! material)|区域道具/i, "区域道具"],
+    [/challenge-live|challenge.*(?:stage|result)/i, "挑战 LIVE"],
+    [/mysekai[- ]?fixtures|fixture.*(?:bonus|data)/i, "MySekai 家具"],
+    [/mysekai[- ]?gates|gate.*(?:bonus|data)/i, "MySekai 大门"],
+    [/mysekai.*canvas/i, "MySekai 画布"],
+    [/bonds|羁绊/i, "羁绊资料"], [/honors?|称号/i, "称号资料"],
+    [/materials|material\/coin|素材|金币/i, "升级素材与金币"],
+    [/music-results|歌曲成绩/i, "歌曲成绩"],
+    [/public profile|公开档案/i, "公开档案"],
+    [/card|inventory|库存|卡牌/i, "持有卡牌"],
+    [/decks?|卡组/i, "已保存卡组"]
+  ];
+  for (const field of fields) {
+    const input = field.replace(/^\s*(?:deckRecommend|eventPointCalc|scoreControl|musicRecommend|areaItemRecommend|normalEventPlan|mysekaiCalc)\s*:\s*/i, "");
+    const matched = mappings.filter(([pattern]) => pattern.test(input)).map(([, label]) => label);
+    for (const label of matched.length ? matched : ["其他玩家资料"]) if (!labels.includes(label)) labels.push(label);
+  }
+  return labels;
+}
+
+export function playerToolLabel(tool: string) {
+  const labels: Record<string, string> = { deckRecommend: "组卡推荐", eventPointCalc: "活动 PT 计算", scoreControl: "控分计算", musicRecommend: "歌曲推荐", areaItemRecommend: "区域道具推荐", normalEventPlan: "活动规划", mysekaiCalc: "MySekai 计算" };
+  return labels[tool] ?? (/^[\u3400-\u9fff\s]+$/.test(tool) ? tool : "玩家工具");
+}
+
 export function cardAttributeLabel(attribute: unknown) {
   const value = String(attribute ?? "");
   return cardAttributeLabels[value.toLowerCase()] ?? (value ? "属性待确认" : "属性未提供");

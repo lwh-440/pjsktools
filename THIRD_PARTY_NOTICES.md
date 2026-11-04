@@ -101,9 +101,12 @@ the Live2D models or any other game assets loaded by the library.
 ### QQ Connect
 
 - Provider: Tencent QQ Connect
-- Official asset URL: https://qzonestyle.gtimg.cn/qzone/vas/opensns/res/img/Connect_logo_3.png
-- Use in this project: the unmodified standard QQ login mark is loaded from
-  Tencent's official asset host on the website login page.
+- Login icon: Bootstrap Icons `tencent-qq`, version `1.13.1`
+- Source: https://github.com/twbs/icons/blob/v1.13.1/icons/tencent-qq.svg
+- Local file: `apps/web/public/assets/tencent-qq.svg`
+- License: MIT; Copyright (c) 2019-2024 The Bootstrap Authors.
+  The complete upstream license is included in the SVG file.
+- Use in this project: a local QQ penguin icon beside the login button text.
 
 QQ and the QQ login mark are trademarks or service marks of Tencent. Their use
 identifies the external login provider and does not imply endorsement of this

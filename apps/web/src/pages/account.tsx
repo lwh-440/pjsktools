@@ -1,10 +1,17 @@
 import {
+  Activity,
   AlertCircle,
   Bookmark,
   CheckCircle2,
+  ChevronDown,
   Eye,
   EyeOff,
+  Download,
+  HardDrive,
+  Link2,
+  LogOut,
   Loader2,
+  LayoutGrid,
   LogIn,
   Mail,
   Shield,
@@ -13,14 +20,15 @@ import {
   Wand2
 } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiDelete, apiGet, apiPost } from "../api";
 import { useAuth } from "../AuthContext";
 import { PlayerProfileAnalysisView, type ProfileAnalysis } from "../components/PlayerProfileAnalysis";
 import type { AuthResponse, AuthUser, BindingSummary, PlayerBinding, ToolContext } from "../accountTypes";
 import type { Favorite, ScoreRecord } from "../sharedTypes";
-import { parseQqCallback, QQ_CONNECT_BUTTON_URL, safeQqReturnTo } from "../qqOAuth";
+import { parseQqCallback, safeQqReturnTo } from "../qqOAuth";
 import { HARUKI_FEATURE_ENABLED } from "../features";
+import { playerMissingDataLabels, playerToolLabel } from "../playerLabels";
 
 function LegalConfirmations({ accepted, ageConfirmed, onAccepted, onAgeConfirmed }: {
   accepted: boolean;
@@ -52,46 +60,71 @@ function sectionReadyLabel(ready?: boolean) {
 }
 
 function BindingSelect({ value, onChange, bindings, summaries = [] }: { value?: string; onChange: (id: string) => void; bindings: PlayerBinding[]; summaries?: BindingSummary[] }) {
-  return <div className="binding-selector-strip">{bindings.map((binding) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionsId = useId();
+  const current = bindings.find((binding) => binding.id === value) ?? bindings[0];
+  useEffect(() => {
+    if (!open) return;
+    function closeOutside(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [open]);
+  const snapshot = current?.publicProfileSnapshot ?? summaries.find((item) => item.binding.id === current?.id)?.publicProfileSnapshot ?? {};
+  const avatar = snapshot.avatarUrl ?? snapshot.userProfile?.twitterProfileImageUrl ?? snapshot.leaderCardImageUrl;
+  return <div className="binding-select" ref={containerRef} onKeyDown={(event) => {
+    if (event.key === "Escape" && open) { event.preventDefault(); setOpen(false); triggerRef.current?.focus(); }
+  }}>
+    <button type="button" className="binding-select-trigger" ref={triggerRef} aria-expanded={open} aria-controls={optionsId} onClick={() => setOpen((current) => !current)}>
+      {avatar ? <img src={avatar} alt="" /> : <UserRound size={20} aria-hidden="true" />}
+      <span><strong>{current?.displayName || snapshot.nickname || snapshot.name || current?.playerUid || "选择玩家"}</strong><small>{current ? `${current.region.toUpperCase()} · UID ${current.playerUid}` : "暂无绑定玩家"}</small></span>
+      <ChevronDown size={16} aria-hidden="true" />
+    </button>
+    {open && <div className="binding-selector-strip" id={optionsId} role="group" aria-label="选择绑定玩家">{bindings.map((binding) => {
     const summary = summaries.find((item) => item.binding.id === binding.id);
     const snapshot = binding.publicProfileSnapshot ?? summary?.publicProfileSnapshot ?? {};
     const avatar = snapshot.avatarUrl ?? snapshot.userProfile?.twitterProfileImageUrl ?? snapshot.leaderCardImageUrl;
-    return <button type="button" key={binding.id} className={value === binding.id ? "active" : "secondary"} onClick={() => onChange(binding.id)}>
+    return <button type="button" key={binding.id} aria-pressed={value === binding.id} className={value === binding.id ? "active" : "secondary"} onClick={() => { onChange(binding.id); setOpen(false); triggerRef.current?.focus(); }}>
       {avatar ? <img src={avatar} alt="" /> : <UserRound size={20} />}
-      <span><strong>{binding.displayName || snapshot.nickname || snapshot.name || binding.playerUid}</strong><small>{binding.region.toUpperCase()} · Rank {snapshot.rank ?? "-"} · 库存 {summary?.inventoryCount ?? 0}</small><small>{binding.isDefault ? "默认 · " : ""}{formatDate(binding.refreshedAt ?? binding.updatedAt)}</small></span>
+      <span><strong>{binding.displayName || snapshot.nickname || snapshot.name || binding.playerUid}</strong><small>{binding.region.toUpperCase()} · UID {binding.playerUid}</small><small>Rank {snapshot.rank ?? "-"} · 库存 {summary?.inventoryCount ?? 0} · {binding.isDefault ? "默认 · " : ""}{formatDate(binding.refreshedAt ?? binding.updatedAt)}</small></span>
     </button>;
-  })}</div>;
+  })}</div>}
+  </div>;
 }
 
-function ToolContextPanel({ context }: { context: ToolContext | null }) {
+function ToolContextPanel({ context, decorated = false }: { context: ToolContext | null; decorated?: boolean }) {
   const tools = context?.toolAvailability ? Object.entries(context.toolAvailability) : [];
   const impact = context?.formulaImpact ? Object.entries(context.formulaImpact) : [];
   return (
-    <article className="panel wide">
+    <article className="panel wide tool-context-panel">
       <div className="panel-heading">
         <div>
-          <h2>工具可用状态</h2>
-          <p>参考 Moesekai AccountSelector 的账号上下文：用当前绑定 UID 的跨端玩家快照计算工具就绪度。</p>
+          <h2>{decorated && <span className="me-section-badge me-section-badge-status"><Activity size={15} aria-hidden="true" /></span>}工具可用状态</h2>
+          {!decorated && <p>根据当前绑定玩家的已同步数据，检查各项工具是否可用。</p>}
         </div>
-        {context?.sharedFormulaVersion && <span className="status-pill">公式 {context.sharedFormulaVersion}</span>}
+        {!decorated && context?.sharedFormulaVersion && <span className="status-pill">公式 {context.sharedFormulaVersion}</span>}
+        {decorated && context && <span className="status-pill">{tools.every(([, state]) => state.ready) ? "资料已就绪" : "部分待同步"}</span>}
       </div>
       {context ? (
         <>
           <div className="compact-list">
             {tools.map(([name, state]) => (
               <div key={name}>
-                <span><CheckCircle2 size={16} /> {name}</span>
-                <strong>{sectionReadyLabel(state.ready)}</strong>
-                <small>{state.missingFields.length ? state.missingFields.join(" / ") : "基础输入已满足"}</small>
+                <span><CheckCircle2 size={15} aria-hidden="true" /> {decorated ? playerToolLabel(name) : name}</span>
+                <strong>{decorated ? state.ready ? "可用" : "待同步" : sectionReadyLabel(state.ready)}</strong>
+                {(!decorated || state.missingFields.length > 0) && <small>{decorated ? `待同步：${playerMissingDataLabels(state.missingFields).join("、")}` : state.missingFields.length ? state.missingFields.join(" / ") : "基础输入已满足"}</small>}
               </div>
             ))}
           </div>
-          <details>
+          {!decorated && <details>
             <summary>资产如何影响工具</summary>
             <div className="compact-list">
               {impact.map(([name, desc]) => <div key={name}><span>{name}</span><small>{String(desc)}</small></div>)}
             </div>
-          </details>
+          </details>}
         </>
       ) : <p className="empty-state">{HARUKI_FEATURE_ENABLED ? "连接玩家数据并同步 UID 后可查看工具可用状态。" : "玩家数据连接功能暂未开放。"}</p>}
     </article>
@@ -194,12 +227,6 @@ export function LoginPage() {
     }
   }
 
-  function handleKeyPress(event: React.KeyboardEvent) {
-    if (event.key === "Enter" && !loading) {
-      submitLogin();
-    }
-  }
-
   if (isAuthenticated) {
     return <Navigate
       to={legalAcceptanceRequired ? "/legal-acceptance" : from}
@@ -209,19 +236,13 @@ export function LoginPage() {
   }
 
   return (
-    <section className="auth-page">
-      <article className="auth-hero">
-        <div>
-          <span className="auth-hero-badge"><Shield size={16} />安全可靠</span>
-          <h2>欢迎回来</h2>
-          <p>登录后可在 Web 与 Android 共用收藏、成绩、卡组与账号设置。</p>
-        </div>
-      </article>
-      <article className="panel auth-panel">
-        <div className="auth-panel-header">
-          <h2>登录账号</h2>
-          <p>使用邮箱密码或 QQ 快速登录</p>
-        </div>
+    <section className="auth-page auth-compact-page">
+      <form className="panel auth-panel" noValidate onSubmit={(event) => { event.preventDefault(); if (!loading) void submitLogin(); }}>
+        <header className="auth-panel-header">
+          <span className="account-section-kicker"><UserRound size={14} />工具台账号</span>
+          <h1>登录账号</h1>
+          <p>使用邮箱密码或 QQ 登录。</p>
+        </header>
 
         <div className="form-group">
           <label htmlFor="email">
@@ -237,7 +258,6 @@ export function LoginPage() {
               if (emailError) validateEmail(event.target.value);
             }}
             onBlur={() => validateEmail(email)}
-            onKeyPress={handleKeyPress}
             placeholder="your@email.com"
             className={emailError ? "input-error" : ""}
             disabled={loading}
@@ -256,7 +276,6 @@ export function LoginPage() {
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              onKeyPress={handleKeyPress}
               placeholder="输入密码"
               disabled={loading}
             />
@@ -273,15 +292,14 @@ export function LoginPage() {
         </div>
 
         <button
-          type="button"
-          onClick={submitLogin}
+          type="submit"
           disabled={loading || !email.trim() || !password.trim()}
           className="primary-button"
         >
           {loading ? <><Loader2 size={16} className="spinner" />登录中...</> : <><LogIn size={16} />登录</>}
         </button>
 
-        <div className="auth-divider"><span>或使用其他方式</span></div>
+        <div className="auth-divider"><span>其他登录方式</span></div>
 
         <button
           type="button"
@@ -290,16 +308,17 @@ export function LoginPage() {
           aria-label="使用 QQ 登录"
           disabled={loading}
         >
-          <img src={QQ_CONNECT_BUTTON_URL} alt="QQ 登录" />
+          <span className="qq-brand-mark" aria-hidden="true"><img src="/assets/tencent-qq.svg" width="20" height="20" alt="" /></span>
+          <span>使用 QQ 登录</span>
         </button>
 
         {notice && <div className="notice-box info"><CheckCircle2 size={16} />{notice}</div>}
         {error && <div className="notice-box error"><AlertCircle size={16} />{error}</div>}
 
         <div className="auth-footer">
-          <Link to="/register">还没有账号？立即注册</Link>
+          <span>还没有账号？</span><Link to="/register">注册新账号</Link>
         </div>
-      </article>
+      </form>
     </section>
   );
 }
@@ -479,32 +498,18 @@ export function RegisterPage() {
     }
   }
 
-  function handleKeyPress(event: React.KeyboardEvent) {
-    if (event.key === "Enter" && !registering && !sendingCode) {
-      if (code.length === 6 && password === confirmPassword && accepted && ageConfirmed) {
-        submitRegister();
-      }
-    }
-  }
-
   if (isAuthenticated) return <Navigate to="/me" replace />;
 
   const isFormValid = email.trim() && password && confirmPassword && password === confirmPassword && code.length === 6 && accepted && ageConfirmed && !emailError && !passwordError;
 
   return (
-    <section className="auth-page">
-      <article className="auth-hero">
-        <div>
-          <span className="auth-hero-badge"><UserRound size={16} />创建账号</span>
-          <h2>开始你的旅程</h2>
-          <p>注册后可在 Web 与 Android 共用收藏、成绩、卡组与账号设置。所有数据安全存储，随时可导出。</p>
-        </div>
-      </article>
-      <article className="panel auth-panel">
-        <div className="auth-panel-header">
-          <h2>注册新账号</h2>
-          <p>创建你的 Project Sekai 工具箱账号</p>
-        </div>
+    <section className="auth-page auth-compact-page">
+      <form className="panel auth-panel" noValidate onSubmit={(event) => { event.preventDefault(); if (!registering && !sendingCode) void submitRegister(); }}>
+        <header className="auth-panel-header">
+          <span className="account-section-kicker"><UserRound size={14} />工具台账号</span>
+          <h1>注册新账号</h1>
+          <p>使用邮箱创建账号，同步收藏与成绩。</p>
+        </header>
 
         <div className="form-group">
           <label htmlFor="email">
@@ -570,7 +575,6 @@ export function RegisterPage() {
               type={showConfirmPassword ? "text" : "password"}
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
-              onKeyPress={handleKeyPress}
               placeholder="再次输入密码"
               disabled={registering || sendingCode}
             />
@@ -598,7 +602,6 @@ export function RegisterPage() {
               inputMode="numeric"
               value={code}
               onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-              onKeyPress={handleKeyPress}
               placeholder="6 位验证码"
               maxLength={6}
               disabled={registering || sendingCode}
@@ -615,9 +618,8 @@ export function RegisterPage() {
         </div>
 
         <button
-          type="button"
+          type="submit"
           disabled={!isFormValid || registering}
-          onClick={submitRegister}
           className="primary-button"
         >
           {registering ? <><Loader2 size={16} className="spinner" />注册中...</> : "注册账号"}
@@ -627,9 +629,9 @@ export function RegisterPage() {
         {error && <div className="notice-box error"><AlertCircle size={16} />{error}</div>}
 
         <div className="auth-footer">
-          <Link to="/login">已有账号？立即登录</Link>
+          <span>已有账号？</span><Link to="/login">前往登录</Link>
         </div>
-      </article>
+      </form>
     </section>
   );
 }
@@ -659,11 +661,11 @@ function useToolContext(binding?: PlayerBinding, refreshKey = 0) {
 }
 
 const meTools = [
-  { to: "/me/favorites", title: "我的收藏", icon: Bookmark, desc: "创建收藏夹、查看未分类项目，并批量整理图鉴收藏。" },
-  { to: "/me/profile", title: "玩家档案", icon: UserRound, desc: "查看角色 Rank、Challenge、Bonds、综合力加成与区域道具升级。" },
-  ...(HARUKI_FEATURE_ENABLED ? [{ to: "/me/assets", title: "玩家数据连接", icon: Upload, desc: "连接经过验证的玩家数据，并在 Web 与 Android 共用。" }] : []),
-  { to: "/me/deck", title: "绑定组卡", icon: Wand2, desc: "使用当前 UID 的已同步玩家快照运行组卡推荐。" },
-  { to: "/me/scores", title: "收藏与成绩", icon: Bookmark, desc: "维护歌曲成绩和收藏。" }
+  { to: "/me/favorites", title: "我的收藏", icon: Bookmark, tone: "favorites", desc: "创建收藏夹、查看未分类项目，并批量整理图鉴收藏。" },
+  { to: "/me/profile", title: "玩家档案", icon: UserRound, tone: "profile", desc: "查看角色成长、挑战、羁绊与综合力加成。" },
+  ...(HARUKI_FEATURE_ENABLED ? [{ to: "/me/assets", title: "玩家数据连接", icon: Upload, tone: "assets", desc: "连接经过验证的玩家数据，并在 Web 与 Android 共用。" }] : []),
+  { to: "/me/deck", title: "绑定组卡", icon: Wand2, tone: "deck", desc: "使用当前 UID 的已同步玩家快照运行组卡推荐。" },
+  { to: "/me/scores", title: "收藏与成绩", icon: Bookmark, tone: "scores", desc: "维护歌曲成绩和收藏。" }
 ];
 
 export function MeProfileAnalysisPage() {
@@ -673,11 +675,13 @@ export function MeProfileAnalysisPage() {
   const [error, setError] = useState("");
   useEffect(() => {
     if (!selectedBinding) { setAnalysis(null); return; }
+    let active = true;
     setError("");
-    apiGet<ProfileAnalysis>(`/api/me/player-bindings/${selectedBinding.id}/profile-analysis`, token).then(setAnalysis).catch((reason) => { setAnalysis(null); setError(reason instanceof Error ? reason.message : String(reason)); });
+    apiGet<ProfileAnalysis>(`/api/me/player-bindings/${selectedBinding.id}/profile-analysis`, token).then((result) => { if (active) setAnalysis(result); }).catch((reason) => { if (active) { setAnalysis(null); setError(reason instanceof Error ? reason.message : String(reason)); } });
+    return () => { active = false; };
   }, [selectedBinding?.id, token]);
-  if (!meProfile?.bindings.length) return <article className="panel"><h2>玩家档案</h2><p className="empty-state">{HARUKI_FEATURE_ENABLED ? "请先连接并同步经过验证的 UID。" : "玩家数据连接功能暂未开放。"}</p>{HARUKI_FEATURE_ENABLED && <Link className="button-link" to="/me/assets">连接玩家数据</Link>}</article>;
-  return <section className="profile-analysis-page"><article className="panel profile-account-bar"><div><strong>玩家档案分析</strong><span>使用当前 pjsktools 账号中已有的玩家快照。</span></div><BindingSelect value={selectedBindingId} onChange={setSelectedBindingId} bindings={meProfile.bindings} summaries={meProfile.bindingSummaries} /></article>{error && <p className="warning-text">{error}</p>}{analysis ? <PlayerProfileAnalysisView analysis={analysis} /> : !error && <p className="empty-state">正在汇总玩家数据...</p>}</section>;
+  if (!meProfile?.bindings.length) return <section className="profile-analysis-page"><article className="panel profile-analysis-empty"><span className="account-section-kicker"><UserRound size={14} />玩家数据</span><h1>玩家档案分析</h1><p className="empty-state">{HARUKI_FEATURE_ENABLED ? "请先连接并同步经过验证的 UID。" : "玩家数据连接功能暂未开放。"}</p><div className="button-row">{HARUKI_FEATURE_ENABLED && <Link className="button-link" to="/me/assets">连接玩家数据</Link>}<Link className="button-link" to="/me">返回个人信息管理</Link></div></article></section>;
+  return <section className="profile-analysis-page"><article className="panel profile-account-bar"><div><strong>玩家档案分析</strong><span>使用当前 pjsktools 账号中已有的玩家快照。</span></div><BindingSelect value={selectedBindingId} onChange={setSelectedBindingId} bindings={meProfile.bindings} summaries={meProfile.bindingSummaries} /></article>{error && <p className="warning-text">{error}</p>}{analysis && <div hidden={analysis.binding.id !== selectedBinding?.id}><PlayerProfileAnalysisView analysis={analysis} /></div>}{(!analysis || analysis.binding.id !== selectedBinding?.id) && !error && <p className="empty-state">正在汇总玩家数据...</p>}</section>;
 }
 
 export function MeHomePage() {
@@ -791,9 +795,10 @@ export function MeHomePage() {
   const hasQqLinked = meProfile?.oauthAccounts.some((account) => account.provider === "qq");
 
   return (
-    <section className="account-workspace">
-      <div className="account-overview">
-        <article className="panel account-header-card">
+    <section className="account-workspace me-home-page">
+      <header className="me-page-heading"><h1>个人信息管理</h1><p>管理账号、玩家数据与隐私设置</p></header>
+      <article className="panel account-overview">
+        <div className="account-header-card">
           <div className="account-header-content">
             <div className="account-avatar">
               <UserRound size={32} />
@@ -803,13 +808,13 @@ export function MeHomePage() {
               <p className="account-email">{meProfile?.user.email || "QQ 登录用户"}</p>
             </div>
           </div>
-        </article>
+        </div>
 
-        <article className="panel account-summary-grid">
+        <div className="account-summary-grid">
           <div className="summary-item">
-            <span className="summary-label">当前 UID</span>
+            <span className="summary-label">当前玩家</span>
             <strong className="summary-value">{selectedBinding?.displayName || selectedBinding?.publicProfileSnapshot?.nickname || selectedBinding?.playerUid || "未绑定"}</strong>
-            <small className="summary-meta">{selectedBinding?.region ?? "-"}</small>
+            <small className="summary-meta">{selectedBinding ? `${selectedBinding.region.toUpperCase()} · UID ${selectedBinding.playerUid}` : "尚未绑定玩家"}</small>
           </div>
           <div className="summary-item">
             <span className="summary-label">库存</span>
@@ -819,34 +824,26 @@ export function MeHomePage() {
             <span className="summary-label">资产类型</span>
             <strong className="summary-value">{toolContext?.playerDataKinds.length ?? selectedSummary?.completeness.uploadedPlayerDataKinds.length ?? 0}</strong>
           </div>
-        </article>
-      </div>
+        </div>
+      </article>
 
       {missing.length > 0 && (
-        <article className="panel wide notice-panel warning">
-          <div className="panel-heading">
-            <div>
-              <h2><AlertCircle size={20} />建议更新的玩家数据</h2>
-              <p>这些字段会影响工具结果精度</p>
-            </div>
-            {HARUKI_FEATURE_ENABLED && <Link className="button-link secondary" to="/me/assets">同步玩家数据</Link>}
-          </div>
-          <div className="tag-row">{missing.slice(0, 12).map((item) => <span key={item} className="tag-warning">{item}</span>)}</div>
+        <article className="panel wide me-sync-notice">
+          <AlertCircle size={16} aria-hidden="true" /><p>待同步：{playerMissingDataLabels(missing).join("、")}</p>
+          {HARUKI_FEATURE_ENABLED && <Link to="/me/assets">同步数据</Link>}
         </article>
       )}
 
-      <ToolContextPanel context={toolContext} />
-
-      <article className="panel wide">
+      <article className="panel me-services-panel">
         <div className="panel-heading">
-          <h2>工具与服务</h2>
+          <h2><span className="me-section-badge me-section-badge-tools"><LayoutGrid size={15} aria-hidden="true" /></span>工具与服务</h2>
           <p>管理你的收藏、档案和玩家数据</p>
         </div>
         <div className="tool-grid me-tool-grid">
           {meTools.map((tool) => {
             const Icon = tool.icon;
             return (
-              <Link className="tool-card" key={tool.to} to={tool.to}>
+              <Link className={`tool-card me-tool-${tool.tone}`} key={tool.to} to={tool.to}>
                 <span className="tool-icon">
                   <Icon size={22} />
                 </span>
@@ -856,39 +853,38 @@ export function MeHomePage() {
             );
           })}
         </div>
+        <ToolContextPanel context={toolContext} decorated />
       </article>
-
-      <article className="panel wide account-rights-panel">
+      <div className="me-content-grid">
+      <article className="panel account-rights-panel">
         <div className="panel-heading">
           <div>
-            <h2><Shield size={20} />隐私与账号权利</h2>
-            <p>你可以导出数据、解除 QQ 关联、清除设备缓存或注销账号</p>
+            <h2><span className="me-section-badge me-section-badge-privacy"><Shield size={15} aria-hidden="true" /></span>隐私与账号权利</h2>
           </div>
         </div>
 
-        <div className="account-actions-grid">
+        <div className="account-setting-rows">
+          <div><span><Download size={16} aria-hidden="true" />个人数据</span>
           <button
             type="button"
             className="btn-secondary"
             disabled={busy}
             onClick={exportMyData}
           >
-            {busy ? <><Loader2 size={16} className="spinner" />导出中...</> : "导出个人数据 JSON"}
-          </button>
+            {busy ? <><Loader2 size={16} className="spinner" />导出中...</> : "导出 JSON"}
+          </button></div>
           {hasQqLinked && meProfile?.user.email && (
-            <button type="button" className="btn-secondary" onClick={unlinkQq}>
-              解除 QQ 关联
-            </button>
+            <div><span><Link2 size={16} aria-hidden="true" />QQ 关联</span><button type="button" className="btn-secondary" onClick={unlinkQq}>解除关联</button></div>
           )}
-          <button type="button" className="btn-secondary" onClick={clearLocalCache}>
-            清除本地缓存
-          </button>
+          <div><span><HardDrive size={16} aria-hidden="true" />设备缓存</span><button type="button" className="btn-secondary" onClick={clearLocalCache}>清除缓存</button></div>
+          <div><span><LogOut size={16} aria-hidden="true" />当前会话</span><button type="button" className="secondary" onClick={logout}>退出登录</button></div>
         </div>
 
         <div className="danger-zone">
           <button
             type="button"
             className="danger-zone-toggle"
+            aria-expanded={showDangerZone}
             onClick={() => setShowDangerZone(!showDangerZone)}
           >
             <AlertCircle size={16} />
@@ -938,27 +934,41 @@ export function MeHomePage() {
         {accountNotice && <div className="notice-box success"><CheckCircle2 size={16} />{accountNotice}</div>}
         {accountError && <div className="notice-box error"><AlertCircle size={16} />{accountError}</div>}
       </article>
-
-      <button type="button" className="secondary logout-button" onClick={logout}>
-        退出登录
-      </button>
+      </div>
     </section>
   );
 }
 
 export function BoundDeckPage({ eventId }: { eventId?: string }) {
-  const { token } = useAuth();
-  const { selectedBinding } = useSelectedBinding();
+  const { token, meProfile } = useAuth();
+  const { selectedBinding: defaultBinding } = useSelectedBinding();
+  const location = useLocation();
+  const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const requestedBindingId = params.get("bindingId");
+  const selectedBinding = requestedBindingId ? meProfile?.bindings.find((binding) => binding.id === requestedBindingId) : defaultBinding;
+  const selectedAreaItemIds = useMemo(() => params.get("areaSelection") === "selected" ? [...new Set(params.getAll("areaItemId"))] : undefined, [params]);
   const toolContext = useToolContext(selectedBinding);
   const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState("");
+  const [calculating, setCalculating] = useState(false);
+  const calculationKey = `${selectedBinding?.id ?? ""}:${location.search}:${eventId ?? ""}`;
+  const calculationKeyRef = useRef(calculationKey);
+  calculationKeyRef.current = calculationKey;
+  useEffect(() => { setResult(null); setError(""); setCalculating(false); }, [calculationKey]);
   async function calculate() {
     if (!selectedBinding) return;
-    setResult(await apiPost("/api/me/tools/deck-recommend", { region: selectedBinding.region, bindingId: selectedBinding.id, eventId }, token));
+    const requestKey = calculationKey;
+    setCalculating(true); setError(""); setResult(null);
+    try {
+      const next = await apiPost("/api/me/tools/deck-recommend", { region: selectedBinding.region, bindingId: selectedBinding.id, eventId, ...(selectedAreaItemIds !== undefined ? { selectedAreaItemIds } : {}) }, token);
+      if (calculationKeyRef.current === requestKey) setResult(next);
+    } catch (reason) { if (calculationKeyRef.current === requestKey) setError(reason instanceof Error ? reason.message : "组卡暂不可用，请重试。"); }
+    finally { if (calculationKeyRef.current === requestKey) setCalculating(false); }
   }
   const cards = useMemo(() => result?.recommendedCards ?? result?.recommendedDecks?.[0]?.cards ?? [], [result]);
   return (
     <section className="grid">
-      <article className="panel"><h2>绑定数据组卡</h2><p className="warning-text">使用当前 UID 的上传库存、区域道具、角色 Rank 和活动 master 数据。未确认公式会显示在缺失或估算字段中。</p><button type="button" onClick={calculate}><Wand2 size={16} />开始推荐</button>{selectedBinding && <p className="empty-state">当前 UID：{selectedBinding.region} / {selectedBinding.playerUid}</p>}</article>
+      <article className="panel"><h2>绑定数据组卡</h2><p className="warning-text">使用绑定玩家最近同步的库存与加成计算。</p>{selectedAreaItemIds !== undefined && <p>本次仅使用所选 {selectedAreaItemIds.length} 件区域道具的当前等级加成；{selectedAreaItemIds.length ? "其他区域道具不参与计算" : "不使用区域道具加成"}。不会升级道具或修改库存。</p>}<button type="button" disabled={!selectedBinding || calculating} onClick={calculate}><Wand2 size={16} />{calculating ? "正在推荐…" : "开始推荐"}</button>{selectedBinding ? <p className="empty-state">当前 UID：{selectedBinding.region.toUpperCase()} / {selectedBinding.playerUid}</p> : <p className="warning-text">指定的绑定玩家不存在，请返回档案重新选择。</p>}{error && <p role="alert" className="warning-text">{error}</p>}{result?.appliedAreaItemSelection && <p>已按所选 {result.appliedAreaItemSelection.ids.length} 件区域道具的当前等级完成计算。</p>}</article>
       <ToolContextPanel context={toolContext} />
       <article className="panel wide">
         <h2>推荐结果</h2>

@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { cardAttributeLabel, catalogFilterOptionLabel, collectionCategoryLabel, eventTypeLabel, eventUnitLabel, forecastConfidenceLabel, forecastSamplingReason, playerErrorMessage, playerFieldLabel, playerStatusLabel, playerWarningMessage, technicalDiagnosticMessage } from "./playerLabels";
+import { cardAttributeLabel, catalogFilterOptionLabel, collectionCategoryLabel, eventTypeLabel, eventUnitLabel, forecastConfidenceLabel, forecastSamplingReason, playerErrorMessage, playerFieldLabel, playerMissingDataLabels, playerStatusLabel, playerToolLabel, playerWarningMessage, technicalDiagnosticMessage } from "./playerLabels";
 
 describe("player labels", () => {
+  it("maps prefixed tool warnings without treating the tool name as missing input", () => {
+    expect(playerMissingDataLabels(["deckRecommend: Missing uploaded character-ranks", "areaItemRecommend: Missing uploaded area-items", "musicRecommend: Missing uploaded area-items"])).toEqual(["角色等级", "区域道具"]);
+    expect(playerToolLabel("normalEventPlan")).toBe("活动规划");
+  });
+
+  it("recognizes the real MySekai combined warning and deduplicates input labels", () => {
+    expect(playerMissingDataLabels(["Missing uploaded MySekai canvas/gate/fixture data", "mysekai-fixtures"])).toEqual(["MySekai 家具", "MySekai 大门", "MySekai 画布"]);
+  });
+
+  it("hides unknown technical input identifiers", () => {
+    expect(playerMissingDataLabels(["internal_future_field", "another_opaque_field"])).toEqual(["其他玩家资料"]);
+    expect(playerToolLabel("futureInternalTool")).toBe("玩家工具");
+  });
   it("turns nested API JSON errors into a player-facing message", () => {
     expect(playerErrorMessage('{"message":"{\\"message\\":\\"upstream unavailable\\"}"}')).toBe("暂时无法加载资料，请稍后重试。");
     expect(playerErrorMessage("Failed to fetch")).toBe("暂时无法连接服务，请检查网络后重试。");

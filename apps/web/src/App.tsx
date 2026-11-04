@@ -1,6 +1,7 @@
 import {
   Activity,
   Award,
+  ArrowUpRight,
   BadgePlus,
   Bell,
   BarChart3,
@@ -2813,7 +2814,7 @@ export function App() {
   function ProfilePage() {
     return (
       <section className="panel wide profile-page">
-        <div className="panel-heading profile-page-heading"><div><span className="profile-section-kicker">玩家数据</span><h1>玩家档案查询</h1><p>公开 UID 仅展示公开资料；已有绑定数据可用于完整分析。</p></div><Link className="button-link" to="/me/profile">打开我的档案分析</Link></div>
+        <div className="panel-heading profile-page-heading"><div><span className="profile-section-kicker">玩家数据</span><h1>玩家档案查询</h1><p>公开 UID 仅展示公开资料；已有绑定数据可用于完整分析。</p></div><Link className="button-link" to="/me/profile">打开我的档案分析<ArrowUpRight size={15} aria-hidden="true" /></Link></div>
         <form className="profile-query-form" onSubmit={(event) => { event.preventDefault(); void loadProfile(); }}><label><span>玩家 UID</span><input value={profileId} onChange={(event) => { setProfileId(event.target.value); if (profileError) setProfileError(""); }} placeholder="输入公开 UID" inputMode="numeric" /></label><button type="submit" disabled={profileLoading}><Search size={16} />{profileLoading ? "查询中…" : "查询档案"}</button></form>
         {profileLoading && <p className="profile-status" role="status">正在读取公开档案…</p>}
         {profileError && <div className="profile-error" role="alert"><span>{profileError}</span><button type="button" className="btn-secondary" onClick={() => void loadProfile()} disabled={profileLoading}>重试</button></div>}
@@ -3979,15 +3980,22 @@ export function App() {
 
   function AboutPage() {
     return <section className="panel wide about-page">
-      <div className="panel-heading"><div><h2>关于 Project Sekai 工具台</h2><p>为五个区服提供图鉴、活动数据、玩家资产分析和计算工具。</p></div></div>
+      <header className="about-heading">
+        <span className="account-section-kicker"><Info size={14} />关于工具台</span>
+        <h1>Project Sekai 工具台</h1>
+        <p>汇集五个区服的图鉴、活动数据、玩家资产分析与计算工具。</p>
+        <div className="about-regions" aria-label="支持的游戏区服">{["JP", "EN", "TW", "KR", "CN"].map((item) => <span key={item}>{item}</span>)}<small>各区服数据独立</small></div>
+      </header>
+      <div className="about-section-heading"><h2>数据来源</h2><span>公开资料与资源</span></div>
       <div className="about-source-grid">
-        <article><strong>Sekai.best</strong><p>提供游戏资产、公开资料和部分基础数据。</p></article>
-        <article><strong>Moesekai Metadata</strong><p>提供公式计算所需的参考数据、歌曲 Meta 与聚合目录。</p></article>
-        <article><strong>Haruki</strong><p>提供公开玩家数据、排名详情和数据补充。</p></article>
-        <article><strong>Uni / Haruki</strong><p>提供同区游戏资产镜像与备用加载。</p></article>
-        <article><strong>rks-n</strong><p>提供实时排名、档线、时序和周回统计。</p></article>
+        <article className="about-source-assets"><span className="about-source-icon"><Images size={18} aria-hidden="true" /></span><div><h3>Sekai.best</h3><p>游戏资产、公开资料和基础数据。</p></div><span className="about-source-tag">基础资源</span></article>
+        <article className="about-source-meta"><span className="about-source-icon"><Calculator size={18} aria-hidden="true" /></span><div><h3>Moesekai Metadata</h3><p>计算参考数据、歌曲 Meta 与聚合目录。</p></div><span className="about-source-tag">计算参考</span></article>
+        <article className="about-source-player"><span className="about-source-icon"><Users size={18} aria-hidden="true" /></span><div><h3>Haruki</h3><p>公开玩家数据、排名详情和数据补充。</p></div><span className="about-source-tag">玩家数据</span></article>
+        <article className="about-source-mirror"><span className="about-source-icon"><Boxes size={18} aria-hidden="true" /></span><div><h3>Uni / Haruki</h3><p>同区游戏资产镜像与备用加载。</p></div><span className="about-source-tag">资产镜像</span></article>
+        <article className="about-source-ranking"><span className="about-source-icon"><Activity size={18} aria-hidden="true" /></span><div><h3>rks-n</h3><p>实时排名、档线、时序和周回统计。</p></div><span className="about-source-tag">活动排名</span></article>
       </div>
-      <div className="notice"><strong>区服与缓存原则</strong><span>JP、EN、TW、KR、CN 数据与资产独立加载，不跨区借用。可用缓存会先展示，再在后台刷新。</span></div>
+      <div className="about-data-note"><Info size={18} aria-hidden="true" /><div><strong>区服与缓存原则</strong><p>数据与资产不跨区借用。优先展示可用缓存，再在后台刷新；来源不可用时明确显示缺失状态。</p></div></div>
+      <footer className="about-footer"><span>非官方玩家工具，与游戏官方无隶属关系。</span><nav aria-label="工具台相关说明"><Link to="/privacy">隐私政策</Link><Link to="/terms">用户协议</Link><Link to="/security">安全与举报</Link></nav></footer>
     </section>;
   }
   function LegacySections() {

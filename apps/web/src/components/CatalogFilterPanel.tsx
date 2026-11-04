@@ -59,7 +59,7 @@ function localFilterIcon(option: CatalogFilterOption) {
   return null;
 }
 
-function OptionIcon({ option }: { option: CatalogFilterOption }) {
+export function CatalogFilterOptionIcon({ option }: { option: CatalogFilterOption }) {
   const localIcon = localFilterIcon(option);
   if (localIcon) return <img className={localIcon.className} src={localIcon.src} alt="" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} />;
   const image = option.iconCandidates?.[0];
@@ -131,7 +131,7 @@ export function CatalogFilterPanel({
                     key={option.value}
                     onClick={() => onToggle(group.key, option.value)}
                   >
-                    <OptionIcon option={option} />
+                    <CatalogFilterOptionIcon option={option} />
                     <span>{optionLabel}</span>
                     <small>{option.count}</small>
                     {active && <Check size={13} />}

@@ -3,6 +3,8 @@ import { getCards, getMasterCollection } from "./masterData.js";
 import { calculateExactCardPower, prepareExactCardPowerContext } from "./referenceCalculator.js";
 import { store } from "./store.js";
 import { recommendAreaItemUpgrades } from "./areaItemRecommend.js";
+import { getAssetCandidates, getCardAssetDetail, getCharacterIconCandidates, getCollectionItemAssetDetail } from "./assets.js";
+import { completeProfileAreaItems } from "./profileAreaItems.js";
 
 type Row = Record<string, unknown>;
 
@@ -104,14 +106,16 @@ async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper:
 export async function buildProfileAnalysis(userId: string, bindingId: string) {
   const binding = (await store.listPlayerBindings(userId)).find((item) => item.id === bindingId);
   if (!binding) return null;
-  const [inventory, playerData, deckConfigs, cards, gameCharacters, honors, materialsMaster] = await Promise.all([
+  const [inventory, playerData, deckConfigs, cards, gameCharacters, honors, materialsMaster, areaMaster, areaLevelMaster] = await Promise.all([
     store.listInventory(userId, bindingId),
     store.listPlayerData(userId, bindingId),
     store.listDeckConfigs(userId),
     getCards(binding.region),
     getMasterCollection(binding.region, "gameCharacters"),
     getMasterCollection(binding.region, "honors"),
-    getMasterCollection(binding.region, "materials")
+    getMasterCollection(binding.region, "materials"),
+    getMasterCollection(binding.region, "areaItems"),
+    getMasterCollection(binding.region, "areaItemLevels")
   ]);
   const assets = dataByKind(playerData);
   const playerAssets = Object.fromEntries(playerData.map((item) => [item.kind, item.data]));
@@ -125,6 +129,7 @@ export async function buildProfileAnalysis(userId: string, bindingId: string) {
     const master = characterMaster.get(characterId) ?? {};
     return {
       characterId,
+      iconCandidates: getCharacterIconCandidates(binding.region, characterId),
       name: characterName(master, characterId),
       unit: firstText(master, ["unit"]) ?? "unknown",
       rank: firstNumber(item, ["rank", "characterRank", "level"]),
@@ -145,6 +150,7 @@ export async function buildProfileAnalysis(userId: string, bindingId: string) {
     const candidateCards = inventory.filter((owned) => cardMaster.get(owned.cardId)?.characterId === characterId);
     return {
       characterId,
+      iconCandidates: getCharacterIconCandidates(binding.region, characterId),
       name: characterName(master, characterId),
       unit: firstText(master, ["unit"]) ?? "unknown",
       stage: Math.max(0, ...stageRows.map((item) => firstNumber(item, ["rank", "stage", "stageRank", "challengeLiveStageId"]))),
@@ -152,7 +158,13 @@ export async function buildProfileAnalysis(userId: string, bindingId: string) {
       rewardProgress: challenge.rewards.filter((item) => firstText(item, ["characterId", "gameCharacterId"]) === characterId).length,
       savedDeckCount: deckRows.length,
       candidateCount: candidateCards.length,
-      candidateCards: candidateCards.map((owned) => ({ cardId: owned.cardId, title: cardMaster.get(owned.cardId)?.title ?? owned.cardId, level: owned.level ?? 1 }))
+      candidateCards: candidateCards.map((owned) => {
+        const card = cardMaster.get(owned.cardId);
+        const art = card ? getCardAssetDetail(binding.region, card) : undefined;
+        const trained = owned.specialTrainingStatus === "done" || art?.showsOnlyTrainedArt;
+        return { cardId: owned.cardId, title: card?.title ?? "卡牌资料待同步", level: owned.level ?? 1,
+          thumbnailCandidates: trained ? art?.afterTrainingThumbnailCandidates ?? [] : art?.normalThumbnailCandidates ?? [] };
+      })
     };
   }).sort((a, b) => b.highScore - a.highScore || b.stage - a.stage);
 
@@ -207,15 +219,24 @@ export async function buildProfileAnalysis(userId: string, bindingId: string) {
   const mainDeckCardIds = Array.isArray((mainDeck as Row | null)?.cardIds) ? (mainDeck as Row).cardIds as string[] : inventory.slice(0, 5).map((item) => item.cardId);
   const areaRecommendation = await recommendAreaItemUpgrades({
     region: binding.region as RegionId,
-    currentItems: rows(assets["area-items"]?.data),
+    currentItems: rows(assets["area-items"]?.data).map((row) => ({ areaItemId: String(row.areaItemId ?? row.id ?? ""), level: number(row.level ?? row.areaItemLevel) })),
     inventory,
     playerAssets,
     materials: assets.materials?.data,
     cardIds: mainDeckCardIds,
     sortBy: "coin-efficiency",
-    limit: 55
+    limit: areaMaster.items.length
   });
-  const areaItems = areaRecommendation.recommendations;
+  const areaItems = completeProfileAreaItems(areaRecommendation.recommendations.map((item) => ({ ...item,
+    // No verified area-item image mapping exists yet; report the missing art.
+    imageCandidates: [] as string[],
+    cost: { ...item.cost, resources: item.cost.resources.map((cost) => {
+      const material = materialMaster.get(cost.resourceType === "coin" ? "0" : cost.resourceId);
+      return { ...cost, name: cost.resourceType === "coin" ? "金币" : material?.name ?? "素材资料待同步",
+        imageCandidates: cost.resourceType === "coin" ? getAssetCandidates(binding.region, "thumbnail/common_material/coin.webp") : material ? getCollectionItemAssetDetail(binding.region, "materials", material).imageCandidates : [] };
+    }) },
+    costs: item.costs.map((cost) => ({ ...cost, name: materialMaster.get(cost.materialId)?.name ?? "素材资料待同步" }))
+  })), rows(assets["area-items"]?.data), areaMaster.items, areaLevelMaster.items);
 
   const snapshot = record(binding.publicProfileSnapshot);
   const sourceDiagnostics = {
